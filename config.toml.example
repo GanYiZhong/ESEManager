@@ -1,18 +1,15 @@
-# ESE 歌曲管理器 - 設定檔範例
-# 此檔案會在第一次啟動程式時自動建立為 config.toml
+# ESEManager - example config (auto-created as config.toml on first run)
 
 [download]
-# 下載目錄（相對或絕對路徑）
+# Download directory (relative or absolute path)
 directory = "Downloads"
 
-# 並行下載執行緒數（1-5）
-workers = 3
+# Parallel download threads (1-16)
+workers = 5
 
 [display]
-# 每頁顯示歌曲數（建議 10-50）
+# Kept for compatibility (not used by the current GUI)
 page_size = 20
 
-# 介面語言 (zh_TW: 繁體中文, en: 英文, ja: 日文)
-ui_language = "zh_TW"
-
-# 注意：歌名永遠優先顯示日文（若有ese_local.db資料庫）
+# UI language: "auto" (follow system), "zh_TW", "en", "ja"
+ui_language = "auto"

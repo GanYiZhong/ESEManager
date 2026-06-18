@@ -2,11 +2,11 @@
 block_cipher = None
 
 a = Analysis(
-    ['ese_qt.py'],
-    pathex=[],
+    ['../src/ese_qt.py'],
+    pathex=['../src'],
     binaries=[],
     datas=[
-        ('download_songs.py', '.'),
+        ('../src/download_songs.py', '.'),
     ],
     hiddenimports=[
         'requests',

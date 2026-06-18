@@ -55,3 +55,7 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/
+
+# Archives
+*.7z
+*.zip

@@ -310,11 +310,20 @@ def main():
     )
 
     parser.add_argument('--dir', default=r'Z:\[TJA ESE]\Songs\Songs',
-                       help='TJA 檔案所在目錄')
+                       help='TJA 檔案所在目錄（本機掃描模式）')
     parser.add_argument('--db', default='ese_local.db',
                        help='資料庫路徑（預設: ese_local.db）')
+    parser.add_argument('--remote', action='store_true',
+                       help='從 ESE 直接抓 .tja 解析 TITLEJA（增量；需先有 ese_songs.db）')
+    parser.add_argument('--song-db', default='ese_songs.db',
+                       help='--remote 用的歌曲資料庫（預設: ese_songs.db）')
 
     args = parser.parse_args()
+
+    # 遠端模式：直接從 ESE 抓 .tja 建日文標題（增量）
+    if args.remote:
+        build_from_remote(song_db=args.song_db, local_db=args.db)
+        return
 
     # 檢查目錄是否存在
     if not os.path.exists(args.dir):
