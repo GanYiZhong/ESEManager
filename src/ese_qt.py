@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QGroupBox, QDialog
+    QGroupBox, QDialog, QFormLayout, QColorDialog, QFrame
 )
 
 # 確保能 import 同目錄的 download_songs
@@ -91,6 +91,7 @@ TR = {
         "boxdef_no_sub": "此資料夾沒有子資料夾",
         "boxdef_batch_q": "將為 {n} 個子資料夾建立 box.def（已存在的會略過），是否繼續？",
         "boxdef_batch_done": "完成：新建 {c} 個、略過 {s} 個（已存在）",
+        "boxdef_pick": "選擇顏色",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -121,6 +122,7 @@ TR = {
         "boxdef_no_sub": "No subfolders in this folder",
         "boxdef_batch_q": "Create box.def for {n} subfolders (existing ones are skipped). Continue?",
         "boxdef_batch_done": "Done: created {c}, skipped {s} (existing)",
+        "boxdef_pick": "Pick color",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -151,6 +153,7 @@ TR = {
         "boxdef_no_sub": "サブフォルダがありません",
         "boxdef_batch_q": "{n} 個のサブフォルダに box.def を作成します（既存はスキップ）。続行しますか？",
         "boxdef_batch_done": "完了：作成 {c}、スキップ {s}（既存）",
+        "boxdef_pick": "色を選択",
     },
 }
 
@@ -592,14 +595,26 @@ def _hex_to_rgb(h):
     return 68, 68, 68
 
 
+def _norm_hex(s):
+    """正規化成 6 位 HEX（不含 #）；無效回空字串。"""
+    s = (s or "").strip().lstrip("#")
+    if len(s) == 6:
+        try:
+            int(s, 16)
+            return s.upper()
+        except ValueError:
+            pass
+    return ""
+
+
 def make_boxdef(folder_name):
-    """依資料夾名稱產生 box.def 範本（標題用分類中文名、底色用分類色）。"""
+    """依資料夾名稱產生 box.def 範本（OpenTaiko 格式，顏色為 6 位 HEX）。"""
     title = CATEGORY_NAMES.get(folder_name, folder_name)
-    r, g, b = _hex_to_rgb(CATEGORY_COLORS.get(folder_name, "#444444"))
+    hex6 = CATEGORY_COLORS.get(folder_name, "#444444").lstrip("#").upper()
     return (f"#TITLE:{title}\n"
             f"#GENRE:{title}\n"
-            f"#BGCOLOR:{r},{g},{b}\n"
-            f"#FORECOLOR:255,255,255\n")
+            f"#BGCOLOR:{hex6}\n"
+            f"#BOXCOLOR:{hex6}\n")
 
 
 def _read_text(path):
@@ -615,15 +630,21 @@ def _read_text(path):
 
 # ------------------------------------------------------------- box.def 編輯器
 class BoxDefDialog(QDialog):
-    """自動生成 / 編輯 box.def（資料夾盒子定義）。"""
+    """圖形化編輯 box.def（OpenTaiko 格式）：表單欄位 + 顏色選取 + 即時預覽。"""
+
+    # 寫檔順序（key 對應 box.def 的 #KEY）
+    ORDER = ["TITLE", "GENRE", "BGCOLOR", "BOXCOLOR", "BGTYPE", "BOXTYPE",
+             "BOXCHARA", "BOXEXPLANATION1", "BOXEXPLANATION2", "BOXEXPLANATION3"]
 
     def __init__(self, parent, default_dir, tr):
         super().__init__(parent)
         self.tr = tr
         self.setWindowTitle(tr("boxdef_title"))
-        self.resize(640, 560)
+        self.resize(560, 660)
+        self.extra = []   # 保留無法辨識的行，存檔時原樣寫回
         v = QVBoxLayout(self)
 
+        # 資料夾列
         fr = QHBoxLayout()
         self.dir_edit = QLineEdit(default_dir)
         browse = QPushButton(tr("browse"))
@@ -636,10 +657,40 @@ class BoxDefDialog(QDialog):
         fr.addWidget(load)
         v.addLayout(fr)
 
-        self.editor = QPlainTextEdit()
-        self.editor.setPlaceholderText("#TITLE:...\n#GENRE:...\n#BGCOLOR:r,g,b\n#FORECOLOR:r,g,b")
-        v.addWidget(self.editor, 1)
+        # 即時預覽
+        self.preview = QLabel()
+        self.preview.setMinimumHeight(70)
+        self.preview.setAlignment(Qt.AlignCenter)
+        v.addWidget(self.preview)
 
+        # 表單欄位
+        form = QFormLayout()
+        self.f_title = QLineEdit()
+        self.f_genre = QLineEdit()
+        self.f_title.textChanged.connect(self._update_preview)
+        self.f_genre.textChanged.connect(self._update_preview)
+        self.bg_edit, bg_row = self._color_field()
+        self.box_edit, box_row = self._color_field()
+        self.f_bgtype = QLineEdit()
+        self.f_boxtype = QLineEdit()
+        self.f_boxchara = QLineEdit()
+        self.f_exp1 = QLineEdit()
+        self.f_exp2 = QLineEdit()
+        self.f_exp3 = QLineEdit()
+        form.addRow("#TITLE", self.f_title)
+        form.addRow("#GENRE", self.f_genre)
+        form.addRow("#BGCOLOR", bg_row)
+        form.addRow("#BOXCOLOR", box_row)
+        form.addRow("#BGTYPE", self.f_bgtype)
+        form.addRow("#BOXTYPE", self.f_boxtype)
+        form.addRow("#BOXCHARA", self.f_boxchara)
+        form.addRow("#BOXEXPLANATION1", self.f_exp1)
+        form.addRow("#BOXEXPLANATION2", self.f_exp2)
+        form.addRow("#BOXEXPLANATION3", self.f_exp3)
+        v.addLayout(form)
+        v.addStretch()
+
+        # 按鈕列
         br = QHBoxLayout()
         gen = QPushButton(tr("boxdef_gen"))
         gen.clicked.connect(self.generate)
@@ -653,7 +704,64 @@ class BoxDefDialog(QDialog):
         br.addWidget(batch)
         v.addLayout(br)
 
+        self._fields = {
+            "TITLE": self.f_title, "GENRE": self.f_genre,
+            "BGCOLOR": self.bg_edit, "BOXCOLOR": self.box_edit,
+            "BGTYPE": self.f_bgtype, "BOXTYPE": self.f_boxtype,
+            "BOXCHARA": self.f_boxchara,
+            "BOXEXPLANATION1": self.f_exp1, "BOXEXPLANATION2": self.f_exp2,
+            "BOXEXPLANATION3": self.f_exp3,
+        }
         self.load()
+
+    def _color_field(self):
+        """建立一組顏色欄位：HEX 輸入 + 調色盤按鈕 + 色塊預覽。回傳 (edit, row_widget)。"""
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        edit = QLineEdit()
+        edit.setMaxLength(7)
+        edit.setFixedWidth(90)
+        edit.setPlaceholderText("RRGGBB")
+        btn = QPushButton("🎨")
+        btn.setFixedWidth(40)
+        btn.setToolTip(self.tr("boxdef_pick"))
+        swatch = QFrame()
+        swatch.setFixedSize(28, 24)
+
+        def pick():
+            cur = _norm_hex(edit.text())
+            init = QColor("#" + cur) if cur else QColor("#444444")
+            c = QColorDialog.getColor(init, self, self.tr("boxdef_pick"))
+            if c.isValid():
+                edit.setText(c.name().lstrip("#").upper())
+
+        def upd():
+            hx = _norm_hex(edit.text())
+            if hx:
+                swatch.setStyleSheet("background-color:#%s;border:1px solid #888;" % hx)
+            else:
+                swatch.setStyleSheet("background:transparent;border:1px solid #888;")
+            self._update_preview()
+
+        btn.clicked.connect(pick)
+        edit.textChanged.connect(upd)
+        h.addWidget(edit)
+        h.addWidget(btn)
+        h.addWidget(swatch)
+        h.addStretch()
+        return edit, w
+
+    def _update_preview(self):
+        hx = _norm_hex(self.bg_edit.text()) or "333333"
+        r, g, b = _hex_to_rgb("#" + hx)
+        fg = "#000000" if (r * 0.299 + g * 0.587 + b * 0.114) > 150 else "#FFFFFF"
+        title = self.f_title.text() or "(title)"
+        genre = self.f_genre.text()
+        self.preview.setText(title + (("\n" + genre) if genre else ""))
+        self.preview.setStyleSheet(
+            "QLabel{background:#%s;color:%s;border-radius:8px;"
+            "font-size:17px;font-weight:bold;}" % (hx, fg))
 
     def _path(self):
         return os.path.join(self.dir_edit.text(), "box.def")
@@ -664,20 +772,54 @@ class BoxDefDialog(QDialog):
             self.dir_edit.setText(d)
             self.load()
 
+    def _fill_template(self):
+        name = os.path.basename(self.dir_edit.text().rstrip("/\\"))
+        self.f_title.setText(CATEGORY_NAMES.get(name, name))
+        self.f_genre.setText(CATEGORY_NAMES.get(name, name))
+        hx = CATEGORY_COLORS.get(name, "#444444").lstrip("#").upper()
+        self.bg_edit.setText(hx)
+        self.box_edit.setText(hx)
+
     def load(self):
+        for f in self._fields.values():
+            f.setText("")
+        self.extra = []
         p = self._path()
         if os.path.exists(p):
             try:
-                self.editor.setPlainText(_read_text(p))
+                text = _read_text(p)
             except Exception as e:
-                self.editor.setPlainText("")
+                text = ""
                 print("boxdef load:", e)
+            for line in text.splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                if s.startswith("#") and ":" in s:
+                    key, val = s[1:].split(":", 1)
+                    key = key.strip().upper()
+                    if key in self._fields:
+                        self._fields[key].setText(val.strip())
+                        continue
+                self.extra.append(line)
         else:
-            # 沒有現成檔案就先給範本，方便直接編輯/儲存
-            self.editor.setPlainText(make_boxdef(os.path.basename(self.dir_edit.text().rstrip("/\\"))))
+            self._fill_template()
+        self._update_preview()
 
     def generate(self):
-        self.editor.setPlainText(make_boxdef(os.path.basename(self.dir_edit.text().rstrip("/\\"))))
+        self._fill_template()
+        self._update_preview()
+
+    def _to_text(self):
+        lines = []
+        for key in self.ORDER:
+            val = self._fields[key].text().strip()
+            if key in ("BGCOLOR", "BOXCOLOR"):
+                val = _norm_hex(val)
+            if val:
+                lines.append("#%s:%s" % (key, val))
+        lines += [ln for ln in self.extra if ln.strip()]
+        return "\n".join(lines) + "\n"
 
     def save(self):
         d = self.dir_edit.text()
@@ -686,7 +828,7 @@ class BoxDefDialog(QDialog):
             return
         try:
             with open(self._path(), "w", encoding="utf-8") as f:
-                f.write(self.editor.toPlainText())
+                f.write(self._to_text())
             QMessageBox.information(self, self.tr("boxdef_title"),
                                     self.tr("boxdef_saved", p=self._path()))
         except Exception as e:
