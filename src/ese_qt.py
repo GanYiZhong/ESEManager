@@ -537,9 +537,41 @@ class DownloadThread(QThread):
                 self._mark(f["file_path"], "failed", 0.0, 0.0)
                 self.log.emit(f"✗ 失敗: {disp} — {e}")
 
+        # 第一次建立分類資料夾時，順便從 ESE 抓官方 box.def（已存在則略過）
+        self._fetch_boxdefs(sess)
+
         with ThreadPoolExecutor(max_workers=self.workers) as ex:
             list(ex.map(worker, self.files))
         self.finished_all.emit(self.dl, self.skip, self.fail, self.total)
+
+    def _fetch_boxdefs(self, sess):
+        """為本次下載涉及的每個分類資料夾建立 box.def（缺少時才從 ESE 取）。"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            boxmap = {fp.split("/")[0]: fp for (fp,) in conn.execute(
+                "SELECT file_path FROM song_files WHERE lower(filename)='box.def'")}
+            conn.close()
+        except Exception:
+            return
+        cats = {f["file_path"].split("/")[0] for _, f in self.files if "/" in f["file_path"]}
+        for cat in sorted(cats):
+            if self._stop:
+                break
+            fp = boxmap.get(cat)
+            if not fp:
+                continue
+            dest = os.path.join(self.download_dir, cat, "box.def")
+            if os.path.exists(dest):
+                continue
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                r = sess.get(ESE_RAW_BASE + urllib.parse.quote(fp), timeout=30, verify=False)
+                if r.ok:
+                    with open(dest, "wb") as out:
+                        out.write(r.content)
+                    self.log.emit(f"📦 box.def: {cat}")
+            except Exception as e:
+                self.log.emit(f"box.def {cat}: {e}")
 
 
 # ------------------------------------------------------- 資料庫建立執行緒
@@ -819,15 +851,22 @@ class BoxDefDialog(QDialog):
         return edit, w
 
     def _update_preview(self):
-        hx = _norm_hex(self.color_edits["BGCOLOR"].text()) or "333333"
-        r, g, b = _hex_to_rgb("#" + hx)
-        fg = "#000000" if (r * 0.299 + g * 0.587 + b * 0.114) > 150 else "#FFFFFF"
+        # 盒子外觀以 BACKCOLOR 為底、FORECOLOR 為字（ESE box.def 多半只設這兩個）；
+        # 沒設才退回 BGCOLOR / 自動對比色。
+        bg = (_norm_hex(self.color_edits["BACKCOLOR"].text())
+              or _norm_hex(self.color_edits["BGCOLOR"].text()) or "333333")
+        fore = _norm_hex(self.color_edits["FORECOLOR"].text())
+        if fore:
+            fg = "#" + fore
+        else:
+            r, g, b = _hex_to_rgb("#" + bg)
+            fg = "#000000" if (r * 0.299 + g * 0.587 + b * 0.114) > 150 else "#FFFFFF"
         title = self.title_edits[""].text() or "(title)"
         genre = self.genre.currentText().strip()
         self.preview.setText(title + (("\n" + genre) if genre else ""))
         self.preview.setStyleSheet(
             "QLabel{background:#%s;color:%s;border-radius:8px;"
-            "font-size:17px;font-weight:bold;}" % (hx, fg))
+            "font-size:17px;font-weight:bold;}" % (bg, fg))
 
     def _path(self):
         return os.path.join(self.dir_edit.text(), "box.def")
