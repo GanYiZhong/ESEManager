@@ -11,7 +11,18 @@ import time
 import sqlite3
 import threading
 import webbrowser
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
+
+# ESE 檔案下載/取得來源（live host；舊 host git.vanillaaaa.org 已停用）
+ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/raw/branch/master/"
+
+
+def _live_url(url):
+    """把舊 host 換成 live host，讓舊版資料庫的連結仍可用。"""
+    if not url:
+        return url
+    return url.replace("git.vanillaaaa.org", "ese.tjadataba.se")
 
 import requests
 import urllib3
@@ -93,6 +104,9 @@ TR = {
         "boxdef_batch_q": "將為 {n} 個子資料夾建立 box.def（已存在的會略過），是否繼續？",
         "boxdef_batch_done": "完成：新建 {c} 個、略過 {s} 個（已存在）",
         "boxdef_pick": "選擇顏色",
+        "boxdef_fetch": "⬇ 取得 ESE 官方", "boxdef_fetch_tip": "從 ESE 倉庫下載此分類的官方 box.def",
+        "boxdef_fetch_none": "ESE 找不到對應此資料夾的 box.def（依名稱/序號比對）",
+        "boxdef_fetch_fail": "取得失敗：{e}", "boxdef_fetch_ok": "已載入 ESE 官方 box.def（{c}）",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -124,6 +138,9 @@ TR = {
         "boxdef_batch_q": "Create box.def for {n} subfolders (existing ones are skipped). Continue?",
         "boxdef_batch_done": "Done: created {c}, skipped {s} (existing)",
         "boxdef_pick": "Pick color",
+        "boxdef_fetch": "⬇ Fetch from ESE", "boxdef_fetch_tip": "Download the official box.def for this category from the ESE repo",
+        "boxdef_fetch_none": "No matching ESE box.def for this folder (by name/index)",
+        "boxdef_fetch_fail": "Fetch failed: {e}", "boxdef_fetch_ok": "Loaded official ESE box.def ({c})",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -155,6 +172,9 @@ TR = {
         "boxdef_batch_q": "{n} 個のサブフォルダに box.def を作成します（既存はスキップ）。続行しますか？",
         "boxdef_batch_done": "完了：作成 {c}、スキップ {s}（既存）",
         "boxdef_pick": "色を選択",
+        "boxdef_fetch": "⬇ ESE から取得", "boxdef_fetch_tip": "ESE リポジトリからこの分類の公式 box.def を取得",
+        "boxdef_fetch_none": "このフォルダに対応する ESE の box.def が見つかりません（名前/番号で照合）",
+        "boxdef_fetch_fail": "取得に失敗: {e}", "boxdef_fetch_ok": "ESE 公式 box.def を読み込みました（{c}）",
     },
 }
 
@@ -471,7 +491,7 @@ class DownloadThread(QThread):
                 return
             try:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                r = sess.get(f["download_url"], stream=True, timeout=60, verify=False)
+                r = sess.get(_live_url(f["download_url"]), stream=True, timeout=60, verify=False)
                 r.raise_for_status()
                 clen = int(r.headers.get("content-length", 0)) or 0
                 got = 0
@@ -658,9 +678,10 @@ def _read_text(path):
 #   #FORECOLOR / #BACKCOLOR（顏色值經 ColorTranslator 解析，需含 #）/
 #   #BGTYPE / #BOXTYPE / #BOXCHARA / #SELECTBG / #SCENEPRESET / #BOXEXPLANATION1-3
 BOXDEF_LANGS = [("", "#TITLE"), ("EN", "#TITLEEN"), ("JA", "#TITLEJA"),
-                ("CN", "#TITLECN"), ("TW", "#TITLETW"), ("KO", "#TITLEKO")]
+                ("ZH", "#TITLEZH"), ("CN", "#TITLECN"), ("TW", "#TITLETW"),
+                ("KO", "#TITLEKO")]
 BOXDEF_LANG_LABEL = {"": "Default", "EN": "English", "JA": "日本語",
-                     "CN": "简体中文", "TW": "繁體中文", "KO": "한국어"}
+                     "ZH": "中文", "CN": "简体中文", "TW": "繁體中文", "KO": "한국어"}
 BOXDEF_COLORS = ["BGCOLOR", "BOXCOLOR", "FORECOLOR", "BACKCOLOR"]
 BOXDEF_TEXTS = ["BGTYPE", "BOXTYPE", "BOXCHARA", "SELECTBG", "SCENEPRESET"]
 BOXDEF_GENRES = ["J-POP", "アニメ", "ボーカロイド", "キッズ", "ゲームミュージック",
@@ -743,12 +764,16 @@ class BoxDefDialog(QDialog):
 
         # 按鈕列
         br = QHBoxLayout()
+        fetch = QPushButton(tr("boxdef_fetch"))
+        fetch.setToolTip(tr("boxdef_fetch_tip"))
+        fetch.clicked.connect(self.fetch_ese)
         gen = QPushButton(tr("boxdef_gen"))
         gen.clicked.connect(self.generate)
         save = QPushButton(tr("boxdef_save"))
         save.clicked.connect(self.save)
         batch = QPushButton(tr("boxdef_batch"))
         batch.clicked.connect(self.batch)
+        br.addWidget(fetch)
         br.addWidget(gen)
         br.addWidget(save)
         br.addStretch()
@@ -834,18 +859,8 @@ class BoxDefDialog(QDialog):
         self.color_edits["BGCOLOR"].setText(hx)
         self.color_edits["BOXCOLOR"].setText(hx)
 
-    def load(self):
-        self._clear()
-        p = self._path()
-        if not os.path.exists(p):
-            self._fill_template()
-            self._update_preview()
-            return
-        try:
-            text = _read_text(p)
-        except Exception as e:
-            text = ""
-            print("boxdef load:", e)
+    def _apply_text(self, text):
+        """把 box.def 文字內容填入各欄位（未知行存入 self.extra）。"""
         for line in text.splitlines():
             s = line.strip()
             if not s:
@@ -870,7 +885,64 @@ class BoxDefDialog(QDialog):
                 self.exp_edits[int(key[-1]) - 1].setText(val)
             else:
                 self.extra.append(line)
+
+    def load(self):
+        self._clear()
+        p = self._path()
+        if not os.path.exists(p):
+            self._fill_template()
+            self._update_preview()
+            return
+        try:
+            self._apply_text(_read_text(p))
+        except Exception as e:
+            print("boxdef load:", e)
         self._update_preview()
+
+    def fetch_ese(self):
+        """從 ESE 官方倉庫抓取對應分類的 box.def 填入表單（依資料夾名或序號比對）。"""
+        name = os.path.basename(self.dir_edit.text().rstrip("/\\"))
+        m = re.match(r"\s*(\d+)", name)
+        num = m.group(1).zfill(2) if m else None
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            paths = [r[0] for r in conn.execute(
+                "SELECT file_path FROM song_files WHERE lower(filename)='box.def'")]
+            conn.close()
+        except Exception as e:
+            QMessageBox.critical(self, self.tr("boxdef_title"), str(e))
+            return
+        target = None
+        for fp in paths:
+            cat = fp.split("/")[0]
+            cm = re.match(r"\s*(\d+)", cat)
+            if (cat == name
+                    or _clean_name(cat).lower() == _clean_name(name).lower()
+                    or (num and cm and cm.group(1).zfill(2) == num)):
+                target = fp
+                break
+        if not target:
+            QMessageBox.information(self, self.tr("boxdef_title"), self.tr("boxdef_fetch_none"))
+            return
+        url = ESE_RAW_BASE + urllib.parse.quote(target)
+        try:
+            r = requests.get(url, timeout=30, verify=False)
+            r.raise_for_status()
+            text = None
+            for enc in ("utf-8-sig", "utf-8", "shift-jis", "cp932", "latin-1"):
+                try:
+                    text = r.content.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+        except Exception as e:
+            QMessageBox.critical(self, self.tr("boxdef_title"), self.tr("boxdef_fetch_fail", e=str(e)))
+            return
+        self._clear()
+        self._apply_text(text or "")
+        self._update_preview()
+        QMessageBox.information(self, self.tr("boxdef_title"),
+                               self.tr("boxdef_fetch_ok", c=target.split("/")[0]))
 
     def generate(self):
         self._fill_template()
