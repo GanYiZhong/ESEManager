@@ -237,12 +237,23 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
     conn.close()
 
     total = len(rows)
-    print(f"準備從 ESE 抓取 {total} 個 .tja 解析日文標題...")
-    print("-" * 60)
-
     parser = TJAParser()
     sess = requests.Session()
     sess.headers["User-Agent"] = "ESEManager"
+
+    db = LocalTJADatabase(db_path=local_db)
+    db.init_database()
+
+    # 增量：資料庫裡已有日文標題的 .tja 就略過，只抓還沒有的（新歌）
+    existing = {fp for (fp,) in db.conn.execute(
+        "SELECT file_path FROM local_songs WHERE title_ja IS NOT NULL AND title_ja != ''")}
+    todo = [r for r in rows if r[0] not in existing]
+    print(f"資料庫已有日文標題 {len(existing)} 首；本次需抓取 {len(todo)} 首（總 {total}）")
+    if not todo:
+        print("✓ 日文標題已是最新，略過抓取")
+        db.close()
+        return
+    print("-" * 60)
 
     def fetch(row):
         file_path, url, filename, category = row
@@ -262,13 +273,11 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
         except Exception:
             return None
 
-    db = LocalTJADatabase(db_path=local_db)
-    db.init_database()
-
     done = 0
     new_count = ja_count = 0
+    todo_total = len(todo)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        for meta in ex.map(fetch, rows):
+        for meta in ex.map(fetch, todo):
             done += 1
             if meta:
                 db.insert_song(meta)
@@ -276,11 +285,11 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
                 if meta.get("titleja"):
                     ja_count += 1
             if done % 200 == 0:
-                print(f"進度: {done}/{total} ({done*100//total}%)")
+                print(f"進度: {done}/{todo_total} ({done*100//todo_total}%)")
 
     db.conn.commit()   # 一次性提交
     print("-" * 60)
-    print(f"✓ 完成：寫入 {new_count} 首，其中 {ja_count} 首有日文標題")
+    print(f"✓ 完成：本次新增 {new_count} 首，其中 {ja_count} 首有日文標題")
     db.show_stats()
     db.close()
 
