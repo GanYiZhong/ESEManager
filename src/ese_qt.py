@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QGroupBox
+    QGroupBox, QDialog
 )
 
 # 確保能 import 同目錄的 download_songs
@@ -84,6 +84,13 @@ TR = {
         "db_no_git_q": "未偵測到 git（更新歌曲清單需要）。\n是否自動下載可攜版 git（約 50MB，免安裝、免管理員）？\n\n選「否」則需自行安裝 git：https://git-scm.com/downloads",
         "db_no_git_fail": "沒有可用的 git，已取消更新。請安裝 git 後再試。",
         "lang_busy": "工作進行中，語言將於下次啟動時套用。",
+        "boxdef_btn": "📦 box.def", "boxdef_title": "box.def 編輯器",
+        "boxdef_load": "讀取", "boxdef_gen": "自動生成", "boxdef_save": "儲存",
+        "boxdef_batch": "為所有子資料夾生成",
+        "boxdef_saved": "已儲存：{p}", "boxdef_no_dir": "資料夾不存在",
+        "boxdef_no_sub": "此資料夾沒有子資料夾",
+        "boxdef_batch_q": "將為 {n} 個子資料夾建立 box.def（已存在的會略過），是否繼續？",
+        "boxdef_batch_done": "完成：新建 {c} 個、略過 {s} 個（已存在）",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -98,6 +105,22 @@ TR = {
         "f_status": "Status", "f_pct": "Progress", "f_speed": "Speed", "open_dir": "📂 Open Folder",
         "st_dl": "downloading", "st_done": "done", "st_skip": "skipped", "st_fail": "failed",
         "done_msg": "Done!\nOK {d} · skipped {s} · failed {f} (of {t})",
+        "st_pause": "paused", "pause": "⏸ Pause", "resume": "▶ Resume", "stop": "⏹ Stop",
+        "paused_label": "Paused",
+        "db_update": "🔄 Update DB", "db_building": "Updating database…",
+        "db_done": "Database updated (song list + Japanese titles)!",
+        "db_fail": "Database update failed: {e}",
+        "db_confirm": "Update databases from ESE:\n1. Song list (blobless — file list only, no audio)\n2. Japanese titles (parse TITLEJA from each .tja, ~10MB)\n\nContinue?",
+        "db_no_git_q": "Git not found (needed to fetch the song list).\nDownload a portable Git automatically (~50MB, no install, no admin)?\n\nChoose No to install Git yourself: https://git-scm.com/downloads",
+        "db_no_git_fail": "No Git available; update cancelled. Install Git and try again.",
+        "lang_busy": "A task is running; the language will apply on next launch.",
+        "boxdef_btn": "📦 box.def", "boxdef_title": "box.def editor",
+        "boxdef_load": "Load", "boxdef_gen": "Generate", "boxdef_save": "Save",
+        "boxdef_batch": "Generate for all subfolders",
+        "boxdef_saved": "Saved: {p}", "boxdef_no_dir": "Folder does not exist",
+        "boxdef_no_sub": "No subfolders in this folder",
+        "boxdef_batch_q": "Create box.def for {n} subfolders (existing ones are skipped). Continue?",
+        "boxdef_batch_done": "Done: created {c}, skipped {s} (existing)",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -112,6 +135,22 @@ TR = {
         "f_status": "状態", "f_pct": "進捗", "f_speed": "速度", "open_dir": "📂 フォルダを開く",
         "st_dl": "DL中", "st_done": "完了", "st_skip": "既存", "st_fail": "失敗",
         "done_msg": "完了！\n成功 {d}・スキップ {s}・失敗 {f}（計 {t}）",
+        "st_pause": "一時停止", "pause": "⏸ 一時停止", "resume": "▶ 再開", "stop": "⏹ 停止",
+        "paused_label": "一時停止中",
+        "db_update": "🔄 データベース更新", "db_building": "データベース更新中…",
+        "db_done": "データベースを更新しました（曲リスト＋日本語タイトル）！",
+        "db_fail": "データベース更新に失敗: {e}",
+        "db_confirm": "ESE からデータベースを更新します：\n1. 曲リスト（blobless・一覧のみ／音声なし）\n2. 日本語タイトル（各 .tja の TITLEJA を解析、約10MB）\n\n続行しますか？",
+        "db_no_git_q": "Git が見つかりません（曲リスト取得に必要）。\nポータブル版 Git を自動ダウンロードしますか（約50MB、インストール不要・管理者不要）？\n\n「いいえ」で手動インストール：https://git-scm.com/downloads",
+        "db_no_git_fail": "利用可能な Git がありません。更新を中止しました。",
+        "lang_busy": "処理の実行中です。言語は次回起動時に適用されます。",
+        "boxdef_btn": "📦 box.def", "boxdef_title": "box.def エディター",
+        "boxdef_load": "読み込み", "boxdef_gen": "自動生成", "boxdef_save": "保存",
+        "boxdef_batch": "全サブフォルダに生成",
+        "boxdef_saved": "保存しました：{p}", "boxdef_no_dir": "フォルダが存在しません",
+        "boxdef_no_sub": "サブフォルダがありません",
+        "boxdef_batch_q": "{n} 個のサブフォルダに box.def を作成します（既存はスキップ）。続行しますか？",
+        "boxdef_batch_done": "完了：作成 {c}、スキップ {s}（既存）",
     },
 }
 
@@ -543,6 +582,144 @@ class DBBuildThread(QThread):
             self.done.emit(False, str(e))
 
 
+def _hex_to_rgb(h):
+    h = (h or "").lstrip("#")
+    if len(h) == 6:
+        try:
+            return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        except ValueError:
+            pass
+    return 68, 68, 68
+
+
+def make_boxdef(folder_name):
+    """依資料夾名稱產生 box.def 範本（標題用分類中文名、底色用分類色）。"""
+    title = CATEGORY_NAMES.get(folder_name, folder_name)
+    r, g, b = _hex_to_rgb(CATEGORY_COLORS.get(folder_name, "#444444"))
+    return (f"#TITLE:{title}\n"
+            f"#GENRE:{title}\n"
+            f"#BGCOLOR:{r},{g},{b}\n"
+            f"#FORECOLOR:255,255,255\n")
+
+
+def _read_text(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    for enc in ("utf-8-sig", "utf-8", "shift-jis", "cp932", "latin-1"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", "replace")
+
+
+# ------------------------------------------------------------- box.def 編輯器
+class BoxDefDialog(QDialog):
+    """自動生成 / 編輯 box.def（資料夾盒子定義）。"""
+
+    def __init__(self, parent, default_dir, tr):
+        super().__init__(parent)
+        self.tr = tr
+        self.setWindowTitle(tr("boxdef_title"))
+        self.resize(640, 560)
+        v = QVBoxLayout(self)
+
+        fr = QHBoxLayout()
+        self.dir_edit = QLineEdit(default_dir)
+        browse = QPushButton(tr("browse"))
+        browse.clicked.connect(self.browse)
+        load = QPushButton(tr("boxdef_load"))
+        load.clicked.connect(self.load)
+        fr.addWidget(QLabel("📁"))
+        fr.addWidget(self.dir_edit, 1)
+        fr.addWidget(browse)
+        fr.addWidget(load)
+        v.addLayout(fr)
+
+        self.editor = QPlainTextEdit()
+        self.editor.setPlaceholderText("#TITLE:...\n#GENRE:...\n#BGCOLOR:r,g,b\n#FORECOLOR:r,g,b")
+        v.addWidget(self.editor, 1)
+
+        br = QHBoxLayout()
+        gen = QPushButton(tr("boxdef_gen"))
+        gen.clicked.connect(self.generate)
+        save = QPushButton(tr("boxdef_save"))
+        save.clicked.connect(self.save)
+        batch = QPushButton(tr("boxdef_batch"))
+        batch.clicked.connect(self.batch)
+        br.addWidget(gen)
+        br.addWidget(save)
+        br.addStretch()
+        br.addWidget(batch)
+        v.addLayout(br)
+
+        self.load()
+
+    def _path(self):
+        return os.path.join(self.dir_edit.text(), "box.def")
+
+    def browse(self):
+        d = QFileDialog.getExistingDirectory(self, self.tr("browse"), self.dir_edit.text())
+        if d:
+            self.dir_edit.setText(d)
+            self.load()
+
+    def load(self):
+        p = self._path()
+        if os.path.exists(p):
+            try:
+                self.editor.setPlainText(_read_text(p))
+            except Exception as e:
+                self.editor.setPlainText("")
+                print("boxdef load:", e)
+        else:
+            # 沒有現成檔案就先給範本，方便直接編輯/儲存
+            self.editor.setPlainText(make_boxdef(os.path.basename(self.dir_edit.text().rstrip("/\\"))))
+
+    def generate(self):
+        self.editor.setPlainText(make_boxdef(os.path.basename(self.dir_edit.text().rstrip("/\\"))))
+
+    def save(self):
+        d = self.dir_edit.text()
+        if not os.path.isdir(d):
+            QMessageBox.warning(self, self.tr("boxdef_title"), self.tr("boxdef_no_dir"))
+            return
+        try:
+            with open(self._path(), "w", encoding="utf-8") as f:
+                f.write(self.editor.toPlainText())
+            QMessageBox.information(self, self.tr("boxdef_title"),
+                                    self.tr("boxdef_saved", p=self._path()))
+        except Exception as e:
+            QMessageBox.critical(self, self.tr("boxdef_title"), str(e))
+
+    def batch(self):
+        base = self.dir_edit.text()
+        if not os.path.isdir(base):
+            QMessageBox.warning(self, self.tr("boxdef_title"), self.tr("boxdef_no_dir"))
+            return
+        subs = sorted(d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d)))
+        if not subs:
+            QMessageBox.information(self, self.tr("boxdef_title"), self.tr("boxdef_no_sub"))
+            return
+        if QMessageBox.question(self, self.tr("boxdef_title"),
+                                self.tr("boxdef_batch_q", n=len(subs))) != QMessageBox.Yes:
+            return
+        created = skipped = 0
+        for sub in subs:
+            p = os.path.join(base, sub, "box.def")
+            if os.path.exists(p):       # 不覆蓋既有的
+                skipped += 1
+                continue
+            try:
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(make_boxdef(sub))
+                created += 1
+            except Exception as e:
+                print("boxdef batch:", e)
+        QMessageBox.information(self, self.tr("boxdef_title"),
+                               self.tr("boxdef_batch_done", c=created, s=skipped))
+
+
 # ---------------------------------------------------------------- 主視窗
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -631,11 +808,14 @@ class MainWindow(QMainWindow):
         self.db_update_btn = QPushButton(self.tr("db_update"))
         self.db_update_btn.setToolTip(self.tr("db_confirm"))
         self.db_update_btn.clicked.connect(self.update_database)
+        self.boxdef_btn = QPushButton(self.tr("boxdef_btn"))
+        self.boxdef_btn.clicked.connect(self.open_boxdef)
         self.missing_btn = QPushButton(self.tr("check_missing"))
         self.missing_btn.clicked.connect(self.check_missing)
         self.official_btn = QPushButton(self.tr("official"))
         self.official_btn.clicked.connect(lambda: webbrowser.open("https://taiko.ac"))
         top.addWidget(self.db_update_btn)
+        top.addWidget(self.boxdef_btn)
         top.addWidget(self.missing_btn)
         top.addWidget(self.official_btn)
         root.addLayout(top)
@@ -999,6 +1179,11 @@ class MainWindow(QMainWindow):
         d = self.dir_edit.text()
         if os.path.isdir(d):
             os.startfile(d)  # Windows
+
+    # ---- box.def 編輯器
+    def open_boxdef(self):
+        start = self.dir_edit.text() if os.path.isdir(self.dir_edit.text()) else os.getcwd()
+        BoxDefDialog(self, start, self.tr).exec()
 
     # ---- 一鍵更新資料庫（歌曲清單 + 日文標題；整合自 update_databases.bat）
     def update_database(self):
