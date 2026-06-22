@@ -1166,6 +1166,13 @@ class MainWindow(QMainWindow):
                     d[c] = row[3 + i]
                 return d
 
+            def has_levels(row):
+                return any(row[3 + i] is not None for i in range(len(lvl_cols)))
+
+            # 同一檔名可能有多筆（例：舊的本機掃描列 + 遠端列），其中只有一筆帶
+            # 難度。把「有難度」的排前面，setdefault 才會選到正確那筆而非空的。
+            rows = sorted(rows, key=lambda r: not has_levels(r))
+
             for row in rows:                       # 先放檔名（主鍵）
                 fn = row[1]
                 if fn:
