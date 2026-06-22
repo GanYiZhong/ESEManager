@@ -107,6 +107,10 @@ TR = {
         "boxdef_fetch": "⬇ 取得 ESE 官方", "boxdef_fetch_tip": "從 ESE 倉庫下載此分類的官方 box.def",
         "boxdef_fetch_none": "ESE 找不到對應此資料夾的 box.def（依名稱/序號比對）",
         "boxdef_fetch_fail": "取得失敗：{e}", "boxdef_fetch_ok": "已載入 ESE 官方 box.def（{c}）",
+        "c_bpm": "BPM", "c_easy": "簡單", "c_normal": "普通", "c_hard": "困難",
+        "c_oni": "魔王", "c_ura": "裏",
+        "f_filter": "篩選", "f_bpm": "BPM 區間", "f_diff": "難度", "f_level": "等級",
+        "diff_all": "全部難度", "f_reset": "重設篩選", "f_any": "不限",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -141,6 +145,10 @@ TR = {
         "boxdef_fetch": "⬇ Fetch from ESE", "boxdef_fetch_tip": "Download the official box.def for this category from the ESE repo",
         "boxdef_fetch_none": "No matching ESE box.def for this folder (by name/index)",
         "boxdef_fetch_fail": "Fetch failed: {e}", "boxdef_fetch_ok": "Loaded official ESE box.def ({c})",
+        "c_bpm": "BPM", "c_easy": "Easy", "c_normal": "Normal", "c_hard": "Hard",
+        "c_oni": "Oni", "c_ura": "Ura",
+        "f_filter": "Filter", "f_bpm": "BPM range", "f_diff": "Difficulty", "f_level": "Level",
+        "diff_all": "All difficulties", "f_reset": "Reset filters", "f_any": "Any",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -175,6 +183,10 @@ TR = {
         "boxdef_fetch": "⬇ ESE から取得", "boxdef_fetch_tip": "ESE リポジトリからこの分類の公式 box.def を取得",
         "boxdef_fetch_none": "このフォルダに対応する ESE の box.def が見つかりません（名前/番号で照合）",
         "boxdef_fetch_fail": "取得に失敗: {e}", "boxdef_fetch_ok": "ESE 公式 box.def を読み込みました（{c}）",
+        "c_bpm": "BPM", "c_easy": "かんたん", "c_normal": "ふつう", "c_hard": "むずかしい",
+        "c_oni": "おに", "c_ura": "裏",
+        "f_filter": "絞り込み", "f_bpm": "BPM 範囲", "f_diff": "難易度", "f_level": "レベル",
+        "diff_all": "すべて", "f_reset": "リセット", "f_any": "指定なし",
     },
 }
 
@@ -230,12 +242,16 @@ def human_eta(sec):
 
 # ---------------------------------------------------------------- 歌曲清單 model
 class SongModel(QAbstractTableModel):
-    COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_files"]
+    COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_bpm",
+            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files"]
+    LEVEL_COLS = {5: "level_easy", 6: "level_normal", 7: "level_hard",
+                  8: "level_oni", 9: "level_ura"}
 
-    def __init__(self, tr, jp_map):
+    def __init__(self, tr, jp_map, meta_map=None):
         super().__init__()
         self.tr = tr
         self.jp_map = jp_map
+        self.meta_map = meta_map or {}
         self.songs = []
         self.checked = set()
 
@@ -279,12 +295,19 @@ class SongModel(QAbstractTableModel):
             if col == 3:
                 return CATEGORY_NAMES.get(song["category"], song["category"])
             if col == 4:
+                meta = self.meta_map.get(song["song_name"])
+                return (meta or {}).get("bpm", "") or ""
+            if col in self.LEVEL_COLS:
+                meta = self.meta_map.get(song["song_name"])
+                lv = (meta or {}).get(self.LEVEL_COLS[col])
+                return str(lv) if lv is not None else "−"
+            if col == 10:
                 return str(len(song["files"]))
         if role == Qt.ForegroundRole and col == 3:
             c = CATEGORY_COLORS.get(song["category"])
             if c:
                 return QColor(c)
-        if role == Qt.TextAlignmentRole and col == 4:
+        if role == Qt.TextAlignmentRole and (col == 4 or col in self.LEVEL_COLS or col == 10):
             return int(Qt.AlignCenter)
         return None
 
@@ -1063,9 +1086,11 @@ class MainWindow(QMainWindow):
         self.lang = detect_system_lang() if self.lang_pref == "auto" else self.lang_pref
         self.has_local = os.path.exists(LOCAL_DB_PATH)
         self.jp_map = self.load_jp_map()
+        self.meta_map = self.load_meta_map()
+        self.all_songs = []          # 最近一次搜尋的完整結果（篩選前）
         self.dl_thread = None
 
-        self.song_model = SongModel(self.tr, self.jp_map)
+        self.song_model = SongModel(self.tr, self.jp_map, self.meta_map)
         self.dl_model = DownloadModel(self.tr)
 
         self.build_ui()
@@ -1118,6 +1143,39 @@ class MainWindow(QMainWindow):
                         m.setdefault(title, ja)
             except Exception as e:
                 print("load_jp_map:", e)
+        return m
+
+    def load_meta_map(self):
+        """讀取 BPM / 五大難度等級，鍵同 jp_map（檔名 stem 優先、title 備援）。
+        舊版 ese_local.db 可能沒有難度欄位，故先檢查欄位存在與否再查詢。"""
+        m = {}
+        if not self.has_local:
+            return m
+        try:
+            conn = sqlite3.connect(LOCAL_DB_PATH)
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(local_songs)")}
+            lvl_cols = [c for c in ("level_easy", "level_normal", "level_hard",
+                                    "level_oni", "level_ura") if c in cols]
+            sel = ["title", "file_name", "bpm"] + lvl_cols
+            rows = conn.execute(f"SELECT {', '.join(sel)} FROM local_songs").fetchall()
+            conn.close()
+
+            def to_meta(row):
+                d = {"bpm": (row[2] or "").strip()}
+                for i, c in enumerate(lvl_cols):
+                    d[c] = row[3 + i]
+                return d
+
+            for row in rows:                       # 先放檔名（主鍵）
+                fn = row[1]
+                if fn:
+                    m.setdefault(os.path.splitext(fn)[0], to_meta(row))
+            for row in rows:                       # 再用 title 補洞（不覆蓋）
+                t = row[0]
+                if t:
+                    m.setdefault(t, to_meta(row))
+        except Exception as e:
+            print("load_meta_map:", e)
         return m
 
     # ---- UI
@@ -1175,6 +1233,39 @@ class MainWindow(QMainWindow):
         sr.addWidget(self.clear_btn)
         root.addLayout(sr)
 
+        # filter row：BPM 區間 + 難度等級篩選（依本地資料庫的 BPM/難度）
+        fr = QHBoxLayout()
+        fr.addWidget(QLabel("🎚 " + self.tr("f_filter") + ":"))
+        fr.addWidget(QLabel(self.tr("f_bpm")))
+        self.bpm_min = QSpinBox(); self.bpm_min.setRange(0, 999)
+        self.bpm_min.setSpecialValueText(self.tr("f_any"))   # 0 顯示為「不限」
+        self.bpm_max = QSpinBox(); self.bpm_max.setRange(0, 999)
+        self.bpm_max.setSpecialValueText(self.tr("f_any"))
+        fr.addWidget(self.bpm_min); fr.addWidget(QLabel("–")); fr.addWidget(self.bpm_max)
+        fr.addSpacing(16)
+        fr.addWidget(QLabel(self.tr("f_diff")))
+        self.diff_combo = QComboBox()
+        self.diff_combo.addItem(self.tr("diff_all"), None)
+        for key, col in (("c_easy", "level_easy"), ("c_normal", "level_normal"),
+                         ("c_hard", "level_hard"), ("c_oni", "level_oni"),
+                         ("c_ura", "level_ura")):
+            self.diff_combo.addItem(self.tr(key), col)
+        fr.addWidget(self.diff_combo)
+        fr.addWidget(QLabel(self.tr("f_level")))
+        self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
+        self.lv_min.setSpecialValueText(self.tr("f_any"))
+        self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
+        self.lv_max.setSpecialValueText(self.tr("f_any"))
+        fr.addWidget(self.lv_min); fr.addWidget(QLabel("–")); fr.addWidget(self.lv_max)
+        self.reset_filter_btn = QPushButton(self.tr("f_reset"))
+        self.reset_filter_btn.clicked.connect(self.reset_filters)
+        fr.addWidget(self.reset_filter_btn)
+        fr.addStretch()
+        for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
+            w.valueChanged.connect(lambda _=None: self.apply_filters())
+        self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
+        root.addLayout(fr)
+
         # splitter: song table (top) + monitor (bottom)
         splitter = QSplitter(Qt.Vertical)
 
@@ -1192,11 +1283,11 @@ class MainWindow(QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.doubleClicked.connect(self.toggle_check)
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.Stretch)
-        hh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ✓
+        hh.setSectionResizeMode(1, QHeaderView.Stretch)            # 歌名
+        hh.setSectionResizeMode(2, QHeaderView.Stretch)            # 日文
+        for c in range(3, len(SongModel.COLS)):                    # 分類/BPM/難度×5/檔案
+            hh.setSectionResizeMode(c, QHeaderView.ResizeToContents)
         sb.addWidget(self.table)
 
         # selection row
@@ -1339,6 +1430,7 @@ class MainWindow(QMainWindow):
     def clear_search(self):
         self.search_edit.clear()
         self.cat_combo.setCurrentIndex(0)
+        self.all_songs = []
         self.song_model.set_songs([])
         self.count_label.setText(self.tr("total", n=0))
         self.update_sel_count()
@@ -1353,9 +1445,64 @@ class MainWindow(QMainWindow):
         self._search.start()
 
     def on_search_done(self, songs):
+        self.all_songs = songs
+        self.search_btn.setEnabled(True)
+        self.apply_filters()
+
+    @staticmethod
+    def _bpm_val(s):
+        """從 BPM 字串取出數值（取第一個數字；無則 None）。"""
+        if not s:
+            return None
+        m = re.search(r"\d+(?:\.\d+)?", str(s))
+        return float(m.group()) if m else None
+
+    def reset_filters(self):
+        for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
+            w.blockSignals(True); w.setValue(0); w.blockSignals(False)
+        self.diff_combo.blockSignals(True)
+        self.diff_combo.setCurrentIndex(0)
+        self.diff_combo.blockSignals(False)
+        self.apply_filters()
+
+    def apply_filters(self):
+        bmin, bmax = self.bpm_min.value(), self.bpm_max.value()
+        lmin, lmax = self.lv_min.value(), self.lv_max.value()
+        diff_col = self.diff_combo.currentData()
+        bpm_active = bmin > 0 or bmax > 0
+        lvl_active = lmin > 0 or lmax > 0 or diff_col is not None
+
+        if not bpm_active and not lvl_active:
+            songs = self.all_songs                       # 無篩選：全部顯示（含無中繼資料者）
+        else:
+            diff_cols = [diff_col] if diff_col else list(SongModel.LEVEL_COLS.values())
+            songs = []
+            for s in self.all_songs:
+                meta = self.meta_map.get(s["song_name"])
+                if not meta:
+                    continue                             # 篩選啟用但無資料 → 排除
+                if bpm_active:
+                    bpm = self._bpm_val(meta.get("bpm"))
+                    if bpm is None:
+                        continue
+                    if bmin and bpm < bmin:
+                        continue
+                    if bmax and bpm > bmax:
+                        continue
+                if lvl_active and (lmin or lmax):
+                    lvls = [meta.get(c) for c in diff_cols]
+                    lvls = [v for v in lvls if v is not None]
+                    if not any((not lmin or v >= lmin) and (not lmax or v <= lmax)
+                               for v in lvls):
+                        continue
+                elif diff_col is not None:
+                    # 只選了難度、沒設等級 → 要求該難度存在
+                    if meta.get(diff_col) is None:
+                        continue
+                songs.append(s)
+
         self.song_model.set_songs(songs)
         self.count_label.setText(self.tr("total", n=len(songs)))
-        self.search_btn.setEnabled(True)
         self.update_sel_count()
 
     def toggle_check(self, index):
@@ -1559,11 +1706,14 @@ class MainWindow(QMainWindow):
         self.load_categories()
         self.has_local = os.path.exists(LOCAL_DB_PATH)
         self.jp_map = self.load_jp_map()
+        self.meta_map = self.load_meta_map()
         self.song_model.jp_map = self.jp_map
+        self.song_model.meta_map = self.meta_map
         if self.song_model.songs:
             self.song_model.dataChanged.emit(
                 self.song_model.index(0, 2),
-                self.song_model.index(self.song_model.rowCount() - 1, 2),
+                self.song_model.index(self.song_model.rowCount() - 1,
+                                      self.song_model.columnCount() - 1),
                 [Qt.DisplayRole])
         QMessageBox.information(self, self.tr("db_update"), self.tr("db_done"))
 
@@ -1614,7 +1764,9 @@ class MainWindow(QMainWindow):
         if ok:
             self.has_local = os.path.exists(LOCAL_DB_PATH)
             self.jp_map = self.load_jp_map()
+            self.meta_map = self.load_meta_map()
             self.song_model.jp_map = self.jp_map
+            self.song_model.meta_map = self.meta_map
             self.load_categories()
             QMessageBox.information(self, "資料庫更新", "✓ 更新成功")
         else:

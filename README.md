@@ -9,6 +9,7 @@ from the **ESE (Every Song Ever)** project.
 
 - Fast song browser — thousands of songs in a single list, no pagination
 - Search by name (Japanese supported) and by category
+- **Filter by BPM range and difficulty level** (Easy / Normal / Hard / Oni / Ura) — shown as columns and parsed from each chart
 - Batch download with **pause / resume / stop**
 - Live monitor: overall progress + speed/ETA, per-file status, log, one-click retry of failed files
 - One-click **database update**:

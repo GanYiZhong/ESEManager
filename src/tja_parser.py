@@ -9,6 +9,17 @@ from pathlib import Path
 from typing import Dict, Optional
 
 
+# COURSE 標記 → 五大難度鍵（數字或英文/日文皆可）
+COURSE_MAP = {
+    "0": "easy", "easy": "easy", "kantan": "easy",
+    "1": "normal", "normal": "normal", "futsuu": "normal", "futsu": "normal",
+    "2": "hard", "hard": "hard", "muzukashii": "hard",
+    "3": "oni", "oni": "oni",
+    "4": "ura", "edit": "ura", "ura": "ura", "ura oni": "ura", "uraoni": "ura",
+}
+DIFFICULTIES = ["easy", "normal", "hard", "oni", "ura"]
+
+
 class TJAParser:
     """TJA 檔案解析器"""
 
@@ -58,6 +69,35 @@ class TJAParser:
                 break
         return metadata
 
+    def parse_courses(self, content: str) -> Dict[str, Optional[int]]:
+        """掃描整份 TJA，取出五大難度（easy/normal/hard/oni/ura）的等級數。
+
+        TJA 以 COURSE: 切分每個難度區塊，各區塊內的 LEVEL: 即該難度等級。
+        未指定 COURSE 時，慣例預設為 Oni。沒有的難度留 None。
+        每個難度只取第一個出現的等級（避免連彈/分支重複覆蓋）。
+        """
+        levels: Dict[str, Optional[int]] = {d: None for d in DIFFICULTIES}
+        current = "oni"      # 未標 COURSE 的單譜面慣例為鬼
+        for raw in content.split("\n"):
+            line = raw.strip()
+            if not line or line.startswith("//"):
+                continue
+            up = line.upper()
+            if up.startswith("COURSE:"):
+                val = line.split(":", 1)[1].strip().lower()
+                # 未知難度（如 tower/dan）→ None，後續 LEVEL 將被忽略
+                current = COURSE_MAP.get(val)
+                continue
+            if up.startswith("LEVEL:"):
+                if current is None or levels.get(current) is not None:
+                    continue
+                val = line.split(":", 1)[1].strip()
+                try:
+                    levels[current] = int(float(val))
+                except ValueError:
+                    pass
+        return levels
+
     def parse_file(self, file_path: str) -> Optional[Dict[str, str]]:
         """
         解析單個 TJA 檔案
@@ -85,6 +125,8 @@ class TJAParser:
                 print(f"✗ 無法解碼檔案: {file_path}")
                 return None
             metadata.update(self.parse_text(content))
+            for diff, lv in self.parse_courses(content).items():
+                metadata[f"level_{diff}"] = lv
             return metadata
 
         except Exception as e:

@@ -47,12 +47,23 @@ class LocalTJADatabase:
                 category TEXT,
                 bpm TEXT,
                 wave_file TEXT,
+                level_easy INTEGER,
+                level_normal INTEGER,
+                level_hard INTEGER,
+                level_oni INTEGER,
+                level_ura INTEGER,
                 file_path TEXT NOT NULL UNIQUE,
                 file_name TEXT,
                 directory TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # 舊資料庫升級：補上難度欄位（已存在則略過）
+        existing_cols = {r[1] for r in cursor.execute("PRAGMA table_info(local_songs)")}
+        for col in ("level_easy", "level_normal", "level_hard", "level_oni", "level_ura"):
+            if col not in existing_cols:
+                cursor.execute(f"ALTER TABLE local_songs ADD COLUMN {col} INTEGER")
 
         # 建立索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_local_title ON local_songs(title)")
@@ -84,7 +95,10 @@ class LocalTJADatabase:
             cursor.execute("""
                 UPDATE local_songs
                 SET title = ?, title_ja = ?, subtitle = ?, subtitle_ja = ?,
-                    category = ?, bpm = ?, wave_file = ?, file_name = ?, directory = ?
+                    category = ?, bpm = ?, wave_file = ?,
+                    level_easy = ?, level_normal = ?, level_hard = ?,
+                    level_oni = ?, level_ura = ?,
+                    file_name = ?, directory = ?
                 WHERE file_path = ?
             """, (
                 metadata.get('title'),
@@ -94,6 +108,11 @@ class LocalTJADatabase:
                 metadata.get('category'),
                 metadata.get('bpm'),
                 metadata.get('wave'),
+                metadata.get('level_easy'),
+                metadata.get('level_normal'),
+                metadata.get('level_hard'),
+                metadata.get('level_oni'),
+                metadata.get('level_ura'),
                 metadata.get('file_name'),
                 metadata.get('directory'),
                 file_path
@@ -105,8 +124,9 @@ class LocalTJADatabase:
             cursor.execute("""
                 INSERT INTO local_songs
                 (title, title_ja, subtitle, subtitle_ja, category, bpm, wave_file,
+                 level_easy, level_normal, level_hard, level_oni, level_ura,
                  file_path, file_name, directory)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 metadata.get('title'),
                 metadata.get('titleja'),
@@ -115,6 +135,11 @@ class LocalTJADatabase:
                 metadata.get('category'),
                 metadata.get('bpm'),
                 metadata.get('wave'),
+                metadata.get('level_easy'),
+                metadata.get('level_normal'),
+                metadata.get('level_hard'),
+                metadata.get('level_oni'),
+                metadata.get('level_ura'),
                 file_path,
                 metadata.get('file_name'),
                 metadata.get('directory')
@@ -244,9 +269,13 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
     db = LocalTJADatabase(db_path=local_db)
     db.init_database()
 
-    # 增量：資料庫裡已有日文標題的 .tja 就略過，只抓還沒有的（新歌）
+    # 增量：已解析過難度的 .tja 就略過，只抓還沒處理的（新歌）。
+    # 以難度欄位為準（任一難度有值即代表處理過），這樣舊資料庫升級後會自動
+    # 重抓一次補上難度/BPM，之後維持增量。
     existing = {fp for (fp,) in db.conn.execute(
-        "SELECT file_path FROM local_songs WHERE title_ja IS NOT NULL AND title_ja != ''")}
+        "SELECT file_path FROM local_songs WHERE "
+        "level_easy IS NOT NULL OR level_normal IS NOT NULL OR level_hard IS NOT NULL "
+        "OR level_oni IS NOT NULL OR level_ura IS NOT NULL")}
     todo = [r for r in rows if r[0] not in existing]
     print(f"資料庫已有日文標題 {len(existing)} 首；本次需抓取 {len(todo)} 首（總 {total}）")
     if not todo:
@@ -264,6 +293,8 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
             if text is None:
                 return None
             meta = parser.parse_text(text)
+            for diff, lv in parser.parse_courses(text).items():
+                meta[f"level_{diff}"] = lv
             meta["file_path"] = file_path
             meta["file_name"] = filename
             meta["directory"] = os.path.dirname(file_path)
