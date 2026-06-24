@@ -1120,15 +1120,16 @@ class DanGenThread(QThread):
     log = Signal(str)
     done = Signal(bool, str)         # ok, info
 
-    def __init__(self, url, out_dir, songs_folder):
+    def __init__(self, url, out_dir, songs_folder, local_db=""):
         super().__init__()
         self.url, self.out_dir, self.songs_folder = url, out_dir, songs_folder
+        self.local_db = local_db
 
     def run(self):
         try:
             n = dan_tools.generate_dan_from_wiki(
                 self.url, self.out_dir, songs_folder=self.songs_folder,
-                log=self.log.emit)
+                log=self.log.emit, local_db=self.local_db)
             self.done.emit(True, str(n))
         except Exception as e:
             self.done.emit(False, str(e))
@@ -1269,7 +1270,8 @@ class DanToolsDialog(QDialog):
             return
         self._busy(True)
         self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
-        self._thread = DanGenThread(url, out, self.gen_songs.text().strip())
+        local_db = os.path.abspath(LOCAL_DB_PATH) if os.path.isfile(LOCAL_DB_PATH) else ""
+        self._thread = DanGenThread(url, out, self.gen_songs.text().strip(), local_db)
         self._thread.log.connect(self.log_view.appendPlainText)
         self._thread.done.connect(self._on_done)
         self._thread.start()

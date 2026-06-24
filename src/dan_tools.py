@@ -10,6 +10,7 @@
 原作：bluetaiko — https://github.com/bluetaiko/SongConvertor
 """
 
+import difflib
 import json
 import os
 import re
@@ -213,6 +214,125 @@ def find_directory_fuzzy(dirs, target_name):
                                   and len(dn) < len(os.path.basename(best))):
             best_score, best = score, d
     return best if best_score > -(2 ** 31) else None
+
+
+# ============================ 日文標題橋接（wiki 日文 → ese_local.db 檔名 → 資料夾）
+def build_dir_index(songs_folder):
+    """預先把 Songs 下所有資料夾的標準化名稱與變體算好，加速比對。"""
+    dirs = [songs_folder]
+    for root, subdirs, _ in os.walk(songs_folder):
+        for d in subdirs:
+            dirs.append(os.path.join(root, d))
+    index = []
+    for d in dirs:
+        norm = normalize_title(os.path.basename(d))
+        if not norm:
+            continue
+        index.append((d, norm, set(expand_title_match_keys(norm))))
+    return index
+
+
+def build_jp_index(local_db):
+    """從 ese_local.db 建『日文標題 → 檔名(羅馬拼音)』對照（給 wiki 日文標題用）。"""
+    if not local_db or not os.path.isfile(local_db):
+        return None
+    try:
+        import sqlite3
+        conn = sqlite3.connect(local_db)
+        rows = conn.execute(
+            "SELECT title, file_name, title_ja FROM local_songs "
+            "WHERE title_ja IS NOT NULL AND title_ja != ''").fetchall()
+        conn.close()
+    except Exception:
+        return None
+    exact = {}
+    for title, file_name, ja in rows:
+        stem = os.path.splitext(file_name)[0] if file_name else (title or "")
+        nja = normalize_title(ja)
+        if not nja:
+            continue
+        # 候選：檔名(資料夾名常用) 優先，再加上 title 與原始日文
+        cands = [c for c in (stem, title, ja) if c]
+        exact.setdefault(nja, cands)
+    return {"exact": exact, "keys": list(exact.keys())} if exact else None
+
+
+def resolve_jp_candidates(jp_index, jp_title):
+    """用日文標題在 ese_local.db 找最像的，回傳對應的羅馬拼音檔名等候選字串。"""
+    if not jp_index:
+        return []
+    nt = normalize_title(jp_title)
+    if not nt:
+        return []
+    exact = jp_index["exact"]
+    if nt in exact:                       # 完全一致
+        return list(exact[nt])
+    for v in expand_title_match_keys(nt):  # 變體一致
+        if v in exact:
+            return list(exact[v])
+    # 最像的（difflib 相似度，門檻 0.6）
+    m = difflib.get_close_matches(nt, jp_index["keys"], n=1, cutoff=0.6)
+    if m:
+        return list(exact[m[0]])
+    return []
+
+
+def _score_dir(dir_index, query):
+    """以結構化規則（完全/前/後/部分一致）在 dir_index 中找最佳資料夾。"""
+    nt = normalize_title(query)
+    if not nt:
+        return None, -(2 ** 31)
+    tv = list(expand_title_match_keys(nt))
+    best, best_score = None, -(2 ** 31)
+    for d, _norm, dvs in dir_index:
+        if any(t == dv for t in tv for dv in dvs):
+            score = 1000
+        elif any(dv.startswith(t) for t in tv for dv in dvs):
+            score = 500
+        elif any(dv.endswith(t) for t in tv for dv in dvs):
+            score = 250
+        elif any(t in dv for t in tv for dv in dvs):
+            score = 100
+        else:
+            continue
+        if score > best_score or (score == best_score and best is not None
+                                  and len(os.path.basename(d)) < len(os.path.basename(best))):
+            best_score, best = score, d
+    return best, best_score
+
+
+def find_song_dir(dir_index, jp_index, jp_title):
+    """綜合比對：先用日文標題經 ese_local.db 轉羅馬拼音檔名找；找不到再用日文本身，
+    最後用 difflib 取『最像的』資料夾。"""
+    if not dir_index:
+        return None
+    candidates = resolve_jp_candidates(jp_index, jp_title)
+    # 原始日文標題也當候選（資料夾本來就用日文命名時）
+    seen, ordered = set(), []
+    for c in candidates + [jp_title]:
+        c = (c or "").replace("(裏譜面)", "").replace("(裏)", "").strip()
+        if c and c not in seen:
+            seen.add(c)
+            ordered.append(c)
+
+    # 1) 結構化比對（完全/前後/部分一致）
+    best, best_score = None, 0
+    for cand in ordered:
+        d, score = _score_dir(dir_index, cand)
+        if score > best_score:
+            best, best_score = d, score
+    if best is not None:
+        return best
+
+    # 2) difflib「最像的」(門檻 0.55)
+    best, best_ratio = None, 0.0
+    norm_cands = [normalize_title(c) for c in ordered if normalize_title(c)]
+    for d, norm, _dvs in dir_index:
+        for nc in norm_cands:
+            r = difflib.SequenceMatcher(None, nc, norm).ratio()
+            if r > best_ratio:
+                best, best_ratio = d, r
+    return best if best_ratio >= 0.55 else None
 
 
 # =========================================================== 共用：tja 讀檔/解碼
@@ -705,8 +825,12 @@ def _fetch_html(source, timeout=30):
 
 
 def generate_dan_from_wiki(input_source, output_dir, songs_folder="", filter_text="",
-                           log=None, dan_index=None):
-    """從太鼓 wiki 段位道場頁面產出段位檔。對應 DanGeneratorCore.GenerateAsync。"""
+                           log=None, dan_index=None, local_db=""):
+    """從太鼓 wiki 段位道場頁面產出段位檔。對應 DanGeneratorCore.GenerateAsync。
+
+    local_db：ese_local.db 路徑。提供時會用其中的『日文標題→檔名』對照，把 wiki
+    的日文曲名轉成羅馬拼音檔名再去 Songs 資料夾比對（命中率大幅提升）。
+    """
     def emit(msg):
         if log:
             log(msg)
@@ -956,6 +1080,13 @@ def generate_dan_from_wiki(input_source, output_dir, songs_folder="", filter_tex
     if current_set:
         all_sets.append((current_version, current_set))
 
+    # 預建索引：Songs 資料夾名稱 + ese_local.db 的日文標題對照（只建一次）
+    dir_index = build_dir_index(songs_folder) if songs_folder and os.path.isdir(songs_folder) else None
+    jp_index = build_jp_index(local_db)
+    if songs_folder:
+        emit(f"Songs 資料夾: {len(dir_index) if dir_index else 0} 個資料夾"
+             + (f"／日文標題對照 {len(jp_index['keys'])} 筆" if jp_index else "（無 ese_local.db 日文對照）"))
+
     # 輸出每個 set
     for set_idx, (version_name, dan_set) in enumerate(all_sets):
         sorted_set = dan_set if is_gaiden else sorted(dan_set, key=lambda d: d[2])
@@ -997,17 +1128,13 @@ def generate_dan_from_wiki(input_source, output_dir, songs_folder="", filter_tex
                     shutil.copy2(plate_src, os.path.join(rank_folder, "Plate.png"))
                     dan["danPlatePath"] = "Plate.png"
 
-            # 從 Songs 資料夾模糊比對複製曲目
-            if songs_folder and os.path.isdir(songs_folder):
-                all_dirs = [songs_folder]
-                for root, dirs, _ in os.walk(songs_folder):
-                    for d in dirs:
-                        all_dirs.append(os.path.join(root, d))
+            # 從 Songs 資料夾比對複製曲目（用日文標題經 ese_local.db 轉檔名再比對）
+            if dir_index:
                 songs_keep, remove_idx = [], []
                 for s_i, s in enumerate(dan["danSongs"]):
                     raw = os.path.splitext(s["path"])[0]
                     search = raw.replace("(裏譜面)", "").replace("(裏)", "").strip()
-                    found = find_directory_fuzzy(all_dirs, search)
+                    found = find_song_dir(dir_index, jp_index, search)
                     if found:
                         for fn in os.listdir(found):
                             fp = os.path.join(found, fn)
