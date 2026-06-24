@@ -14,6 +14,9 @@
 - 一鍵**更新資料庫**：
   - 歌曲清單用 *blobless* git clone 抓取（只取檔案清單、不下載音檔）
   - 日文標題直接解析每個譜面的 `TITLEJA` 欄位（增量更新，已存在的會略過）
+- **段位工具**（🥋）：
+  - **段位生成** — 輸入太鼓 Wiki 段位道場頁面網址，依段位名稱與合格條件，生成 TaikøNauts 等可用的段位檔（`dan.def` + 各段位 `Dan.json`）
+  - **段位變換** — 把 OpenTaiko 等的 tja 段位（以 `#NEXTSONG` 分隔多曲）變換成 TaikøNauts 等可用的段位檔
 - 未安裝 Git 時可自動下載可攜版 Git
 - 介面語言自動偵測（English／繁體中文／日本語）
 
@@ -61,6 +64,11 @@ python src/build_local_db.py --remote        # 日文標題 -> ese_local.db
 src/         GUI 程式、下載器、爬蟲
 packaging/   PyInstaller spec
 ```
+
+## 致謝
+
+- **段位生成**與**段位變換**功能移植自
+  [bluetaiko/SongConvertor](https://github.com/bluetaiko/SongConvertor)（MIT License），特此感謝原作者。
 
 ## 資料來源
 

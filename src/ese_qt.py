@@ -43,6 +43,7 @@ import re
 # 確保能 import 同目錄的 download_songs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from download_songs import SongDownloader  # noqa: E402
+import dan_tools  # noqa: E402  段位生成/變換（移植自 bluetaiko/SongConvertor）
 
 # TOML
 try:
@@ -111,6 +112,19 @@ TR = {
         "c_oni": "魔王", "c_ura": "裏",
         "f_filter": "篩選", "f_bpm": "BPM 區間", "f_diff": "難度", "f_level": "等級",
         "diff_all": "全部難度", "f_reset": "重設篩選", "f_any": "不限",
+        "dan_btn": "🥋 段位工具", "dan_title": "段位工具（Dan）",
+        "dan_tab_gen": "段位生成（Wiki）", "dan_tab_conv": "段位變換（tja）",
+        "dan_gen_url": "太鼓 Wiki 段位頁面 URL", "dan_out": "輸出資料夾",
+        "dan_songs": "Songs 資料夾", "dan_songs_opt": "Songs 資料夾（可省略）",
+        "dan_gen_run": "段位生成", "dan_conv_tja": "要變換的 tja",
+        "dan_conv_run": "變換執行", "dan_browse": "瀏覽",
+        "dan_gen_hint": "輸入太鼓 Wiki 的段位道場頁面網址，依段位名稱與合格條件\n生成 TaikøNauts 等可用的段位檔（dan.def + 各段位 Dan.json）。",
+        "dan_conv_hint": "把 OpenTaiko 等的 tja 段位（以 #NEXTSONG 分隔多曲）\n變換成 TaikøNauts 等可用的段位檔。",
+        "dan_need_url": "請輸入段位頁面 URL", "dan_need_out": "請選擇輸出資料夾",
+        "dan_need_tja": "請選擇要變換的 tja 檔", "dan_running": "處理中…",
+        "dan_done": "完成！", "dan_fail": "失敗：{e}",
+        "credits_btn": "💗 致謝", "credits_title": "致謝 / Credits",
+        "credits_body": "段位生成（DanGenerator）與段位變換（DanConvertor）功能\n移植自 bluetaiko 的 SongConvertor 專案，特此感謝原作者。\n\n原專案（MIT License）：\nhttps://github.com/bluetaiko/SongConvertor",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -149,6 +163,19 @@ TR = {
         "c_oni": "Oni", "c_ura": "Ura",
         "f_filter": "Filter", "f_bpm": "BPM range", "f_diff": "Difficulty", "f_level": "Level",
         "diff_all": "All difficulties", "f_reset": "Reset filters", "f_any": "Any",
+        "dan_btn": "🥋 Dan Tools", "dan_title": "Dan Tools",
+        "dan_tab_gen": "Generate (Wiki)", "dan_tab_conv": "Convert (tja)",
+        "dan_gen_url": "Taiko Wiki Dan page URL", "dan_out": "Output folder",
+        "dan_songs": "Songs folder", "dan_songs_opt": "Songs folder (optional)",
+        "dan_gen_run": "Generate", "dan_conv_tja": "tja to convert",
+        "dan_conv_run": "Convert", "dan_browse": "Browse",
+        "dan_gen_hint": "Enter a Taiko Wiki Dan-dojo page URL to generate Dan files\nfor TaikøNauts etc. (dan.def + per-rank Dan.json) from the\nrank names and clear conditions.",
+        "dan_conv_hint": "Convert an OpenTaiko-style Dan tja (multiple songs split by\n#NEXTSONG) into TaikøNauts-compatible Dan files.",
+        "dan_need_url": "Please enter the Dan page URL", "dan_need_out": "Please choose an output folder",
+        "dan_need_tja": "Please choose a tja file", "dan_running": "Working…",
+        "dan_done": "Done!", "dan_fail": "Failed: {e}",
+        "credits_btn": "💗 Credits", "credits_title": "Credits",
+        "credits_body": "The Dan Generator and Dan Convertor features are ported from\nbluetaiko's SongConvertor project. Many thanks to the author.\n\nOriginal project (MIT License):\nhttps://github.com/bluetaiko/SongConvertor",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -187,6 +214,19 @@ TR = {
         "c_oni": "おに", "c_ura": "裏",
         "f_filter": "絞り込み", "f_bpm": "BPM 範囲", "f_diff": "難易度", "f_level": "レベル",
         "diff_all": "すべて", "f_reset": "リセット", "f_any": "指定なし",
+        "dan_btn": "🥋 段位ツール", "dan_title": "段位ツール（Dan）",
+        "dan_tab_gen": "段位生成（Wiki）", "dan_tab_conv": "段位変換（tja）",
+        "dan_gen_url": "太鼓 Wiki 段位ページの URL", "dan_out": "出力フォルダ",
+        "dan_songs": "Songs フォルダ", "dan_songs_opt": "Songs フォルダ（省略可）",
+        "dan_gen_run": "段位生成", "dan_conv_tja": "変換する tja",
+        "dan_conv_run": "変換実行", "dan_browse": "参照",
+        "dan_gen_hint": "太鼓 Wiki の段位道場ページの URL を入力し、段位の名前と\n合格条件から TaikøNauts 等で使える段位ファイル（dan.def +\n各段位の Dan.json）を生成します。",
+        "dan_conv_hint": "OpenTaiko 等の tja 段位（#NEXTSONG で複数曲に分割）を\nTaikøNauts 等で使える段位ファイルに変換します。",
+        "dan_need_url": "段位ページの URL を入力してください", "dan_need_out": "出力フォルダを選択してください",
+        "dan_need_tja": "変換する tja を選択してください", "dan_running": "処理中…",
+        "dan_done": "完了！", "dan_fail": "失敗: {e}",
+        "credits_btn": "💗 クレジット", "credits_title": "クレジット / Credits",
+        "credits_body": "段位生成（DanGenerator）と段位変換（DanConvertor）機能は\nbluetaiko 氏の SongConvertor を移植したものです。作者に感謝します。\n\n元プロジェクト（MIT License）:\nhttps://github.com/bluetaiko/SongConvertor",
     },
 }
 
@@ -1075,6 +1115,191 @@ class BoxDefDialog(QDialog):
                                self.tr("boxdef_batch_done", c=created, s=skipped))
 
 
+# ---------------------------------------------------------- 段位工具執行緒/對話框
+class DanGenThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str)         # ok, info
+
+    def __init__(self, url, out_dir, songs_folder):
+        super().__init__()
+        self.url, self.out_dir, self.songs_folder = url, out_dir, songs_folder
+
+    def run(self):
+        try:
+            n = dan_tools.generate_dan_from_wiki(
+                self.url, self.out_dir, songs_folder=self.songs_folder,
+                log=self.log.emit)
+            self.done.emit(True, str(n))
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
+class DanConvThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str)
+
+    def __init__(self, tja, out_dir, songs_folder):
+        super().__init__()
+        self.tja, self.out_dir, self.songs_folder = tja, out_dir, songs_folder
+
+    def run(self):
+        try:
+            dan_tools.convert_dan_tja(
+                self.tja, self.out_dir, simu_folder=self.songs_folder,
+                log=self.log.emit)
+            self.done.emit(True, "")
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
+class DanToolsDialog(QDialog):
+    """段位生成（Wiki）+ 段位變換（tja）。移植自 bluetaiko/SongConvertor。"""
+
+    def __init__(self, parent, tr, start_dir):
+        super().__init__(parent)
+        self.tr = tr
+        self.start_dir = start_dir
+        self._thread = None
+        self.setWindowTitle(tr("dan_title"))
+        self.resize(720, 560)
+
+        root = QVBoxLayout(self)
+        tabs = QTabWidget()
+        tabs.addTab(self._build_gen_tab(), tr("dan_tab_gen"))
+        tabs.addTab(self._build_conv_tab(), tr("dan_tab_conv"))
+        root.addWidget(tabs)
+
+        self.log_view = QPlainTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMaximumBlockCount(5000)
+        root.addWidget(self.log_view, 1)
+
+        credit = QLabel(
+            'Dan tools ported from '
+            '<a href="https://github.com/bluetaiko/SongConvertor">bluetaiko/SongConvertor</a>'
+            ' (MIT) — thanks!')
+        credit.setOpenExternalLinks(True)
+        credit.setStyleSheet("color:#888;")
+        root.addWidget(credit)
+
+    def _pick_dir(self, edit):
+        d = QFileDialog.getExistingDirectory(self, self.tr("dan_browse"),
+                                             edit.text() or self.start_dir)
+        if d:
+            edit.setText(d)
+
+    def _pick_file(self, edit, flt):
+        f, _ = QFileDialog.getOpenFileName(self, self.tr("dan_browse"),
+                                           edit.text() or self.start_dir, flt)
+        if f:
+            edit.setText(f)
+
+    def _build_gen_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(self.tr("dan_gen_hint"))
+        hint.setStyleSheet("color:#aaa;")
+        v.addWidget(hint)
+        form = QFormLayout()
+        self.gen_url = QLineEdit()
+        self.gen_url.setPlaceholderText(
+            "https://wikiwiki.jp/taiko-fumen/%E6%AE%B5%E4%BD%8D%E9%81%93%E5%A0%B4")
+        form.addRow(self.tr("dan_gen_url"), self.gen_url)
+        self.gen_out = QLineEdit()
+        form.addRow(self.tr("dan_out"), self._with_browse(self.gen_out, lambda: self._pick_dir(self.gen_out)))
+        self.gen_songs = QLineEdit()
+        form.addRow(self.tr("dan_songs"), self._with_browse(self.gen_songs, lambda: self._pick_dir(self.gen_songs)))
+        v.addLayout(form)
+        self.gen_btn = QPushButton(self.tr("dan_gen_run"))
+        self.gen_btn.setStyleSheet(
+            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
+            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.gen_btn.clicked.connect(self.run_gen)
+        v.addWidget(self.gen_btn)
+        v.addStretch()
+        return w
+
+    def _build_conv_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(self.tr("dan_conv_hint"))
+        hint.setStyleSheet("color:#aaa;")
+        v.addWidget(hint)
+        form = QFormLayout()
+        self.conv_tja = QLineEdit()
+        form.addRow(self.tr("dan_conv_tja"),
+                    self._with_browse(self.conv_tja,
+                                      lambda: self._pick_file(self.conv_tja, "TJA (*.tja)")))
+        self.conv_out = QLineEdit()
+        form.addRow(self.tr("dan_out"), self._with_browse(self.conv_out, lambda: self._pick_dir(self.conv_out)))
+        self.conv_songs = QLineEdit()
+        form.addRow(self.tr("dan_songs_opt"), self._with_browse(self.conv_songs, lambda: self._pick_dir(self.conv_songs)))
+        v.addLayout(form)
+        self.conv_btn = QPushButton(self.tr("dan_conv_run"))
+        self.conv_btn.setStyleSheet(
+            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
+            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.conv_btn.clicked.connect(self.run_conv)
+        v.addWidget(self.conv_btn)
+        v.addStretch()
+        return w
+
+    def _with_browse(self, edit, cb):
+        box = QWidget()
+        h = QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(edit, 1)
+        b = QPushButton(self.tr("dan_browse"))
+        b.clicked.connect(cb)
+        h.addWidget(b)
+        return box
+
+    def _busy(self, on):
+        self.gen_btn.setEnabled(not on)
+        self.conv_btn.setEnabled(not on)
+
+    def run_gen(self):
+        url = self.gen_url.text().strip()
+        out = self.gen_out.text().strip()
+        if not url:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_url"))
+            return
+        if not out:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_out"))
+            return
+        self._busy(True)
+        self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
+        self._thread = DanGenThread(url, out, self.gen_songs.text().strip())
+        self._thread.log.connect(self.log_view.appendPlainText)
+        self._thread.done.connect(self._on_done)
+        self._thread.start()
+
+    def run_conv(self):
+        tja = self.conv_tja.text().strip()
+        out = self.conv_out.text().strip()
+        if not tja:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_tja"))
+            return
+        if not out:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_out"))
+            return
+        self._busy(True)
+        self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
+        self._thread = DanConvThread(tja, out, self.conv_songs.text().strip())
+        self._thread.log.connect(self.log_view.appendPlainText)
+        self._thread.done.connect(self._on_done)
+        self._thread.start()
+
+    def _on_done(self, ok, info):
+        self._busy(False)
+        if ok:
+            self.log_view.appendPlainText("✓ " + self.tr("dan_done"))
+            QMessageBox.information(self, self.tr("dan_title"), self.tr("dan_done"))
+        else:
+            self.log_view.appendPlainText("✗ " + info)
+            QMessageBox.critical(self, self.tr("dan_title"), self.tr("dan_fail", e=info))
+
+
 # ---------------------------------------------------------------- 主視窗
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -1207,14 +1432,20 @@ class MainWindow(QMainWindow):
         self.db_update_btn.clicked.connect(self.update_database)
         self.boxdef_btn = QPushButton(self.tr("boxdef_btn"))
         self.boxdef_btn.clicked.connect(self.open_boxdef)
+        self.dan_btn = QPushButton(self.tr("dan_btn"))
+        self.dan_btn.clicked.connect(self.open_dan_tools)
         self.missing_btn = QPushButton(self.tr("check_missing"))
         self.missing_btn.clicked.connect(self.check_missing)
         self.official_btn = QPushButton(self.tr("official"))
         self.official_btn.clicked.connect(lambda: webbrowser.open("https://taiko.ac"))
+        self.credits_btn = QPushButton(self.tr("credits_btn"))
+        self.credits_btn.clicked.connect(self.open_credits)
         top.addWidget(self.db_update_btn)
         top.addWidget(self.boxdef_btn)
+        top.addWidget(self.dan_btn)
         top.addWidget(self.missing_btn)
         top.addWidget(self.official_btn)
+        top.addWidget(self.credits_btn)
         root.addLayout(top)
 
         # search row
@@ -1671,6 +1902,17 @@ class MainWindow(QMainWindow):
         start = self.dir_edit.text() if os.path.isdir(self.dir_edit.text()) else os.getcwd()
         BoxDefDialog(self, start, self.tr).exec()
 
+    def open_dan_tools(self):
+        start = self.dir_edit.text() if os.path.isdir(self.dir_edit.text()) else os.getcwd()
+        DanToolsDialog(self, self.tr, start).exec()
+
+    def open_credits(self):
+        box = QMessageBox(self)
+        box.setWindowTitle(self.tr("credits_title"))
+        box.setText(self.tr("credits_body"))
+        box.setIcon(QMessageBox.Information)
+        box.exec()
+
     # ---- 一鍵更新資料庫（歌曲清單 + 日文標題；整合自 update_databases.bat）
     def update_database(self):
         if getattr(self, "_db_thread", None) and self._db_thread.isRunning():
@@ -1829,6 +2071,14 @@ class DBUpdateThread(QThread):
 
 
 def main():
+    # 打包後自我檢測：確認 lxml/dan_tools 等相依在 frozen exe 內可用（不開視窗）
+    if "--selftest-dan" in sys.argv:
+        from lxml import html as _h
+        doc = _h.fromstring("<table><tr><td>魂ゲージ</td></tr></table>")
+        ok = bool(doc.xpath("//td")) and hasattr(dan_tools, "generate_dan_from_wiki")
+        print("DAN_SELFTEST_OK" if ok else "DAN_SELFTEST_FAIL")
+        sys.exit(0 if ok else 1)
+
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
     w = MainWindow()

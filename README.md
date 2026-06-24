@@ -15,6 +15,9 @@ from the **ESE (Every Song Ever)** project.
 - One-click **database update**:
   - song list via a *blobless* git clone of ESE (file list only — no audio downloaded)
   - Japanese titles parsed directly from each chart's `TITLEJA` field (incremental — already-known titles are skipped)
+- **Dan tools** (🥋):
+  - **Dan Generator** — turn a Taiko Wiki Dan-dojo page URL into TaikøNauts-compatible Dan files (`dan.def` + per-rank `Dan.json`) from the rank names and clear conditions
+  - **Dan Convertor** — convert an OpenTaiko-style Dan `.tja` (multiple songs split by `#NEXTSONG`) into TaikøNauts-compatible Dan files
 - Auto-downloads a portable Git if Git isn't installed
 - UI language auto-detect (English / 繁體中文 / 日本語)
 
@@ -62,6 +65,12 @@ python src/build_local_db.py --remote        # JP titles  -> ese_local.db
 src/         GUI app, downloader, scrapers
 packaging/   PyInstaller spec
 ```
+
+## Credits
+
+- The **Dan Generator** and **Dan Convertor** features are ported from
+  [bluetaiko/SongConvertor](https://github.com/bluetaiko/SongConvertor) (MIT License).
+  Many thanks to the author.
 
 ## Data source
 

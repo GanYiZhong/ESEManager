@@ -60,3 +60,6 @@ Thumbs.db
 *.7z
 *.zip
 screenshot*.png
+
+# Reference material (not part of the project)
+.ref_songconvertor/
