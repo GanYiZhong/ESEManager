@@ -804,24 +804,6 @@ YATAI_VALID_GENRES = [
     "CLASSICAL", "GAME", "NAMCO", "TUTORIAL",
 ]
 
-# (back_color_hex6, fore_color_hex6)
-YATAI_GENRE_COLORS = {
-    "J-POP":       ("E84857", "FFFFFF"),
-    "ANIME":       ("E87840", "FFFFFF"),
-    "VOCALOID":    ("4DB8D5", "FFFFFF"),
-    "CHILDREN":    ("F7CB45", "333333"),
-    "VARIETY":     ("4CAF50", "FFFFFF"),
-    "CLASSICAL":   ("9B59B6", "FFFFFF"),
-    "GAME":        ("2196F3", "FFFFFF"),
-    "NAMCO":       ("FF7043", "FFFFFF"),
-    "TUTORIAL":    ("607D8B", "FFFFFF"),
-    "DAN":         ("212121", "FFFFFF"),
-    "DIFFICULTY":  ("CC2200", "FFFFFF"),
-    "RECOMMENDED": ("FF9800", "FFFFFF"),
-    "FAVORITE":    ("E91E63", "FFFFFF"),
-    "RECENT":      ("546E7A", "FFFFFF"),
-}
-
 
 def _detect_yatai_def(folder_name):
     """Auto-detect (genre, collection) from folder name for YataiDON."""
@@ -938,8 +920,10 @@ class YataiBoxDefDialog(QDialog):
         # Info
         info = QLabel(
             "YataiDON: #TITLE / #GENRE (J-POP ANIME VOCALOID CHILDREN VARIETY CLASSICAL GAME NAMCO) "
-            "/ #COLLECTION (DAN DIFFICULTY RECOMMENDED FAVORITE RECENT) "
-            "/ #BACKCOLOR:#RRGGBB / #FORECOLOR:#RRGGBB"
+            "/ #COLLECTION (DAN DIFFICULTY RECOMMENDED FAVORITE RECENT). "
+            "顏色留空＝使用 GENRE 內建背景圖（建議）；填色會覆蓋成純色背景 / "
+            "Leave colors blank to use the built-in genre texture (recommended); "
+            "setting a color overrides it with a flat background."
         )
         info.setStyleSheet("color:#888;font-size:10px;")
         info.setWordWrap(True)
@@ -1031,21 +1015,19 @@ class YataiBoxDefDialog(QDialog):
                             ex_genre = s[7:].upper()
                         elif s.startswith("#COLLECTION:"):
                             ex_coll = s[12:].upper()
-                        elif s.startswith("#BACKCOLOR:"):
-                            ex_back = s[11:].lstrip("#").upper()
-                        elif s.startswith("#FORECOLOR:"):
-                            ex_fore = s[11:].lstrip("#").upper()
                 except Exception:
                     pass
 
             # Auto-detect when existing file has wrong/missing genre/collection
             if not ex_genre and not ex_coll:
                 ex_genre, ex_coll = _detect_yatai_def(sub)
-            # Auto-fill colors from genre/collection if still missing
-            if not ex_back and not ex_fore:
-                key = ex_coll if ex_coll in YATAI_GENRE_COLORS else ex_genre
-                if key in YATAI_GENRE_COLORS:
-                    ex_back, ex_fore = YATAI_GENRE_COLORS[key]
+            # NOTE: colors are deliberately NOT pre-loaded and stay blank.
+            # YataiDON renders the genre background from a texture keyed by
+            # #GENRE/#COLLECTION. Setting #BACKCOLOR forces texture_index=NONE,
+            # replacing the proper genre texture with a flat colour. Leaving the
+            # color fields blank means "Generate All" writes clean files with no
+            # color lines, so the correct genre textures show. Fill a colour in
+            # only for a deliberate custom override.
 
             # Col 0: folder (read-only)
             fi = QTableWidgetItem(sub)
