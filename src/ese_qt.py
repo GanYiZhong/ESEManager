@@ -125,6 +125,14 @@ TR = {
         "dan_done": "完成！", "dan_fail": "失敗：{e}",
         "credits_btn": "💗 致謝", "credits_title": "致謝 / Credits",
         "credits_body": "段位生成（DanGenerator）與段位變換（DanConvertor）功能\n移植自 bluetaiko 的 SongConvertor 專案，特此感謝原作者。\n\n原專案（MIT License）：\nhttps://github.com/bluetaiko/SongConvertor",
+        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成工具",
+        "yatai_folder": "Songs 資料夾", "yatai_scan": "掃描",
+        "yatai_col_folder": "資料夾", "yatai_col_title": "標題",
+        "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
+        "yatai_gen_all": "全部生成 box.def",
+        "yatai_done": "完成：已生成 {c} 個 box.def",
+        "yatai_pick": "選擇顏色",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -176,6 +184,14 @@ TR = {
         "dan_done": "Done!", "dan_fail": "Failed: {e}",
         "credits_btn": "💗 Credits", "credits_title": "Credits",
         "credits_body": "The Dan Generator and Dan Convertor features are ported from\nbluetaiko's SongConvertor project. Many thanks to the author.\n\nOriginal project (MIT License):\nhttps://github.com/bluetaiko/SongConvertor",
+        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def Generator",
+        "yatai_folder": "Songs folder", "yatai_scan": "Scan",
+        "yatai_col_folder": "Folder", "yatai_col_title": "Title",
+        "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_back": "Back color", "yatai_col_fore": "Fore color",
+        "yatai_gen_all": "Generate All box.def",
+        "yatai_done": "Done: generated {c} box.def files",
+        "yatai_pick": "Pick color",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -227,6 +243,14 @@ TR = {
         "dan_done": "完了！", "dan_fail": "失敗: {e}",
         "credits_btn": "💗 クレジット", "credits_title": "クレジット / Credits",
         "credits_body": "段位生成（DanGenerator）と段位変換（DanConvertor）機能は\nbluetaiko 氏の SongConvertor を移植したものです。作者に感謝します。\n\n元プロジェクト（MIT License）:\nhttps://github.com/bluetaiko/SongConvertor",
+        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成ツール",
+        "yatai_folder": "Songs フォルダ", "yatai_scan": "スキャン",
+        "yatai_col_folder": "フォルダ", "yatai_col_title": "タイトル",
+        "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
+        "yatai_gen_all": "すべて box.def を生成",
+        "yatai_done": "完了：{c} 個の box.def を生成しました",
+        "yatai_pick": "色を選択",
     },
 }
 
@@ -765,6 +789,325 @@ def _read_text(path):
         except UnicodeDecodeError:
             continue
     return data.decode("utf-8", "replace")
+
+
+# --------------------------------------------------------- YataiDON box.def 生成工具
+# YataiDON parse_box_def supports: #TITLE / #TITLE<LANG> / #GENRE / #COLLECTION /
+# #BACKCOLOR:#RRGGBB / #FORECOLOR:#RRGGBB
+# Valid GENRE strings (from GENRE_MAP in enums.h): J-POP ANIME VOCALOID CHILDREN
+# VARIETY CLASSICAL GAME NAMCO TUTORIAL
+# COLLECTION strings: DAN DIFFICULTY RECOMMENDED FAVORITE RECENT
+
+YATAI_VALID_GENRES = [
+    "", "J-POP", "ANIME", "VOCALOID", "CHILDREN", "VARIETY",
+    "CLASSICAL", "GAME", "NAMCO", "TUTORIAL",
+]
+
+# (back_color_hex6, fore_color_hex6)
+YATAI_GENRE_COLORS = {
+    "J-POP":       ("E84857", "FFFFFF"),
+    "ANIME":       ("E87840", "FFFFFF"),
+    "VOCALOID":    ("4DB8D5", "FFFFFF"),
+    "CHILDREN":    ("F7CB45", "333333"),
+    "VARIETY":     ("4CAF50", "FFFFFF"),
+    "CLASSICAL":   ("9B59B6", "FFFFFF"),
+    "GAME":        ("2196F3", "FFFFFF"),
+    "NAMCO":       ("FF7043", "FFFFFF"),
+    "TUTORIAL":    ("607D8B", "FFFFFF"),
+    "DAN":         ("212121", "FFFFFF"),
+    "DIFFICULTY":  ("CC2200", "FFFFFF"),
+    "RECOMMENDED": ("FF9800", "FFFFFF"),
+    "FAVORITE":    ("E91E63", "FFFFFF"),
+    "RECENT":      ("546E7A", "FFFFFF"),
+}
+
+
+def _detect_yatai_def(folder_name):
+    """Auto-detect (genre, collection) from folder name for YataiDON."""
+    low = folder_name.lower()
+    if "dan" in low or "dojo" in low:
+        return "", "DAN"
+    if "recommend" in low:
+        return "", "RECOMMENDED"
+    if "recent" in low:
+        return "", "RECENT"
+    if "favorite" in low or "favour" in low:
+        return "", "FAVORITE"
+    if "difficulty" in low:
+        return "", "DIFFICULTY"
+    if "j-pop" in low or "jpop" in low:
+        return "J-POP", ""
+    if "pop" in low:
+        return "J-POP", ""
+    if "anime" in low:
+        return "ANIME", ""
+    if "vocaloid" in low:
+        return "VOCALOID", ""
+    if any(k in low for k in ("children", "kids", "folk")):
+        return "CHILDREN", ""
+    if "variety" in low:
+        return "VARIETY", ""
+    if "classical" in low or "classic" in low:
+        return "CLASSICAL", ""
+    if "game" in low:
+        return "GAME", ""
+    if "namco" in low:
+        return "NAMCO", ""
+    return "J-POP", ""
+
+
+def make_yatai_boxdef(folder_name, title="", genre="", collection="",
+                      back_color="", fore_color=""):
+    """Generate box.def in YataiDON format."""
+    lines = [f"#TITLE:{title or folder_name}"]
+    if genre:
+        lines.append(f"#GENRE:{genre}")
+    if collection:
+        lines.append(f"#COLLECTION:{collection}")
+    if back_color:
+        hx = _norm_hex(back_color)
+        if hx:
+            lines.append(f"#BACKCOLOR:#{hx}")
+    if fore_color:
+        hx = _norm_hex(fore_color)
+        if hx:
+            lines.append(f"#FORECOLOR:#{hx}")
+    return "\n".join(lines) + "\n"
+
+
+class YataiBoxDefDialog(QDialog):
+    """YataiDON box.def 批量生成工具。
+    為 Songs 資料夾內每個子資料夾產生正確格式的 box.def（GENRE/COLLECTION/顏色）。
+    """
+
+    COL_FOLDER = 0
+    COL_TITLE  = 1
+    COL_GENRE  = 2
+    COL_COLL   = 3
+    COL_BACK   = 4
+    COL_FORE   = 5
+
+    def __init__(self, parent, tr, start_dir=""):
+        super().__init__(parent)
+        self.tr = tr
+        self.setWindowTitle(tr("yatai_title"))
+        self.resize(980, 580)
+        self._color_edits = {}   # (row, col) -> QLineEdit
+        self._build_ui(start_dir)
+        if start_dir and os.path.isdir(start_dir):
+            self.scan()
+
+    def _build_ui(self, start_dir):
+        root = QVBoxLayout(self)
+
+        # Folder row
+        fr = QHBoxLayout()
+        fr.addWidget(QLabel(self.tr("yatai_folder") + ":"))
+        self.folder_edit = QLineEdit(start_dir)
+        fr.addWidget(self.folder_edit, 1)
+        browse_btn = QPushButton(self.tr("browse"))
+        browse_btn.clicked.connect(self._browse)
+        scan_btn = QPushButton(self.tr("yatai_scan"))
+        scan_btn.clicked.connect(self.scan)
+        fr.addWidget(browse_btn)
+        fr.addWidget(scan_btn)
+        root.addLayout(fr)
+
+        # Table
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels([
+            self.tr("yatai_col_folder"),
+            self.tr("yatai_col_title"),
+            self.tr("yatai_col_genre"),
+            self.tr("yatai_col_collection"),
+            self.tr("yatai_col_back"),
+            self.tr("yatai_col_fore"),
+        ])
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(self.COL_FOLDER, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_TITLE,  QHeaderView.Stretch)
+        hh.setSectionResizeMode(self.COL_GENRE,  QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_COLL,   QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_BACK,   QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_FORE,   QHeaderView.ResizeToContents)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        root.addWidget(self.table, 1)
+
+        # Info
+        info = QLabel(
+            "YataiDON: #TITLE / #GENRE (J-POP ANIME VOCALOID CHILDREN VARIETY CLASSICAL GAME NAMCO) "
+            "/ #COLLECTION (DAN DIFFICULTY RECOMMENDED FAVORITE RECENT) "
+            "/ #BACKCOLOR:#RRGGBB / #FORECOLOR:#RRGGBB"
+        )
+        info.setStyleSheet("color:#888;font-size:10px;")
+        info.setWordWrap(True)
+        root.addWidget(info)
+
+        # Buttons
+        br = QHBoxLayout()
+        gen_btn = QPushButton(self.tr("yatai_gen_all"))
+        gen_btn.setStyleSheet(
+            "QPushButton{background:#1976D2;color:white;font-weight:bold;"
+            "padding:8px 16px;border-radius:8px;}"
+            "QPushButton:hover{background:#1565C0;}"
+        )
+        gen_btn.clicked.connect(self.generate_all)
+        br.addStretch()
+        br.addWidget(gen_btn)
+        root.addLayout(br)
+
+    def _browse(self):
+        d = QFileDialog.getExistingDirectory(self, self.tr("browse"), self.folder_edit.text())
+        if d:
+            self.folder_edit.setText(d)
+            self.scan()
+
+    def _color_widget(self, row, col, initial=""):
+        """Color cell: hex QLineEdit + live swatch + picker button."""
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(2, 1, 2, 1)
+        edit = QLineEdit(initial.upper().lstrip("#"))
+        edit.setMaxLength(6)
+        edit.setPlaceholderText("RRGGBB")
+        edit.setFixedWidth(66)
+        swatch = QFrame()
+        swatch.setFixedSize(18, 18)
+        btn = QPushButton("🎨")
+        btn.setFixedWidth(28)
+        btn.setFlat(True)
+
+        def upd():
+            hx = edit.text().strip().upper()
+            ok = len(hx) == 6 and all(c in "0123456789ABCDEF" for c in hx)
+            swatch.setStyleSheet(
+                (f"background:#{hx};border:1px solid #555;border-radius:2px;") if ok
+                else "border:1px solid #555;border-radius:2px;"
+            )
+
+        def pick():
+            cur = edit.text().strip()
+            init = QColor("#" + cur) if len(cur) == 6 else QColor("#444444")
+            c = QColorDialog.getColor(init, self, self.tr("yatai_pick"))
+            if c.isValid():
+                edit.setText(c.name().lstrip("#").upper())
+
+        edit.textChanged.connect(upd)
+        btn.clicked.connect(pick)
+        h.addWidget(edit)
+        h.addWidget(swatch)
+        h.addWidget(btn)
+        upd()
+        self._color_edits[(row, col)] = edit
+        return w
+
+    def scan(self):
+        base = self.folder_edit.text().strip()
+        if not os.path.isdir(base):
+            return
+        self._color_edits.clear()
+        subs = sorted(d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d)))
+        self.table.setRowCount(0)
+
+        for row_idx, sub in enumerate(subs):
+            self.table.insertRow(row_idx)
+
+            # Try to read existing box.def
+            bpath = os.path.join(base, sub, "box.def")
+            ex_title = sub
+            ex_genre = ""
+            ex_coll  = ""
+            ex_back  = ""
+            ex_fore  = ""
+            if os.path.exists(bpath):
+                try:
+                    for line in _read_text(bpath).splitlines():
+                        s = line.strip()
+                        if s.startswith("#TITLE:") and ex_title == sub:
+                            ex_title = s[7:]
+                        elif s.startswith("#GENRE:"):
+                            ex_genre = s[7:].upper()
+                        elif s.startswith("#COLLECTION:"):
+                            ex_coll = s[12:].upper()
+                        elif s.startswith("#BACKCOLOR:"):
+                            ex_back = s[11:].lstrip("#").upper()
+                        elif s.startswith("#FORECOLOR:"):
+                            ex_fore = s[11:].lstrip("#").upper()
+                except Exception:
+                    pass
+
+            # Auto-detect when existing file has wrong/missing genre/collection
+            if not ex_genre and not ex_coll:
+                ex_genre, ex_coll = _detect_yatai_def(sub)
+            # Auto-fill colors from genre/collection if still missing
+            if not ex_back and not ex_fore:
+                key = ex_coll if ex_coll in YATAI_GENRE_COLORS else ex_genre
+                if key in YATAI_GENRE_COLORS:
+                    ex_back, ex_fore = YATAI_GENRE_COLORS[key]
+
+            # Col 0: folder (read-only)
+            fi = QTableWidgetItem(sub)
+            fi.setFlags(fi.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, self.COL_FOLDER, fi)
+
+            # Col 1: title
+            self.table.setItem(row_idx, self.COL_TITLE, QTableWidgetItem(ex_title))
+
+            # Col 2: genre combo
+            combo = QComboBox()
+            combo.addItems(YATAI_VALID_GENRES)
+            if ex_genre in YATAI_VALID_GENRES:
+                combo.setCurrentText(ex_genre)
+            self.table.setCellWidget(row_idx, self.COL_GENRE, combo)
+
+            # Col 3: collection (free text)
+            self.table.setItem(row_idx, self.COL_COLL, QTableWidgetItem(ex_coll))
+
+            # Col 4/5: colors
+            self.table.setCellWidget(row_idx, self.COL_BACK, self._color_widget(row_idx, self.COL_BACK, ex_back))
+            self.table.setCellWidget(row_idx, self.COL_FORE, self._color_widget(row_idx, self.COL_FORE, ex_fore))
+
+        self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLE, QHeaderView.Stretch)
+
+    def generate_all(self):
+        base = self.folder_edit.text().strip()
+        if not os.path.isdir(base):
+            QMessageBox.warning(self, self.tr("yatai_title"), self.tr("boxdef_no_dir"))
+            return
+        created = 0
+        errors = []
+        for row in range(self.table.rowCount()):
+            sub_item = self.table.item(row, self.COL_FOLDER)
+            if not sub_item:
+                continue
+            sub = sub_item.text()
+            title_item = self.table.item(row, self.COL_TITLE)
+            title = title_item.text().strip() if title_item else sub
+            genre_w = self.table.cellWidget(row, self.COL_GENRE)
+            genre = genre_w.currentText() if genre_w else ""
+            coll_item = self.table.item(row, self.COL_COLL)
+            coll = coll_item.text().strip().upper() if coll_item else ""
+            back_e = self._color_edits.get((row, self.COL_BACK))
+            fore_e = self._color_edits.get((row, self.COL_FORE))
+            back = back_e.text().strip() if back_e else ""
+            fore = fore_e.text().strip() if fore_e else ""
+
+            content = make_yatai_boxdef(sub, title=title, genre=genre, collection=coll,
+                                        back_color=back, fore_color=fore)
+            path = os.path.join(base, sub, "box.def")
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                created += 1
+            except Exception as e:
+                errors.append(f"{sub}: {e}")
+
+        msg = self.tr("yatai_done", c=created)
+        if errors:
+            msg += "\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, self.tr("yatai_title"), msg)
 
 
 # ------------------------------------------------------------- box.def 編輯器
@@ -1436,6 +1779,8 @@ class MainWindow(QMainWindow):
         self.boxdef_btn.clicked.connect(self.open_boxdef)
         self.dan_btn = QPushButton(self.tr("dan_btn"))
         self.dan_btn.clicked.connect(self.open_dan_tools)
+        self.yatai_btn = QPushButton(self.tr("yatai_btn"))
+        self.yatai_btn.clicked.connect(self.open_yatai_boxdef)
         self.missing_btn = QPushButton(self.tr("check_missing"))
         self.missing_btn.clicked.connect(self.check_missing)
         self.official_btn = QPushButton(self.tr("official"))
@@ -1445,6 +1790,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.db_update_btn)
         top.addWidget(self.boxdef_btn)
         top.addWidget(self.dan_btn)
+        top.addWidget(self.yatai_btn)
         top.addWidget(self.missing_btn)
         top.addWidget(self.official_btn)
         top.addWidget(self.credits_btn)
@@ -1907,6 +2253,9 @@ class MainWindow(QMainWindow):
     def open_dan_tools(self):
         start = self.dir_edit.text() if os.path.isdir(self.dir_edit.text()) else os.getcwd()
         DanToolsDialog(self, self.tr, start).exec()
+
+    def open_yatai_boxdef(self):
+        YataiBoxDefDialog(self, self.tr).exec()
 
     def open_credits(self):
         box = QMessageBox(self)
