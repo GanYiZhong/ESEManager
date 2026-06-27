@@ -124,6 +124,10 @@ TR = {
         "dan_need_url": "請輸入段位頁面 URL", "dan_need_out": "請選擇輸出資料夾",
         "dan_need_tja": "請選擇要變換的 tja 檔", "dan_running": "處理中…",
         "dan_done": "完成！", "dan_fail": "失敗：{e}",
+        "ydan_tab": "YataiDON 段位", "ydan_root": "YataiDON Songs 根資料夾",
+        "ydan_src": "曲源 Songs 資料夾", "ydan_run": "生成 YataiDON 段位",
+        "ydan_hint": "輸入太鼓 Wiki 段位道場頁面網址，生成 YataiDON 格式段位\n（各段 dan.json 寫入 <根>/11 Dan Dojo/，並把對應 tja/ogg\n自動複製到對應曲種資料夾）。",
+        "ydan_need_root": "請選擇 YataiDON Songs 根資料夾",
         "credits_btn": "💗 致謝", "credits_title": "致謝 / Credits",
         "credits_body": "段位生成（DanGenerator）與段位變換（DanConvertor）功能\n移植自 bluetaiko 的 SongConvertor 專案，特此感謝原作者。\n\n原專案（MIT License）：\nhttps://github.com/bluetaiko/SongConvertor",
         "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成工具",
@@ -183,6 +187,10 @@ TR = {
         "dan_need_url": "Please enter the Dan page URL", "dan_need_out": "Please choose an output folder",
         "dan_need_tja": "Please choose a tja file", "dan_running": "Working…",
         "dan_done": "Done!", "dan_fail": "Failed: {e}",
+        "ydan_tab": "YataiDON Dan", "ydan_root": "YataiDON Songs root",
+        "ydan_src": "Source Songs folder", "ydan_run": "Generate YataiDON Dan",
+        "ydan_hint": "Enter a Taiko Wiki Dan-dojo page URL to generate YataiDON-format\nDan (dan.json into <root>/11 Dan Dojo/), and auto-copy the matched\ntja/ogg into the matching genre folders.",
+        "ydan_need_root": "Please choose the YataiDON Songs root folder",
         "credits_btn": "💗 Credits", "credits_title": "Credits",
         "credits_body": "The Dan Generator and Dan Convertor features are ported from\nbluetaiko's SongConvertor project. Many thanks to the author.\n\nOriginal project (MIT License):\nhttps://github.com/bluetaiko/SongConvertor",
         "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def Generator",
@@ -242,6 +250,10 @@ TR = {
         "dan_need_url": "段位ページの URL を入力してください", "dan_need_out": "出力フォルダを選択してください",
         "dan_need_tja": "変換する tja を選択してください", "dan_running": "処理中…",
         "dan_done": "完了！", "dan_fail": "失敗: {e}",
+        "ydan_tab": "YataiDON 段位", "ydan_root": "YataiDON Songs ルート",
+        "ydan_src": "曲ソース Songs フォルダ", "ydan_run": "YataiDON 段位を生成",
+        "ydan_hint": "太鼓 Wiki 段位道場ページの URL を入力し、YataiDON 形式の段位を\n生成します（各段の dan.json を <ルート>/11 Dan Dojo/ に書き出し、\n対応する tja/ogg を曲種フォルダへ自動コピー）。",
+        "ydan_need_root": "YataiDON Songs ルートフォルダを選択してください",
         "credits_btn": "💗 クレジット", "credits_title": "クレジット / Credits",
         "credits_body": "段位生成（DanGenerator）と段位変換（DanConvertor）機能は\nbluetaiko 氏の SongConvertor を移植したものです。作者に感謝します。\n\n元プロジェクト（MIT License）:\nhttps://github.com/bluetaiko/SongConvertor",
         "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成ツール",
@@ -1537,8 +1549,27 @@ class DanConvThread(QThread):
             self.done.emit(False, str(e))
 
 
+class YataiDanThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str)
+
+    def __init__(self, url, yatai_root, source_songs, local_db=""):
+        super().__init__()
+        self.url, self.yatai_root = url, yatai_root
+        self.source_songs, self.local_db = source_songs, local_db
+
+    def run(self):
+        try:
+            n = dan_tools.generate_yatai_dan_from_wiki(
+                self.url, self.yatai_root, source_songs_folder=self.source_songs,
+                log=self.log.emit, local_db=self.local_db)
+            self.done.emit(True, str(n))
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
 class DanToolsDialog(QDialog):
-    """段位生成（Wiki）+ 段位變換（tja）。移植自 bluetaiko/SongConvertor。"""
+    """段位生成（Wiki）+ 段位變換（tja）+ YataiDON 段位。移植自 bluetaiko/SongConvertor。"""
 
     def __init__(self, parent, tr, start_dir):
         super().__init__(parent)
@@ -1552,6 +1583,7 @@ class DanToolsDialog(QDialog):
         tabs = QTabWidget()
         tabs.addTab(self._build_gen_tab(), tr("dan_tab_gen"))
         tabs.addTab(self._build_conv_tab(), tr("dan_tab_conv"))
+        tabs.addTab(self._build_yatai_tab(), tr("ydan_tab"))
         root.addWidget(tabs)
 
         self.log_view = QPlainTextEdit()
@@ -1629,6 +1661,31 @@ class DanToolsDialog(QDialog):
         v.addStretch()
         return w
 
+    def _build_yatai_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(self.tr("ydan_hint"))
+        hint.setStyleSheet("color:#aaa;")
+        v.addWidget(hint)
+        form = QFormLayout()
+        self.ydan_url = QLineEdit()
+        self.ydan_url.setPlaceholderText(
+            "https://wikiwiki.jp/taiko-fumen/%E6%AE%B5%E4%BD%8D%E9%81%93%E5%A0%B4")
+        form.addRow(self.tr("dan_gen_url"), self.ydan_url)
+        self.ydan_root = QLineEdit()
+        form.addRow(self.tr("ydan_root"), self._with_browse(self.ydan_root, lambda: self._pick_dir(self.ydan_root)))
+        self.ydan_src = QLineEdit()
+        form.addRow(self.tr("ydan_src"), self._with_browse(self.ydan_src, lambda: self._pick_dir(self.ydan_src)))
+        v.addLayout(form)
+        self.ydan_btn = QPushButton(self.tr("ydan_run"))
+        self.ydan_btn.setStyleSheet(
+            "QPushButton{background:#1976D2;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
+            "QPushButton:hover{background:#1565C0;} QPushButton:disabled{background:#7c7c7c;}")
+        self.ydan_btn.clicked.connect(self.run_yatai)
+        v.addWidget(self.ydan_btn)
+        v.addStretch()
+        return w
+
     def _with_browse(self, edit, cb):
         box = QWidget()
         h = QHBoxLayout(box)
@@ -1642,6 +1699,7 @@ class DanToolsDialog(QDialog):
     def _busy(self, on):
         self.gen_btn.setEnabled(not on)
         self.conv_btn.setEnabled(not on)
+        self.ydan_btn.setEnabled(not on)
 
     def run_gen(self):
         url = self.gen_url.text().strip()
@@ -1672,6 +1730,23 @@ class DanToolsDialog(QDialog):
         self._busy(True)
         self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
         self._thread = DanConvThread(tja, out, self.conv_songs.text().strip())
+        self._thread.log.connect(self.log_view.appendPlainText)
+        self._thread.done.connect(self._on_done)
+        self._thread.start()
+
+    def run_yatai(self):
+        url = self.ydan_url.text().strip()
+        root = self.ydan_root.text().strip()
+        if not url:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_url"))
+            return
+        if not root:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("ydan_need_root"))
+            return
+        self._busy(True)
+        self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
+        local_db = os.path.abspath(LOCAL_DB_PATH) if os.path.isfile(LOCAL_DB_PATH) else ""
+        self._thread = YataiDanThread(url, root, self.ydan_src.text().strip(), local_db)
         self._thread.log.connect(self.log_view.appendPlainText)
         self._thread.done.connect(self._on_done)
         self._thread.start()

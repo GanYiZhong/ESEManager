@@ -824,28 +824,12 @@ def _fetch_html(source, timeout=30):
     return _read_tja_text(source)
 
 
-def generate_dan_from_wiki(input_source, output_dir, songs_folder="", filter_text="",
-                           log=None, dan_index=None, local_db=""):
-    """從太鼓 wiki 段位道場頁面產出段位檔。對應 DanGeneratorCore.GenerateAsync。
-
-    local_db：ese_local.db 路徑。提供時會用其中的『日文標題→檔名』對照，把 wiki
-    的日文曲名轉成羅馬拼音檔名再去 Songs 資料夾比對（命中率大幅提升）。
-    """
-    def emit(msg):
-        if log:
-            log(msg)
-
-    os.makedirs(output_dir, exist_ok=True)
-    try:
-        emit(f"URLからデータを取得中: {input_source}")
-        html = _fetch_html(input_source)
-    except Exception as e:
-        emit(f"データ取得エラー: {e}")
-        return 0
-    if html is None:
-        emit(f"エラー: ファイルが見つかりません ({input_source})")
-        return 0
-
+def _parse_wiki_dan_sets(html, input_source, filter_text="", dan_index=None, emit=None):
+    """解析太鼓 wiki 段位頁面 HTML，回傳 (all_sets, is_gaiden)。
+    供 generate_dan_from_wiki（TaikøNauts）與 generate_yatai_dan_from_wiki（YataiDON）共用。"""
+    if emit is None:
+        def emit(_m):
+            return None
     doc = lxml_html.fromstring(html)
     nodes = doc.xpath("//h3 | //h4 | //table")
     if not nodes:
@@ -1079,6 +1063,35 @@ def generate_dan_from_wiki(input_source, output_dir, songs_folder="", filter_tex
 
     if current_set:
         all_sets.append((current_version, current_set))
+    return all_sets, is_gaiden
+
+
+def generate_dan_from_wiki(input_source, output_dir, songs_folder="", filter_text="",
+                           log=None, dan_index=None, local_db=""):
+    """從太鼓 wiki 段位道場頁面產出段位檔。對應 DanGeneratorCore.GenerateAsync。
+
+    local_db：ese_local.db 路徑。提供時會用其中的『日文標題→檔名』對照，把 wiki
+    的日文曲名轉成羅馬拼音檔名再去 Songs 資料夾比對（命中率大幅提升）。
+    """
+    def emit(msg):
+        if log:
+            log(msg)
+
+    os.makedirs(output_dir, exist_ok=True)
+    try:
+        emit(f"URLからデータを取得中: {input_source}")
+        html = _fetch_html(input_source)
+    except Exception as e:
+        emit(f"データ取得エラー: {e}")
+        return 0
+    if html is None:
+        emit(f"エラー: ファイルが見つかりません ({input_source})")
+        return 0
+
+    all_sets, is_gaiden = _parse_wiki_dan_sets(html, input_source, filter_text,
+                                               dan_index, emit)
+    total_processed = 0
+    missing_songs = []
 
     # 預建索引：Songs 資料夾名稱 + ese_local.db 的日文標題對照（只建一次）
     dir_index = build_dir_index(songs_folder) if songs_folder and os.path.isdir(songs_folder) else None
@@ -1214,3 +1227,199 @@ def fetch_rank_names(input_source):
                 if rank and rank not in ranks:
                     ranks.append(rank)
     return ranks
+
+
+# ============================================================ YataiDON Dan (dan.json)
+# YataiDON 段位格式（github Yonokid/YataiDON）：每段一個資料夾，內含 dan.json
+#   {title, color, exams:[{type,range,value:[red,gold]}], charts:[{title,subtitle,difficulty}]}
+# 重點：載入時用 title+subtitle 比對歌曲（不需 hash）。exam type 由原始碼確認：
+#   gauge / judgeperfect(良) / judgegood(可+不可) / judgebad(不可) / hit(叩けた数) /
+#   combo(最大コンボ) / score。range = more / less。
+# color 為段位色階（依段位高低）。
+
+# wiki 曲種底色 → YataiDON 曲種資料夾
+YATAI_GENRE_FOLDER = {
+    "ポップス": "01 Pop",
+    "アニメ": "02 Anime",
+    "ボーカロイド": "03 Vocaloid", "ボーカロイド曲": "03 Vocaloid", "ボーカロイド™曲": "03 Vocaloid",
+    "キッズ": "04 Children and Folk", "どうよう": "04 Children and Folk",
+    "バラエティ": "05 Variety", "バラエティー": "05 Variety",
+    "クラシック": "06 Classical",
+    "ゲームミュージック": "07 Game Music",
+    "ナムコオリジナル": "08 Namco Original",
+}
+
+# wiki 合格条件型別 → (YataiDON exam type, range)
+_YATAI_EXAM_MAP = {
+    "Great":    ("judgeperfect", "more"),   # 良
+    "Good":     ("judgegood",    "less"),   # 可
+    "Miss":     ("judgebad",     "less"),   # 不可
+    "HitCount": ("hit",          "more"),   # 叩けた数
+    "MaxCombo": ("combo",        "more"),   # 最大コンボ
+    "Score":    ("score",        "more"),   # スコア
+    # Roll(連打) 在 YataiDON 無對應的段位審查項目，略過。
+}
+
+
+def _yatai_dan_color(title):
+    """段位名 → YataiDON 段位色階（依官方 dan.json 取樣）。"""
+    t = title or ""
+    if "達人" in t:
+        return 5
+    if any(k in t for k in ("玄人", "名人", "超人")):
+        return 4
+    if "十段" in t:
+        return 3
+    if "段" in t:
+        return 2
+    if any(k in t for k in ("五級", "四級", "三級", "二級", "一級")):
+        return 1
+    return 0
+
+
+def _read_tja_title_subtitle(tja_path):
+    """讀取 tja 的 TITLE/SUBTITLE（YataiDON 以此比對；優先 TITLEEN）。"""
+    title = titleen = subtitle = ""
+    try:
+        for line in _read_tja_text(tja_path).splitlines():
+            s = line.strip()
+            up = s.upper()
+            if up.startswith("TITLEEN:") and not titleen:
+                titleen = s.split(":", 1)[1].strip()
+            elif up.startswith("TITLE:") and not title:
+                title = s.split(":", 1)[1].strip()
+            elif up.startswith("SUBTITLE:") and not subtitle:
+                subtitle = s.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    t = titleen or title
+    sub = subtitle
+    if sub[:2] in ("--", "++"):
+        sub = sub[2:].strip()
+    return t, sub
+
+
+def _yatai_exams_from_dan(dan):
+    """把解析出的 conditionGauge/conditions 轉成 YataiDON exams。"""
+    exams = []
+    g = dan.get("conditionGauge") or {}
+    if g.get("red") or g.get("gold"):
+        exams.append({"type": "gauge", "range": "more",
+                      "value": [int(g.get("red", 0)), int(g.get("gold", 0))]})
+    for cond in dan.get("conditions", []):
+        mapping = _YATAI_EXAM_MAP.get(cond.get("type"))
+        if not mapping:
+            continue
+        yt, rng = mapping
+        ths = cond.get("threshold", [])
+        if not ths:
+            continue
+        # 段位合格条件多為整段合計（合併儲存格 → 重複值），取最大即原值。
+        red = max((int(t.get("red", 0)) for t in ths), default=0)
+        gold = max((int(t.get("gold", 0)) for t in ths), default=0)
+        if red == 0 and gold == 0:
+            continue
+        exams.append({"type": yt, "range": rng, "value": [red, gold]})
+    return exams
+
+
+def generate_yatai_dan_from_wiki(input_source, yatai_songs_root, source_songs_folder="",
+                                 log=None, local_db="", filter_text=""):
+    """太鼓 wiki 段位道場頁面 → YataiDON 段位（dan.json）+ 自動把 tja/ogg 複製到曲種資料夾。
+
+    input_source        : wiki 段位道場頁面 URL
+    yatai_songs_root    : YataiDON 的 Songs 根資料夾（dan.json → <root>/11 Dan Dojo/NN 段位/，
+                          曲目 → <root>/<曲種資料夾>/）
+    source_songs_folder : 要從哪裡撈譜面（ESE/本地 Songs 資料夾）
+    local_db            : ese_local.db（日文標題→檔名橋接，提升命中率）
+    """
+    def emit(msg):
+        if log:
+            log(msg)
+
+    try:
+        emit(f"URLからデータを取得中: {input_source}")
+        html = _fetch_html(input_source)
+    except Exception as e:
+        emit(f"データ取得エラー: {e}")
+        return 0
+    if html is None:
+        emit(f"エラー: ファイルが見つかりません ({input_source})")
+        return 0
+
+    all_sets, is_gaiden = _parse_wiki_dan_sets(html, input_source, filter_text, None, emit)
+    if not all_sets:
+        emit("段位が見つかりませんでした。")
+        return 0
+
+    # 取段位數最多的版本（通常為現行段位道場）
+    _ver, dan_set = max(all_sets, key=lambda s: len(s[1]))
+    sorted_set = dan_set if is_gaiden else sorted(dan_set, key=lambda d: d[2])
+
+    dir_index = (build_dir_index(source_songs_folder)
+                 if source_songs_folder and os.path.isdir(source_songs_folder) else None)
+    jp_index = build_jp_index(local_db)
+    if not dir_index:
+        emit("警告: ソース Songs フォルダが無いため曲をコピーできません。")
+    else:
+        emit(f"ソース: {len(dir_index)} フォルダ"
+             + (f"／日本語タイトル {len(jp_index['keys'])} 件" if jp_index else "（ese_local.db 無し）"))
+
+    dan_dojo_dir = os.path.join(yatai_songs_root, "11 Dan Dojo")
+    os.makedirs(dan_dojo_dir, exist_ok=True)
+
+    count = 0
+    missing = []
+    for order, (dan, detected, _idx) in enumerate(sorted_set):
+        charts = []
+        for s in dan.get("danSongs", []):
+            raw = os.path.splitext(s.get("path", ""))[0]
+            search = raw.replace("(裏譜面)", "").replace("(裏)", "").strip()
+            found = find_song_dir(dir_index, jp_index, search) if dir_index else None
+            if not found:
+                missing.append(f"[{detected}] {raw}")
+                continue
+            tja_file = next((fn for fn in os.listdir(found)
+                             if fn.lower().endswith(".tja")), None)
+            if not tja_file:
+                missing.append(f"[{detected}] {raw} (tjaなし)")
+                continue
+            title, subtitle = _read_tja_title_subtitle(os.path.join(found, tja_file))
+            if not title:
+                title = os.path.basename(found)
+            charts.append({"title": title, "subtitle": subtitle,
+                           "difficulty": int(s.get("difficulty", 3))})
+
+            # 整個來源資料夾複製到對應曲種（tja+ogg+圖等一併帶過去）
+            genre_folder = YATAI_GENRE_FOLDER.get(s.get("genre", ""), "08 Namco Original")
+            dest = os.path.join(yatai_songs_root, genre_folder, os.path.basename(found))
+            if not os.path.isdir(dest):
+                try:
+                    shutil.copytree(found, dest)
+                    emit(f"  コピー: {os.path.basename(found)} → {genre_folder}")
+                except Exception as e:
+                    emit(f"  コピー失敗 {os.path.basename(found)}: {e}")
+
+        if not charts:
+            emit(f"  スキップ {detected}: 課題曲が見つかりません")
+            continue
+
+        out = {"title": dan.get("title", detected),
+               "color": _yatai_dan_color(dan.get("title", detected)),
+               "exams": _yatai_exams_from_dan(dan),
+               "charts": charts}
+        rank_folder = os.path.join(dan_dojo_dir, f"{order:02d} {sanitize_folder_name(detected)}")
+        os.makedirs(rank_folder, exist_ok=True)
+        with open(os.path.join(rank_folder, "dan.json"), "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=4)
+        count += 1
+        emit(f"  生成: {order} {detected} ({len(charts)} 曲)")
+
+    emit(f"YataiDON 段位生成完了: {count} 段位")
+    if missing:
+        emit("")
+        emit("=========== 見つからなかった曲 ===========")
+        for m in dict.fromkeys(missing):
+            emit(m)
+        emit("==========================================")
+    return count
