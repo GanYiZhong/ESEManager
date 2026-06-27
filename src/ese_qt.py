@@ -129,7 +129,7 @@ TR = {
         "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成工具",
         "yatai_folder": "Songs 資料夾", "yatai_scan": "掃描",
         "yatai_col_folder": "資料夾", "yatai_col_title": "標題",
-        "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_titleja": "日文標題", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
         "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
         "yatai_gen_all": "全部生成 box.def",
         "yatai_done": "完成：已生成 {c} 個 box.def",
@@ -188,7 +188,7 @@ TR = {
         "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def Generator",
         "yatai_folder": "Songs folder", "yatai_scan": "Scan",
         "yatai_col_folder": "Folder", "yatai_col_title": "Title",
-        "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_titleja": "Title (JA)", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
         "yatai_col_back": "Back color", "yatai_col_fore": "Fore color",
         "yatai_gen_all": "Generate All box.def",
         "yatai_done": "Done: generated {c} box.def files",
@@ -247,7 +247,7 @@ TR = {
         "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成ツール",
         "yatai_folder": "Songs フォルダ", "yatai_scan": "スキャン",
         "yatai_col_folder": "フォルダ", "yatai_col_title": "タイトル",
-        "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_titleja": "日本語タイトル", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
         "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
         "yatai_gen_all": "すべて box.def を生成",
         "yatai_done": "完了：{c} 個の box.def を生成しました",
@@ -795,18 +795,51 @@ def _read_text(path):
 # --------------------------------------------------------- YataiDON box.def 生成工具
 # YataiDON parse_box_def supports: #TITLE / #TITLE<LANG> / #GENRE / #COLLECTION /
 # #BACKCOLOR:#RRGGBB / #FORECOLOR:#RRGGBB
-# Valid GENRE strings (from GENRE_MAP in enums.h): J-POP ANIME VOCALOID CHILDREN
-# VARIETY CLASSICAL GAME NAMCO TUTORIAL
-# COLLECTION strings: DAN DIFFICULTY RECOMMENDED FAVORITE RECENT
+#   #BACKCOLOR = the box (folder) colour, #FORECOLOR = the title text outline.
+# #GENRE accepts English or Japanese names (GENRE_MAP in enums.h has both).
+# COLLECTION strings: DAN DIFFICULTY RECOMMENDED FAVORITE RECENT (+ shipped NEW/SEARCH).
 
-YATAI_VALID_GENRES = [
-    "", "J-POP", "ANIME", "VOCALOID", "CHILDREN", "VARIETY",
-    "CLASSICAL", "GAME", "NAMCO", "TUTORIAL",
-]
+# Canonical genre presets — colours taken from ESE's own official box.def files
+# (the #BACKCOLOR/#FORECOLOR format is identical to YataiDON's). Genre folders are
+# rendered as a flat coloured box, matching how ESE / 太鼓 ships them.
+# key = genre label written to #GENRE -> (title_ja, back_color, fore_color)
+YATAI_GENRE_PRESETS = {
+    "J-POP":            ("J-POP",            "20A0BA", "004D68"),
+    "アニメ":            ("アニメ",            "FF9800", "9C4002"),
+    "VOCALOID":         ("ボーカロイド曲",     "29C2C9", "54657E"),
+    "どうよう":          ("どうよう",          "FF5286", "99042E"),
+    "バラエティー":       ("バラエティー",       "8ED41E", "3C6800"),
+    "クラシック":         ("クラシック",        "D1A213", "865800"),
+    "ゲームミュージック":  ("ゲームミュージック", "9C75BD", "4F2886"),
+    "ナムコオリジナル":    ("ナムコオリジナル",   "FF5A13", "941800"),
+}
+
+# Genre combo choices (canonical labels above; combo is editable so any value works)
+YATAI_VALID_GENRES = [""] + list(YATAI_GENRE_PRESETS.keys())
+
+# Normalise any English/Japanese genre alias to the canonical preset key.
+YATAI_GENRE_ALIAS = {
+    "J-POP": "J-POP", "JPOP": "J-POP", "POP": "J-POP", "ポップス": "J-POP",
+    "ANIME": "アニメ", "アニメ": "アニメ",
+    "VOCALOID": "VOCALOID", "ボーカロイド": "VOCALOID", "ボーカロイド曲": "VOCALOID",
+    "CHILDREN": "どうよう", "KIDS": "どうよう", "FOLK": "どうよう",
+    "キッズ": "どうよう", "どうよう": "どうよう", "童謡": "どうよう", "童謡・民謡": "どうよう",
+    "VARIETY": "バラエティー", "バラエティ": "バラエティー", "バラエティー": "バラエティー",
+    "CLASSICAL": "クラシック", "CLASSIC": "クラシック", "クラシック": "クラシック",
+    "GAME": "ゲームミュージック", "ゲームミュージック": "ゲームミュージック",
+    "NAMCO": "ナムコオリジナル", "ナムコオリジナル": "ナムコオリジナル",
+}
+
+
+def _normalize_yatai_genre(genre):
+    """Map an English/Japanese genre alias to its canonical preset key."""
+    g = (genre or "").strip()
+    return YATAI_GENRE_ALIAS.get(g.upper()) or YATAI_GENRE_ALIAS.get(g) or g
 
 
 def _detect_yatai_def(folder_name):
-    """Auto-detect (genre, collection) from folder name for YataiDON."""
+    """Auto-detect (genre, collection) from folder name for YataiDON.
+    genre is returned as a canonical preset key (Japanese, except J-POP/VOCALOID)."""
     low = folder_name.lower()
     if "dan" in low or "dojo" in low:
         return "", "DAN"
@@ -818,31 +851,33 @@ def _detect_yatai_def(folder_name):
         return "", "FAVORITE"
     if "difficulty" in low:
         return "", "DIFFICULTY"
-    if "j-pop" in low or "jpop" in low:
-        return "J-POP", ""
-    if "pop" in low:
+    if "j-pop" in low or "jpop" in low or "pop" in low:
         return "J-POP", ""
     if "anime" in low:
-        return "ANIME", ""
+        return "アニメ", ""
     if "vocaloid" in low:
         return "VOCALOID", ""
     if any(k in low for k in ("children", "kids", "folk")):
-        return "CHILDREN", ""
+        return "どうよう", ""
     if "variety" in low:
-        return "VARIETY", ""
+        return "バラエティー", ""
     if "classical" in low or "classic" in low:
-        return "CLASSICAL", ""
+        return "クラシック", ""
     if "game" in low:
-        return "GAME", ""
+        return "ゲームミュージック", ""
     if "namco" in low:
-        return "NAMCO", ""
+        return "ナムコオリジナル", ""
     return "J-POP", ""
 
 
-def make_yatai_boxdef(folder_name, title="", genre="", collection="",
+def make_yatai_boxdef(folder_name, title="", title_ja="", genre="", collection="",
                       back_color="", fore_color=""):
-    """Generate box.def in YataiDON format."""
+    """Generate box.def in YataiDON format.
+    Order matches ESE / the reference example: TITLE, TITLEJA, GENRE, BACKCOLOR, FORECOLOR.
+    #BACKCOLOR = box colour, #FORECOLOR = title outline colour."""
     lines = [f"#TITLE:{title or folder_name}"]
+    if title_ja:
+        lines.append(f"#TITLEJA:{title_ja}")
     if genre:
         lines.append(f"#GENRE:{genre}")
     if collection:
@@ -863,12 +898,13 @@ class YataiBoxDefDialog(QDialog):
     為 Songs 資料夾內每個子資料夾產生正確格式的 box.def（GENRE/COLLECTION/顏色）。
     """
 
-    COL_FOLDER = 0
-    COL_TITLE  = 1
-    COL_GENRE  = 2
-    COL_COLL   = 3
-    COL_BACK   = 4
-    COL_FORE   = 5
+    COL_FOLDER  = 0
+    COL_TITLE   = 1
+    COL_TITLEJA = 2
+    COL_GENRE   = 3
+    COL_COLL    = 4
+    COL_BACK    = 5
+    COL_FORE    = 6
 
     def __init__(self, parent, tr, start_dir=""):
         super().__init__(parent)
@@ -897,33 +933,36 @@ class YataiBoxDefDialog(QDialog):
         root.addLayout(fr)
 
         # Table
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels([
             self.tr("yatai_col_folder"),
             self.tr("yatai_col_title"),
+            self.tr("yatai_col_titleja"),
             self.tr("yatai_col_genre"),
             self.tr("yatai_col_collection"),
             self.tr("yatai_col_back"),
             self.tr("yatai_col_fore"),
         ])
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(self.COL_FOLDER, QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(self.COL_TITLE,  QHeaderView.Stretch)
-        hh.setSectionResizeMode(self.COL_GENRE,  QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(self.COL_COLL,   QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(self.COL_BACK,   QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(self.COL_FORE,   QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_FOLDER,  QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_TITLE,   QHeaderView.Stretch)
+        hh.setSectionResizeMode(self.COL_TITLEJA, QHeaderView.Stretch)
+        hh.setSectionResizeMode(self.COL_GENRE,   QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_COLL,    QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_BACK,    QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_FORE,    QHeaderView.ResizeToContents)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         root.addWidget(self.table, 1)
 
         # Info
         info = QLabel(
-            "YataiDON: #TITLE / #GENRE (J-POP ANIME VOCALOID CHILDREN VARIETY CLASSICAL GAME NAMCO) "
-            "/ #COLLECTION (DAN DIFFICULTY RECOMMENDED FAVORITE RECENT). "
-            "顏色留空＝使用 GENRE 內建背景圖（建議）；填色會覆蓋成純色背景 / "
-            "Leave colors blank to use the built-in genre texture (recommended); "
-            "setting a color overrides it with a flat background."
+            "YataiDON: #TITLE / #TITLEJA / #GENRE / #COLLECTION (DAN DIFFICULTY RECOMMENDED "
+            "FAVORITE RECENT) / #BACKCOLOR / #FORECOLOR。"
+            "#BACKCOLOR＝盒子顏色，#FORECOLOR＝文字外框色。曲種顏色取自 ESE 官方配色；"
+            "特殊資料夾（COLLECTION）顏色留空＝使用內建圖示 / "
+            "#BACKCOLOR = box color, #FORECOLOR = title outline. Genre colors come from "
+            "ESE's official palette; COLLECTION folders are left blank to use built-in art."
         )
         info.setStyleSheet("color:#888;font-size:10px;")
         info.setWordWrap(True)
@@ -1000,59 +1039,75 @@ class YataiBoxDefDialog(QDialog):
 
             # Try to read existing box.def
             bpath = os.path.join(base, sub, "box.def")
-            ex_title = sub
-            ex_genre = ""
-            ex_coll  = ""
-            ex_back  = ""
-            ex_fore  = ""
+            ex_title  = sub
+            ex_titleja = ""
+            ex_genre  = ""
+            ex_coll   = ""
+            ex_back   = ""
+            ex_fore   = ""
             if os.path.exists(bpath):
                 try:
                     for line in _read_text(bpath).splitlines():
                         s = line.strip()
-                        if s.startswith("#TITLE:") and ex_title == sub:
+                        if s.startswith("#TITLEJA:"):
+                            ex_titleja = s[9:]
+                        elif s.startswith("#TITLE:") and ex_title == sub:
                             ex_title = s[7:]
                         elif s.startswith("#GENRE:"):
-                            ex_genre = s[7:].upper()
+                            ex_genre = s[7:]
                         elif s.startswith("#COLLECTION:"):
                             ex_coll = s[12:].upper()
+                        elif s.startswith("#BACKCOLOR:"):
+                            ex_back = s[11:].lstrip("#").upper()
+                        elif s.startswith("#FORECOLOR:"):
+                            ex_fore = s[11:].lstrip("#").upper()
                 except Exception:
                     pass
 
-            # Auto-detect when existing file has wrong/missing genre/collection
+            # Auto-detect when existing file has no genre/collection
             if not ex_genre and not ex_coll:
                 ex_genre, ex_coll = _detect_yatai_def(sub)
-            # NOTE: colors are deliberately NOT pre-loaded and stay blank.
-            # YataiDON renders the genre background from a texture keyed by
-            # #GENRE/#COLLECTION. Setting #BACKCOLOR forces texture_index=NONE,
-            # replacing the proper genre texture with a flat colour. Leaving the
-            # color fields blank means "Generate All" writes clean files with no
-            # color lines, so the correct genre textures show. Fill a colour in
-            # only for a deliberate custom override.
+            # Normalise any English/JP genre alias to a canonical preset key
+            ex_genre = _normalize_yatai_genre(ex_genre)
+
+            # Fill TITLEJA + colours from the genre preset (ESE palette) when
+            # missing. #BACKCOLOR = box colour, #FORECOLOR = text outline. For
+            # COLLECTION folders we leave colours blank so the built-in art shows.
+            preset = YATAI_GENRE_PRESETS.get(ex_genre)
+            if preset:
+                if not ex_titleja:
+                    ex_titleja = preset[0]
+                if not ex_back:
+                    ex_back = preset[1]
+                if not ex_fore:
+                    ex_fore = preset[2]
 
             # Col 0: folder (read-only)
             fi = QTableWidgetItem(sub)
             fi.setFlags(fi.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row_idx, self.COL_FOLDER, fi)
 
-            # Col 1: title
+            # Col 1/2: titles
             self.table.setItem(row_idx, self.COL_TITLE, QTableWidgetItem(ex_title))
+            self.table.setItem(row_idx, self.COL_TITLEJA, QTableWidgetItem(ex_titleja))
 
-            # Col 2: genre combo
+            # Col 3: genre combo (editable so any English/JP name is allowed)
             combo = QComboBox()
+            combo.setEditable(True)
             combo.addItems(YATAI_VALID_GENRES)
-            if ex_genre in YATAI_VALID_GENRES:
-                combo.setCurrentText(ex_genre)
+            combo.setCurrentText(ex_genre)
             self.table.setCellWidget(row_idx, self.COL_GENRE, combo)
 
-            # Col 3: collection (free text)
+            # Col 4: collection (free text)
             self.table.setItem(row_idx, self.COL_COLL, QTableWidgetItem(ex_coll))
 
-            # Col 4/5: colors
+            # Col 5/6: colors
             self.table.setCellWidget(row_idx, self.COL_BACK, self._color_widget(row_idx, self.COL_BACK, ex_back))
             self.table.setCellWidget(row_idx, self.COL_FORE, self._color_widget(row_idx, self.COL_FORE, ex_fore))
 
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLE, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLEJA, QHeaderView.Stretch)
 
     def generate_all(self):
         base = self.folder_edit.text().strip()
@@ -1068,8 +1123,10 @@ class YataiBoxDefDialog(QDialog):
             sub = sub_item.text()
             title_item = self.table.item(row, self.COL_TITLE)
             title = title_item.text().strip() if title_item else sub
+            titleja_item = self.table.item(row, self.COL_TITLEJA)
+            titleja = titleja_item.text().strip() if titleja_item else ""
             genre_w = self.table.cellWidget(row, self.COL_GENRE)
-            genre = genre_w.currentText() if genre_w else ""
+            genre = genre_w.currentText().strip() if genre_w else ""
             coll_item = self.table.item(row, self.COL_COLL)
             coll = coll_item.text().strip().upper() if coll_item else ""
             back_e = self._color_edits.get((row, self.COL_BACK))
@@ -1077,7 +1134,8 @@ class YataiBoxDefDialog(QDialog):
             back = back_e.text().strip() if back_e else ""
             fore = fore_e.text().strip() if fore_e else ""
 
-            content = make_yatai_boxdef(sub, title=title, genre=genre, collection=coll,
+            content = make_yatai_boxdef(sub, title=title, title_ja=titleja,
+                                        genre=genre, collection=coll,
                                         back_color=back, fore_color=fore)
             path = os.path.join(base, sub, "box.def")
             try:
