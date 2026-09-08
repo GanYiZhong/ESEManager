@@ -88,6 +88,24 @@ def download_portable_git(dest_dir: str = PORTABLE_GIT_DIR) -> Optional[str]:
     return git_exe
 
 
+def _force_rmtree(path):
+    """Windows 安全的 rmtree：git pack/idx 常被標成唯讀，遇到就清掉唯讀位再刪。"""
+    import stat
+
+    def _onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
+    if os.path.exists(path):
+        try:
+            shutil.rmtree(path, onerror=_onerror)
+        except Exception as e:
+            print(f"  刪除 {path} 時發生問題: {e}")
+
+
 class ESEScraperGitV2:
     def __init__(self, db_path: str = "ese_songs.db", clone_dir: str = "ESE_clone",
                  git_exe: str = "git"):
@@ -195,20 +213,34 @@ class ESEScraperGitV2:
         print("-" * 60)
 
         try:
-            # 如果目錄已存在，先檢查是否需要更新
+            # 如果目錄已存在，只更新 ref（不 checkout、維持 blobless），避免工作區衝突。
+            # 舊版用 `git pull` 會嘗試合併到工作區；若本地已 checkout 且上游有改動，
+            # 會出現「local changes would be overwritten by merge」而中止。這裡改成
+            # fetch + update-ref：只把 master 指到最新 commit，build_from_git_tree 讀
+            # `git ls-tree master` 即可，完全不碰工作區。
             if os.path.exists(self.clone_dir):
-                print(f"發現現有目錄 {self.clone_dir}，正在更新 (git pull)...")
+                print(f"發現現有目錄 {self.clone_dir}，正在更新 (git fetch)...")
                 try:
-                    if self._run_git([self.git_exe, "-C", self.clone_dir, "pull", "--progress"], 1800) == 0:
+                    # 確保 origin 指向現行 host（舊 clone 可能還指著已停用的 host）
+                    self._run_git([self.git_exe, "-C", self.clone_dir,
+                                   "remote", "set-url", "origin", self.git_url], 60)
+                    ok = (self._run_git(
+                            [self.git_exe, "-C", self.clone_dir, "fetch",
+                             "--filter=blob:none", "--depth", "1", "--progress",
+                             "origin", "master"], 1800) == 0
+                          and self._run_git(
+                            [self.git_exe, "-C", self.clone_dir,
+                             "update-ref", "refs/heads/master", "FETCH_HEAD"], 60) == 0)
+                    if ok:
                         print("✓ Repository 已更新")
                         return True
                     print("更新失敗，重新 clone...")
-                    shutil.rmtree(self.clone_dir)
+                    _force_rmtree(self.clone_dir)
                 except subprocess.TimeoutExpired:
                     raise
                 except Exception:
                     print("更新失敗，重新 clone...")
-                    shutil.rmtree(self.clone_dir)
+                    _force_rmtree(self.clone_dir)
 
             # Clone repository
             # --filter=blob:none --no-checkout：只抓 commit/tree（檔案清單），
@@ -562,7 +594,7 @@ class ESEScraperGitV2:
             print()
             print("正在清理 clone 的目錄...")
             try:
-                shutil.rmtree(self.clone_dir)
+                _force_rmtree(self.clone_dir)
                 print(f"✓ 已刪除 {self.clone_dir}")
             except Exception as e:
                 print(f"✗ 無法刪除 {self.clone_dir}: {e}")
