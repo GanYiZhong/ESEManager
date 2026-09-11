@@ -244,6 +244,7 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
     """
     import requests
     import urllib3
+    import urllib.parse
     from concurrent.futures import ThreadPoolExecutor
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -278,14 +279,41 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
         "OR level_oni IS NOT NULL OR level_ura IS NOT NULL")}
     todo = [r for r in rows if r[0] not in existing]
     print(f"資料庫已有日文標題 {len(existing)} 首；本次需抓取 {len(todo)} 首（總 {total}）")
+
+    # 清除已不在歌曲庫（ese_songs.db）中的過期日文標題列，避免累積幽靈列
+    # （與 ese_songs.db 對齊；重複的 file_name stem 會在 GUI 互相遮蔽，曾造成難度空白）。
+    # 就算本次沒有新歌要抓，上游刪歌也要在此清掉，故放在 todo 判斷之前。
+    def _prune_stale():
+        current_paths = {r[0] for r in rows}
+        if not current_paths:
+            return
+        cur = db.conn.cursor()
+        cur.execute("CREATE TEMP TABLE IF NOT EXISTS _keep(fp TEXT PRIMARY KEY)")
+        cur.execute("DELETE FROM _keep")
+        cur.executemany("INSERT OR IGNORE INTO _keep(fp) VALUES(?)",
+                        [(p,) for p in current_paths])
+        cur.execute("DELETE FROM local_songs WHERE file_path NOT IN (SELECT fp FROM _keep)")
+        pruned = cur.rowcount
+        cur.execute("DROP TABLE _keep")
+        db.conn.commit()
+        if pruned:
+            print(f"🧹 清除過期日文標題 {pruned} 首（歌曲庫已刪/改名）")
+
+    _prune_stale()
     if not todo:
         print("✓ 日文標題已是最新，略過抓取")
         db.close()
         return
     print("-" * 60)
 
+    # 下載連結是 file_path 的決定性衍生值；舊資料庫可能有 download_url 為空的列，
+    # 缺就即時補上，避免解析日文標題時整首漏掉。
+    _RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/raw/branch/master/"
+
     def fetch(row):
         file_path, url, filename, category = row
+        if not url:
+            url = _RAW_BASE + urllib.parse.quote(file_path)
         try:
             r = sess.get(url, timeout=30, verify=False)
             r.raise_for_status()
@@ -322,6 +350,7 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
     print("-" * 60)
     print(f"✓ 完成：本次新增 {new_count} 首，其中 {ja_count} 首有日文標題")
     db.show_stats()
+    sess.close()
     db.close()
 
 
