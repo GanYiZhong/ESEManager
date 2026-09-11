@@ -591,7 +591,10 @@ class DownloadThread(QThread):
                 return
             try:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                r = sess.get(_live_url(f["download_url"]), stream=True, timeout=60, verify=False)
+                # 舊資料庫可能有 download_url 為空的列（早期 schema）；
+                # 連結可由 file_path 直接推導，缺就即時補上，避免下載失敗。
+                dl_url = f["download_url"] or (ESE_RAW_BASE + urllib.parse.quote(f["file_path"]))
+                r = sess.get(_live_url(dl_url), stream=True, timeout=60, verify=False)
                 r.raise_for_status()
                 clen = int(r.headers.get("content-length", 0)) or 0
                 got = 0

@@ -546,6 +546,22 @@ class ESEScraperGitV2:
             self.stats["removed_files"] = removed_files
             self.stats["removed_songs"] = removed_songs
 
+        # 回填缺少 download_url 的舊列：早期 schema 沒有此欄，透過 ALTER TABLE 新增後
+        # 舊列為 NULL，而 insert_song_file 的 skip-existing 從不回填 → 下載時 URL=None
+        # 會失敗。連結可由 file_path 直接推導，這裡一次補齊。
+        null_rows = cur.execute(
+            "SELECT id, file_path FROM song_files "
+            "WHERE download_url IS NULL OR download_url = ''"
+        ).fetchall()
+        if null_rows:
+            cur.executemany(
+                "UPDATE song_files SET download_url = ? WHERE id = ?",
+                [(DOWNLOAD_BASE + urllib.parse.quote(fp), rid) for rid, fp in null_rows]
+            )
+            self.conn.commit()
+            print(f"🔧 補上 {len(null_rows)} 個缺少下載連結的檔案")
+            self.stats["fixed_urls"] = len(null_rows)
+
     def scrape(self, keep_clone: bool = False):
         """
         執行完整的抓取流程
