@@ -479,6 +479,7 @@ class ESEScraperGitV2:
         raw = result.stdout.decode("utf-8", "replace")
         cat_ids = {}       # category name -> id（快取，避免每檔 SELECT/INSERT）
         folder_set = set()  # 統計不重複資料夾數
+        current_paths = set()  # 本次 tree 內所有檔案路徑（用於清除已刪除/改名的舊列）
         for record in raw.split("\0"):
             if not record:
                 continue
@@ -499,6 +500,7 @@ class ESEScraperGitV2:
             category_name = parts[0]
             filename = parts[-1]
             base_path = "/".join(parts[:-1])
+            current_paths.add(path)
             song_name = self.get_song_name(filename)
             file_ext = os.path.splitext(filename)[1]
             folder_set.add(base_path)
@@ -523,6 +525,26 @@ class ESEScraperGitV2:
                 self.stats["skipped"] += 1
 
         self.stats["folders"] = len(folder_set)
+
+        # 清除「已不在 tree 內」的舊檔案列（上游改名/刪除留下的幽靈列），
+        # 否則「檢查缺漏」會把它們當缺檔去下載而 404 失敗。song_files 只做
+        # INSERT，故非在此授權性地把 DB 對齊目前 tree 不可。
+        cur = self.conn.cursor()
+        cur.execute("CREATE TEMP TABLE IF NOT EXISTS _keep(fp TEXT PRIMARY KEY)")
+        cur.execute("DELETE FROM _keep")
+        cur.executemany("INSERT OR IGNORE INTO _keep(fp) VALUES(?)",
+                        [(p,) for p in current_paths])
+        cur.execute("DELETE FROM song_files WHERE file_path NOT IN (SELECT fp FROM _keep)")
+        removed_files = cur.rowcount
+        cur.execute("DELETE FROM songs WHERE id NOT IN "
+                    "(SELECT DISTINCT song_id FROM song_files)")
+        removed_songs = cur.rowcount
+        cur.execute("DROP TABLE _keep")
+        self.conn.commit()
+        if removed_files or removed_songs:
+            print(f"🧹 清除過期資料：{removed_files} 個檔案、{removed_songs} 首歌（上游已刪/改名）")
+            self.stats["removed_files"] = removed_files
+            self.stats["removed_songs"] = removed_songs
 
     def scrape(self, keep_clone: bool = False):
         """
