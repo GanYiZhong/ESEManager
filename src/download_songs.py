@@ -219,6 +219,8 @@ class SongDownloader:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             # 下載
+            # /raw/ 對 LFS 檔只回傳 pointer；改用 /media/（舊資料庫相容）
+            url = url.replace("/raw/branch/", "/media/branch/")
             response = requests.get(url, stream=True, timeout=60)
             response.raise_for_status()
 

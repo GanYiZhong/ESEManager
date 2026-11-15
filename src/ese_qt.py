@@ -16,14 +16,16 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # ESE 檔案下載/取得來源（live host；舊 host git.vanillaaaa.org 已停用）
-ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/raw/branch/master/"
+ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
 
 
 def _live_url(url):
     """把舊 host 換成 live host，讓舊版資料庫的連結仍可用。"""
     if not url:
         return url
-    return url.replace("git.vanillaaaa.org", "ese.tjadataba.se")
+    # /raw/ 對 LFS 檔（.ogg）只回傳 pointer 文字；/media/ 會回傳實際內容
+    return (url.replace("git.vanillaaaa.org", "ese.tjadataba.se")
+               .replace("/raw/branch/", "/media/branch/"))
 
 import requests
 import urllib3
