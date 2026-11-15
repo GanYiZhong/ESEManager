@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import sqlite3
+import subprocess
 import threading
 import webbrowser
 import urllib.parse
@@ -1510,7 +1511,12 @@ class MainWindow(QMainWindow):
     def open_dir(self):
         d = self.dir_edit.text()
         if os.path.isdir(d):
-            os.startfile(d)  # Windows
+            if sys.platform == "win32":
+                os.startfile(d)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", d])
+            else:
+                subprocess.Popen(["xdg-open", d])
 
     # ---- box.def 編輯器
     def open_boxdef(self):
@@ -1526,13 +1532,17 @@ class MainWindow(QMainWindow):
                                 self.tr("db_confirm")) != QMessageBox.Yes:
             return
 
-        # 解析 git；沒有就詢問是否下載可攜版
+        # 解析 git；Windows 沒有就詢問是否下載可攜版；其他平台直接提示手動安裝
         from ese_scraper_git_v2 import find_git
         git_exe = find_git()
         download_git = False
         if not git_exe:
-            if QMessageBox.question(self, "Git", self.tr("db_no_git_q")) == QMessageBox.Yes:
-                download_git = True
+            if sys.platform == "win32":
+                if QMessageBox.question(self, "Git", self.tr("db_no_git_q")) == QMessageBox.Yes:
+                    download_git = True
+                else:
+                    QMessageBox.information(self, "Git", self.tr("db_no_git_fail"))
+                    return
             else:
                 QMessageBox.information(self, "Git", self.tr("db_no_git_fail"))
                 return
