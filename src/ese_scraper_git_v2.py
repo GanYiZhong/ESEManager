@@ -88,6 +88,24 @@ def download_portable_git(dest_dir: str = PORTABLE_GIT_DIR) -> Optional[str]:
     return git_exe
 
 
+def _force_rmtree(path):
+    """Windows 安全的 rmtree：git pack/idx 常被標成唯讀，遇到就清掉唯讀位再刪。"""
+    import stat
+
+    def _onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
+    if os.path.exists(path):
+        try:
+            shutil.rmtree(path, onerror=_onerror)
+        except Exception as e:
+            print(f"  刪除 {path} 時發生問題: {e}")
+
+
 class ESEScraperGitV2:
     def __init__(self, db_path: str = "ese_songs.db", clone_dir: str = "ESE_clone",
                  git_exe: str = "git"):
@@ -144,6 +162,8 @@ class ESEScraperGitV2:
         """)
 
         # 建立歌曲檔案表（一首歌可以有多個檔案）
+        # blob_sha = git blob 物件雜湊（sha1("blob <len>\0"+content)）；用來偵測上游
+        # 是否更新過已下載的檔案（本地檔算同一公式比對，內容一變 sha 就變）。
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS song_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,10 +173,16 @@ class ESEScraperGitV2:
                 file_type TEXT,
                 size INTEGER,
                 download_url TEXT,
+                blob_sha TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (song_id) REFERENCES songs (id) ON DELETE CASCADE
             )
         """)
+
+        # 舊資料庫升級：補上 blob_sha 欄位（已存在則略過）
+        existing_cols = {r[1] for r in cursor.execute("PRAGMA table_info(song_files)")}
+        if "blob_sha" not in existing_cols:
+            cursor.execute("ALTER TABLE song_files ADD COLUMN blob_sha TEXT")
 
         # 建立索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_songs_category ON songs(category_id)")
@@ -195,20 +221,34 @@ class ESEScraperGitV2:
         print("-" * 60)
 
         try:
-            # 如果目錄已存在，先檢查是否需要更新
+            # 如果目錄已存在，只更新 ref（不 checkout、維持 blobless），避免工作區衝突。
+            # 舊版用 `git pull` 會嘗試合併到工作區；若本地已 checkout 且上游有改動，
+            # 會出現「local changes would be overwritten by merge」而中止。這裡改成
+            # fetch + update-ref：只把 master 指到最新 commit，build_from_git_tree 讀
+            # `git ls-tree master` 即可，完全不碰工作區。
             if os.path.exists(self.clone_dir):
-                print(f"發現現有目錄 {self.clone_dir}，正在更新 (git pull)...")
+                print(f"發現現有目錄 {self.clone_dir}，正在更新 (git fetch)...")
                 try:
-                    if self._run_git([self.git_exe, "-C", self.clone_dir, "pull", "--progress"], 1800) == 0:
+                    # 確保 origin 指向現行 host（舊 clone 可能還指著已停用的 host）
+                    self._run_git([self.git_exe, "-C", self.clone_dir,
+                                   "remote", "set-url", "origin", self.git_url], 60)
+                    ok = (self._run_git(
+                            [self.git_exe, "-C", self.clone_dir, "fetch",
+                             "--filter=blob:none", "--depth", "1", "--progress",
+                             "origin", "master"], 1800) == 0
+                          and self._run_git(
+                            [self.git_exe, "-C", self.clone_dir,
+                             "update-ref", "refs/heads/master", "FETCH_HEAD"], 60) == 0)
+                    if ok:
                         print("✓ Repository 已更新")
                         return True
                     print("更新失敗，重新 clone...")
-                    shutil.rmtree(self.clone_dir)
+                    _force_rmtree(self.clone_dir)
                 except subprocess.TimeoutExpired:
                     raise
                 except Exception:
                     print("更新失敗，重新 clone...")
-                    shutil.rmtree(self.clone_dir)
+                    _force_rmtree(self.clone_dir)
 
             # Clone repository
             # --filter=blob:none --no-checkout：只抓 commit/tree（檔案清單），
@@ -447,6 +487,8 @@ class ESEScraperGitV2:
         raw = result.stdout.decode("utf-8", "replace")
         cat_ids = {}       # category name -> id（快取，避免每檔 SELECT/INSERT）
         folder_set = set()  # 統計不重複資料夾數
+        current_paths = set()  # 本次 tree 內所有檔案路徑（用於清除已刪除/改名的舊列）
+        path_sha = {}      # file_path -> git blob sha（偵測上游更新用）
         for record in raw.split("\0"):
             if not record:
                 continue
@@ -456,7 +498,7 @@ class ESEScraperGitV2:
             except ValueError:
                 continue
             fields = meta.split()
-            if len(fields) < 2 or fields[1] != "blob":
+            if len(fields) < 3 or fields[1] != "blob":
                 continue  # 只處理 blob（檔案），略過 submodule（commit）等
 
             path = path.replace("\\", "/")
@@ -467,6 +509,8 @@ class ESEScraperGitV2:
             category_name = parts[0]
             filename = parts[-1]
             base_path = "/".join(parts[:-1])
+            current_paths.add(path)
+            path_sha[path] = fields[2]
             song_name = self.get_song_name(filename)
             file_ext = os.path.splitext(filename)[1]
             folder_set.add(base_path)
@@ -491,6 +535,53 @@ class ESEScraperGitV2:
                 self.stats["skipped"] += 1
 
         self.stats["folders"] = len(folder_set)
+
+        # 清除「已不在 tree 內」的舊檔案列（上游改名/刪除留下的幽靈列），
+        # 否則「檢查缺漏」會把它們當缺檔去下載而 404 失敗。song_files 只做
+        # INSERT，故非在此授權性地把 DB 對齊目前 tree 不可。
+        cur = self.conn.cursor()
+        cur.execute("CREATE TEMP TABLE IF NOT EXISTS _keep(fp TEXT PRIMARY KEY)")
+        cur.execute("DELETE FROM _keep")
+        cur.executemany("INSERT OR IGNORE INTO _keep(fp) VALUES(?)",
+                        [(p,) for p in current_paths])
+        cur.execute("DELETE FROM song_files WHERE file_path NOT IN (SELECT fp FROM _keep)")
+        removed_files = cur.rowcount
+        cur.execute("DELETE FROM songs WHERE id NOT IN "
+                    "(SELECT DISTINCT song_id FROM song_files)")
+        removed_songs = cur.rowcount
+        cur.execute("DROP TABLE _keep")
+        self.conn.commit()
+        if removed_files or removed_songs:
+            print(f"🧹 清除過期資料：{removed_files} 個檔案、{removed_songs} 首歌（上游已刪/改名）")
+            self.stats["removed_files"] = removed_files
+            self.stats["removed_songs"] = removed_songs
+
+        # 回填缺少 download_url 的舊列：早期 schema 沒有此欄，透過 ALTER TABLE 新增後
+        # 舊列為 NULL，而 insert_song_file 的 skip-existing 從不回填 → 下載時 URL=None
+        # 會失敗。連結可由 file_path 直接推導，這裡一次補齊。
+        null_rows = cur.execute(
+            "SELECT id, file_path FROM song_files "
+            "WHERE download_url IS NULL OR download_url = ''"
+        ).fetchall()
+        if null_rows:
+            cur.executemany(
+                "UPDATE song_files SET download_url = ? WHERE id = ?",
+                [(DOWNLOAD_BASE + urllib.parse.quote(fp), rid) for rid, fp in null_rows]
+            )
+            self.conn.commit()
+            print(f"🔧 補上 {len(null_rows)} 個缺少下載連結的檔案")
+            self.stats["fixed_urls"] = len(null_rows)
+
+        # 更新 blob_sha（授權性）：insert_song_file 會跳過既有列，故用 file_path 對每個
+        # tree 內的檔案一次寫入目前 sha —— 新列與既有列都會被設成最新值。上游改譜面後
+        # 該檔的 blob sha 會變，GUI 的「檢查更新」比對本地檔算出的 sha 即可發現。
+        if path_sha:
+            cur.executemany(
+                "UPDATE song_files SET blob_sha = ? WHERE file_path = ?",
+                [(sha, fp) for fp, sha in path_sha.items()]
+            )
+            self.conn.commit()
+            print(f"🔑 已記錄 {len(path_sha)} 個檔案的內容雜湊（供檢查更新）")
 
     def scrape(self, keep_clone: bool = False):
         """
@@ -562,7 +653,7 @@ class ESEScraperGitV2:
             print()
             print("正在清理 clone 的目錄...")
             try:
-                shutil.rmtree(self.clone_dir)
+                _force_rmtree(self.clone_dir)
                 print(f"✓ 已刪除 {self.clone_dir}")
             except Exception as e:
                 print(f"✗ 無法刪除 {self.clone_dir}: {e}")

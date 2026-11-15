@@ -11,6 +11,7 @@ import time
 import sqlite3
 import subprocess
 import threading
+import hashlib
 import webbrowser
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -39,13 +40,15 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QGroupBox, QDialog, QFormLayout, QColorDialog, QFrame, QScrollArea
+    QGroupBox, QDialog, QFormLayout, QColorDialog, QFrame, QScrollArea,
+    QTableWidget, QTableWidgetItem
 )
 import re
 
 # 確保能 import 同目錄的 download_songs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from download_songs import SongDownloader  # noqa: E402
+import dan_tools  # noqa: E402  段位生成/變換（移植自 bluetaiko/SongConvertor）
 
 # TOML
 try:
@@ -110,6 +113,41 @@ TR = {
         "boxdef_fetch": "⬇ 取得 ESE 官方", "boxdef_fetch_tip": "從 ESE 倉庫下載此分類的官方 box.def",
         "boxdef_fetch_none": "ESE 找不到對應此資料夾的 box.def（依名稱/序號比對）",
         "boxdef_fetch_fail": "取得失敗：{e}", "boxdef_fetch_ok": "已載入 ESE 官方 box.def（{c}）",
+        "c_bpm": "BPM", "c_easy": "簡單", "c_normal": "普通", "c_hard": "困難",
+        "c_oni": "魔王", "c_ura": "裏",
+        "f_filter": "篩選", "f_bpm": "BPM 區間", "f_diff": "難度", "f_level": "等級",
+        "diff_all": "全部難度", "f_reset": "重設篩選", "f_any": "不限",
+        "check_updates": "🆕 檢查更新",
+        "upd_checking": "檢查更新中（比對本地檔案雜湊）…",
+        "upd_progress": "檢查更新 {d}/{t}",
+        "upd_none": "✓ 所有已下載的歌曲都是最新的",
+        "upd_found": "發現 {n} 首歌有更新（{f} 個檔案），是否重新下載覆蓋？",
+        "upd_no_sha": "此資料庫沒有內容雜湊，請先按「🔄 更新資料庫」再檢查更新。",
+        "dan_btn": "🥋 段位工具", "dan_title": "段位工具（Dan）",
+        "dan_tab_gen": "段位生成（Wiki）", "dan_tab_conv": "段位變換（tja）",
+        "dan_gen_url": "太鼓 Wiki 段位頁面 URL", "dan_out": "輸出資料夾",
+        "dan_songs": "Songs 資料夾", "dan_songs_opt": "Songs 資料夾（可省略）",
+        "dan_gen_run": "段位生成", "dan_conv_tja": "要變換的 tja",
+        "dan_conv_run": "變換執行", "dan_browse": "瀏覽",
+        "dan_gen_hint": "輸入太鼓 Wiki 的段位道場頁面網址，依段位名稱與合格條件\n生成 TaikøNauts 等可用的段位檔（dan.def + 各段位 Dan.json）。",
+        "dan_conv_hint": "把 OpenTaiko 等的 tja 段位（以 #NEXTSONG 分隔多曲）\n變換成 TaikøNauts 等可用的段位檔。",
+        "dan_need_url": "請輸入段位頁面 URL", "dan_need_out": "請選擇輸出資料夾",
+        "dan_need_tja": "請選擇要變換的 tja 檔", "dan_running": "處理中…",
+        "dan_done": "完成！", "dan_fail": "失敗：{e}",
+        "ydan_tab": "YataiDON 段位", "ydan_root": "YataiDON Songs 根資料夾",
+        "ydan_src": "曲源 Songs 資料夾", "ydan_run": "生成 YataiDON 段位",
+        "ydan_hint": "輸入太鼓 Wiki 段位道場頁面網址，生成 YataiDON 格式段位\n（各段 dan.json 寫入 <根>/11 Dan Dojo/，並把對應 tja/ogg\n自動複製到對應曲種資料夾）。",
+        "ydan_need_root": "請選擇 YataiDON Songs 根資料夾",
+        "credits_btn": "💗 致謝", "credits_title": "致謝 / Credits",
+        "credits_body": "段位生成（DanGenerator）與段位變換（DanConvertor）功能\n移植自 bluetaiko 的 SongConvertor 專案，特此感謝原作者。\n\n原專案（MIT License）：\nhttps://github.com/bluetaiko/SongConvertor",
+        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成工具",
+        "yatai_folder": "Songs 資料夾", "yatai_scan": "掃描",
+        "yatai_col_folder": "資料夾", "yatai_col_title": "標題",
+        "yatai_col_titleja": "日文標題", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
+        "yatai_gen_all": "全部生成 box.def",
+        "yatai_done": "完成：已生成 {c} 個 box.def",
+        "yatai_pick": "選擇顏色",
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
@@ -144,6 +182,41 @@ TR = {
         "boxdef_fetch": "⬇ Fetch from ESE", "boxdef_fetch_tip": "Download the official box.def for this category from the ESE repo",
         "boxdef_fetch_none": "No matching ESE box.def for this folder (by name/index)",
         "boxdef_fetch_fail": "Fetch failed: {e}", "boxdef_fetch_ok": "Loaded official ESE box.def ({c})",
+        "c_bpm": "BPM", "c_easy": "Easy", "c_normal": "Normal", "c_hard": "Hard",
+        "c_oni": "Oni", "c_ura": "Ura",
+        "f_filter": "Filter", "f_bpm": "BPM range", "f_diff": "Difficulty", "f_level": "Level",
+        "diff_all": "All difficulties", "f_reset": "Reset filters", "f_any": "Any",
+        "check_updates": "🆕 Check Updates",
+        "upd_checking": "Checking for updates (hashing local files)…",
+        "upd_progress": "Checking updates {d}/{t}",
+        "upd_none": "✓ All downloaded songs are up to date",
+        "upd_found": "{n} songs have updates ({f} files). Re-download and overwrite?",
+        "upd_no_sha": "This database has no content hashes. Click 🔄 Update DB first, then check updates.",
+        "dan_btn": "🥋 Dan Tools", "dan_title": "Dan Tools",
+        "dan_tab_gen": "Generate (Wiki)", "dan_tab_conv": "Convert (tja)",
+        "dan_gen_url": "Taiko Wiki Dan page URL", "dan_out": "Output folder",
+        "dan_songs": "Songs folder", "dan_songs_opt": "Songs folder (optional)",
+        "dan_gen_run": "Generate", "dan_conv_tja": "tja to convert",
+        "dan_conv_run": "Convert", "dan_browse": "Browse",
+        "dan_gen_hint": "Enter a Taiko Wiki Dan-dojo page URL to generate Dan files\nfor TaikøNauts etc. (dan.def + per-rank Dan.json) from the\nrank names and clear conditions.",
+        "dan_conv_hint": "Convert an OpenTaiko-style Dan tja (multiple songs split by\n#NEXTSONG) into TaikøNauts-compatible Dan files.",
+        "dan_need_url": "Please enter the Dan page URL", "dan_need_out": "Please choose an output folder",
+        "dan_need_tja": "Please choose a tja file", "dan_running": "Working…",
+        "dan_done": "Done!", "dan_fail": "Failed: {e}",
+        "ydan_tab": "YataiDON Dan", "ydan_root": "YataiDON Songs root",
+        "ydan_src": "Source Songs folder", "ydan_run": "Generate YataiDON Dan",
+        "ydan_hint": "Enter a Taiko Wiki Dan-dojo page URL to generate YataiDON-format\nDan (dan.json into <root>/11 Dan Dojo/), and auto-copy the matched\ntja/ogg into the matching genre folders.",
+        "ydan_need_root": "Please choose the YataiDON Songs root folder",
+        "credits_btn": "💗 Credits", "credits_title": "Credits",
+        "credits_body": "The Dan Generator and Dan Convertor features are ported from\nbluetaiko's SongConvertor project. Many thanks to the author.\n\nOriginal project (MIT License):\nhttps://github.com/bluetaiko/SongConvertor",
+        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def Generator",
+        "yatai_folder": "Songs folder", "yatai_scan": "Scan",
+        "yatai_col_folder": "Folder", "yatai_col_title": "Title",
+        "yatai_col_titleja": "Title (JA)", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_back": "Back color", "yatai_col_fore": "Fore color",
+        "yatai_gen_all": "Generate All box.def",
+        "yatai_done": "Done: generated {c} box.def files",
+        "yatai_pick": "Pick color",
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
@@ -178,6 +251,41 @@ TR = {
         "boxdef_fetch": "⬇ ESE から取得", "boxdef_fetch_tip": "ESE リポジトリからこの分類の公式 box.def を取得",
         "boxdef_fetch_none": "このフォルダに対応する ESE の box.def が見つかりません（名前/番号で照合）",
         "boxdef_fetch_fail": "取得に失敗: {e}", "boxdef_fetch_ok": "ESE 公式 box.def を読み込みました（{c}）",
+        "c_bpm": "BPM", "c_easy": "かんたん", "c_normal": "ふつう", "c_hard": "むずかしい",
+        "c_oni": "おに", "c_ura": "裏",
+        "f_filter": "絞り込み", "f_bpm": "BPM 範囲", "f_diff": "難易度", "f_level": "レベル",
+        "diff_all": "すべて", "f_reset": "リセット", "f_any": "指定なし",
+        "check_updates": "🆕 更新チェック",
+        "upd_checking": "更新をチェック中（ローカルファイルのハッシュ照合）…",
+        "upd_progress": "更新チェック {d}/{t}",
+        "upd_none": "✓ ダウンロード済みの曲はすべて最新です",
+        "upd_found": "{n} 曲に更新があります（{f} ファイル）。再ダウンロードして上書きしますか？",
+        "upd_no_sha": "このデータベースにはハッシュがありません。先に「🔄 データベース更新」を実行してください。",
+        "dan_btn": "🥋 段位ツール", "dan_title": "段位ツール（Dan）",
+        "dan_tab_gen": "段位生成（Wiki）", "dan_tab_conv": "段位変換（tja）",
+        "dan_gen_url": "太鼓 Wiki 段位ページの URL", "dan_out": "出力フォルダ",
+        "dan_songs": "Songs フォルダ", "dan_songs_opt": "Songs フォルダ（省略可）",
+        "dan_gen_run": "段位生成", "dan_conv_tja": "変換する tja",
+        "dan_conv_run": "変換実行", "dan_browse": "参照",
+        "dan_gen_hint": "太鼓 Wiki の段位道場ページの URL を入力し、段位の名前と\n合格条件から TaikøNauts 等で使える段位ファイル（dan.def +\n各段位の Dan.json）を生成します。",
+        "dan_conv_hint": "OpenTaiko 等の tja 段位（#NEXTSONG で複数曲に分割）を\nTaikøNauts 等で使える段位ファイルに変換します。",
+        "dan_need_url": "段位ページの URL を入力してください", "dan_need_out": "出力フォルダを選択してください",
+        "dan_need_tja": "変換する tja を選択してください", "dan_running": "処理中…",
+        "dan_done": "完了！", "dan_fail": "失敗: {e}",
+        "ydan_tab": "YataiDON 段位", "ydan_root": "YataiDON Songs ルート",
+        "ydan_src": "曲ソース Songs フォルダ", "ydan_run": "YataiDON 段位を生成",
+        "ydan_hint": "太鼓 Wiki 段位道場ページの URL を入力し、YataiDON 形式の段位を\n生成します（各段の dan.json を <ルート>/11 Dan Dojo/ に書き出し、\n対応する tja/ogg を曲種フォルダへ自動コピー）。",
+        "ydan_need_root": "YataiDON Songs ルートフォルダを選択してください",
+        "credits_btn": "💗 クレジット", "credits_title": "クレジット / Credits",
+        "credits_body": "段位生成（DanGenerator）と段位変換（DanConvertor）機能は\nbluetaiko 氏の SongConvertor を移植したものです。作者に感謝します。\n\n元プロジェクト（MIT License）:\nhttps://github.com/bluetaiko/SongConvertor",
+        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成ツール",
+        "yatai_folder": "Songs フォルダ", "yatai_scan": "スキャン",
+        "yatai_col_folder": "フォルダ", "yatai_col_title": "タイトル",
+        "yatai_col_titleja": "日本語タイトル", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
+        "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
+        "yatai_gen_all": "すべて box.def を生成",
+        "yatai_done": "完了：{c} 個の box.def を生成しました",
+        "yatai_pick": "色を選択",
     },
 }
 
@@ -233,12 +341,16 @@ def human_eta(sec):
 
 # ---------------------------------------------------------------- 歌曲清單 model
 class SongModel(QAbstractTableModel):
-    COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_files"]
+    COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_bpm",
+            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files"]
+    LEVEL_COLS = {5: "level_easy", 6: "level_normal", 7: "level_hard",
+                  8: "level_oni", 9: "level_ura"}
 
-    def __init__(self, tr, jp_map):
+    def __init__(self, tr, jp_map, meta_map=None):
         super().__init__()
         self.tr = tr
         self.jp_map = jp_map
+        self.meta_map = meta_map or {}
         self.songs = []
         self.checked = set()
 
@@ -282,12 +394,19 @@ class SongModel(QAbstractTableModel):
             if col == 3:
                 return CATEGORY_NAMES.get(song["category"], song["category"])
             if col == 4:
+                meta = self.meta_map.get(song["song_name"])
+                return (meta or {}).get("bpm", "") or ""
+            if col in self.LEVEL_COLS:
+                meta = self.meta_map.get(song["song_name"])
+                lv = (meta or {}).get(self.LEVEL_COLS[col])
+                return str(lv) if lv is not None else "−"
+            if col == 10:
                 return str(len(song["files"]))
         if role == Qt.ForegroundRole and col == 3:
             c = CATEGORY_COLORS.get(song["category"])
             if c:
                 return QColor(c)
-        if role == Qt.TextAlignmentRole and col == 4:
+        if role == Qt.TextAlignmentRole and (col == 4 or col in self.LEVEL_COLS or col == 10):
             return int(Qt.AlignCenter)
         return None
 
@@ -423,6 +542,92 @@ class SearchThread(QThread):
             self.fail.emit(str(e))
 
 
+def git_blob_sha(path):
+    """計算檔案的 git blob 物件雜湊：sha1(b"blob <size>\\0" + content)。
+    與 git ls-tree 給的 blob sha 同一公式，可精準比對本地檔是否為最新版本。"""
+    size = os.path.getsize(path)
+    h = hashlib.sha1()
+    h.update(b"blob %d\0" % size)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+class CheckUpdatesThread(QThread):
+    """檢查已下載的檔案是否被上游更新（比對 git blob sha）。"""
+    progress = Signal(int, int)     # done, total
+    done = Signal(object)           # list[song]（只含有更新的檔案）
+    fail = Signal(str)
+
+    def __init__(self, download_dir, category=None):
+        super().__init__()
+        self.download_dir = download_dir
+        self.category = category
+
+    def run(self):
+        try:
+            d = SongDownloader(db_path=DB_PATH)
+            songs = d.search_songs(keyword=None, category=self.category)
+            d.close()
+
+            # file_path -> blob_sha（權威值，來自 ese_songs.db）
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                sha_map = {fp: sha for fp, sha in conn.execute(
+                    "SELECT file_path, blob_sha FROM song_files "
+                    "WHERE blob_sha IS NOT NULL AND blob_sha != ''")}
+            finally:
+                conn.close()
+            if not sha_map:
+                # 舊資料庫沒有 blob_sha：請使用者先更新資料庫
+                self.fail.emit("__NO_SHA__")
+                return
+
+            ddir = self.download_dir
+            candidates = []     # (song, file, local_path, remote_sha)
+            for s in songs:
+                for f in s["files"]:
+                    if f["filename"].lower() == "box.def":
+                        continue
+                    sha = sha_map.get(f["file_path"])
+                    if not sha:
+                        continue
+                    lp = os.path.join(ddir, f["file_path"])
+                    if os.path.exists(lp):
+                        candidates.append((s, f, lp, sha))
+
+            total = len(candidates)
+            self.progress.emit(0, total)
+
+            def check(item):
+                s, f, lp, sha = item
+                try:
+                    return (s, f) if git_blob_sha(lp) != sha else None
+                except Exception:
+                    return None
+
+            changed = {}    # id(song) -> song dict（files 只留有更新的）
+            done = 0
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                for res in ex.map(check, candidates):
+                    done += 1
+                    if done % 100 == 0 or done == total:
+                        self.progress.emit(done, total)
+                    if res:
+                        s, f = res
+                        key = id(s)
+                        if key not in changed:
+                            entry = dict(s)
+                            entry["files"] = []
+                            changed[key] = entry
+                        changed[key]["files"].append(f)
+
+            self.done.emit(list(changed.values()))
+        except Exception as e:
+            self.fail.emit(str(e))
+
+
 # ---------------------------------------------------------------- 下載執行緒
 # 設計：工作執行緒「不」對每個 chunk 發訊號（下載全部 = 數千檔 × 多並行，會
 # 用跨執行緒訊號灌爆主執行緒事件佇列導致卡死）。改成把進度寫進共用記憶體，
@@ -431,11 +636,12 @@ class DownloadThread(QThread):
     log = Signal(str)
     finished_all = Signal(int, int, int, int)      # downloaded, skipped, failed, total
 
-    def __init__(self, files, download_dir, workers):
+    def __init__(self, files, download_dir, workers, overwrite=False):
         super().__init__()
         self.files = files
         self.download_dir = download_dir
         self.workers = max(1, workers)
+        self.overwrite = overwrite     # True = 覆寫既有檔案（更新用），不跳過
         self._stop = False
         self._pause = threading.Event()
         self._pause.set()         # set = 執行中；clear = 暫停
@@ -486,7 +692,7 @@ class DownloadThread(QThread):
                 return
             save_path = os.path.join(self.download_dir, f["file_path"])
             disp = f["filename"]
-            if os.path.exists(save_path):
+            if os.path.exists(save_path) and not self.overwrite:
                 with self._lock:
                     self.done += 1
                     self.skip += 1
@@ -494,7 +700,10 @@ class DownloadThread(QThread):
                 return
             try:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                r = sess.get(_live_url(f["download_url"]), stream=True, timeout=60, verify=False)
+                # 舊資料庫可能有 download_url 為空的列（早期 schema）；
+                # 連結可由 file_path 直接推導，缺就即時補上，避免下載失敗。
+                dl_url = f["download_url"] or (ESE_RAW_BASE + urllib.parse.quote(f["file_path"]))
+                r = sess.get(_live_url(dl_url), stream=True, timeout=60, verify=False)
                 r.raise_for_status()
                 clen = int(r.headers.get("content-length", 0)) or 0
                 got = 0
@@ -705,6 +914,365 @@ def _read_text(path):
         except UnicodeDecodeError:
             continue
     return data.decode("utf-8", "replace")
+
+
+# --------------------------------------------------------- YataiDON box.def 生成工具
+# YataiDON parse_box_def supports: #TITLE / #TITLE<LANG> / #GENRE / #COLLECTION /
+# #BACKCOLOR:#RRGGBB / #FORECOLOR:#RRGGBB
+#   #BACKCOLOR = the box (folder) colour, #FORECOLOR = the title text outline.
+# #GENRE accepts English or Japanese names (GENRE_MAP in enums.h has both).
+# COLLECTION strings: DAN DIFFICULTY RECOMMENDED FAVORITE RECENT (+ shipped NEW/SEARCH).
+
+# Canonical genre presets — colours taken from ESE's own official box.def files
+# (the #BACKCOLOR/#FORECOLOR format is identical to YataiDON's). Genre folders are
+# rendered as a flat coloured box, matching how ESE / 太鼓 ships them.
+# key = genre label written to #GENRE -> (title_ja, back_color, fore_color)
+YATAI_GENRE_PRESETS = {
+    "J-POP":            ("J-POP",            "20A0BA", "004D68"),
+    "アニメ":            ("アニメ",            "FF9800", "9C4002"),
+    "VOCALOID":         ("ボーカロイド曲",     "29C2C9", "54657E"),
+    "どうよう":          ("どうよう",          "FF5286", "99042E"),
+    "バラエティー":       ("バラエティー",       "8ED41E", "3C6800"),
+    "クラシック":         ("クラシック",        "D1A213", "865800"),
+    "ゲームミュージック":  ("ゲームミュージック", "9C75BD", "4F2886"),
+    "ナムコオリジナル":    ("ナムコオリジナル",   "FF5A13", "941800"),
+}
+
+# Genre combo choices (canonical labels above; combo is editable so any value works)
+YATAI_VALID_GENRES = [""] + list(YATAI_GENRE_PRESETS.keys())
+
+# Normalise any English/Japanese genre alias to the canonical preset key.
+YATAI_GENRE_ALIAS = {
+    "J-POP": "J-POP", "JPOP": "J-POP", "POP": "J-POP", "ポップス": "J-POP",
+    "ANIME": "アニメ", "アニメ": "アニメ",
+    "VOCALOID": "VOCALOID", "ボーカロイド": "VOCALOID", "ボーカロイド曲": "VOCALOID",
+    "CHILDREN": "どうよう", "KIDS": "どうよう", "FOLK": "どうよう",
+    "キッズ": "どうよう", "どうよう": "どうよう", "童謡": "どうよう", "童謡・民謡": "どうよう",
+    "VARIETY": "バラエティー", "バラエティ": "バラエティー", "バラエティー": "バラエティー",
+    "CLASSICAL": "クラシック", "CLASSIC": "クラシック", "クラシック": "クラシック",
+    "GAME": "ゲームミュージック", "ゲームミュージック": "ゲームミュージック",
+    "NAMCO": "ナムコオリジナル", "ナムコオリジナル": "ナムコオリジナル",
+}
+
+
+def _normalize_yatai_genre(genre):
+    """Map an English/Japanese genre alias to its canonical preset key."""
+    g = (genre or "").strip()
+    return YATAI_GENRE_ALIAS.get(g.upper()) or YATAI_GENRE_ALIAS.get(g) or g
+
+
+def _detect_yatai_def(folder_name):
+    """Auto-detect (genre, collection) from folder name for YataiDON.
+    genre is returned as a canonical preset key (Japanese, except J-POP/VOCALOID)."""
+    low = folder_name.lower()
+    if "dan" in low or "dojo" in low:
+        return "", "DAN"
+    if "recommend" in low:
+        return "", "RECOMMENDED"
+    if "recent" in low:
+        return "", "RECENT"
+    if "favorite" in low or "favour" in low:
+        return "", "FAVORITE"
+    if "difficulty" in low:
+        return "", "DIFFICULTY"
+    if "j-pop" in low or "jpop" in low or "pop" in low:
+        return "J-POP", ""
+    if "anime" in low:
+        return "アニメ", ""
+    if "vocaloid" in low:
+        return "VOCALOID", ""
+    if any(k in low for k in ("children", "kids", "folk")):
+        return "どうよう", ""
+    if "variety" in low:
+        return "バラエティー", ""
+    if "classical" in low or "classic" in low:
+        return "クラシック", ""
+    if "game" in low:
+        return "ゲームミュージック", ""
+    if "namco" in low:
+        return "ナムコオリジナル", ""
+    return "J-POP", ""
+
+
+def make_yatai_boxdef(folder_name, title="", title_ja="", genre="", collection="",
+                      back_color="", fore_color=""):
+    """Generate box.def in YataiDON format.
+    Order matches ESE / the reference example: TITLE, TITLEJA, GENRE, BACKCOLOR, FORECOLOR.
+    #BACKCOLOR = box colour, #FORECOLOR = title outline colour."""
+    lines = [f"#TITLE:{title or folder_name}"]
+    if title_ja:
+        lines.append(f"#TITLEJA:{title_ja}")
+    if genre:
+        lines.append(f"#GENRE:{genre}")
+    if collection:
+        lines.append(f"#COLLECTION:{collection}")
+    if back_color:
+        hx = _norm_hex(back_color)
+        if hx:
+            lines.append(f"#BACKCOLOR:#{hx}")
+    if fore_color:
+        hx = _norm_hex(fore_color)
+        if hx:
+            lines.append(f"#FORECOLOR:#{hx}")
+    return "\n".join(lines) + "\n"
+
+
+class YataiBoxDefDialog(QDialog):
+    """YataiDON box.def 批量生成工具。
+    為 Songs 資料夾內每個子資料夾產生正確格式的 box.def（GENRE/COLLECTION/顏色）。
+    """
+
+    COL_FOLDER  = 0
+    COL_TITLE   = 1
+    COL_TITLEJA = 2
+    COL_GENRE   = 3
+    COL_COLL    = 4
+    COL_BACK    = 5
+    COL_FORE    = 6
+
+    def __init__(self, parent, tr, start_dir=""):
+        super().__init__(parent)
+        self.tr = tr
+        self.setWindowTitle(tr("yatai_title"))
+        self.resize(980, 580)
+        self._color_edits = {}   # (row, col) -> QLineEdit
+        self._build_ui(start_dir)
+        if start_dir and os.path.isdir(start_dir):
+            self.scan()
+
+    def _build_ui(self, start_dir):
+        root = QVBoxLayout(self)
+
+        # Folder row
+        fr = QHBoxLayout()
+        fr.addWidget(QLabel(self.tr("yatai_folder") + ":"))
+        self.folder_edit = QLineEdit(start_dir)
+        fr.addWidget(self.folder_edit, 1)
+        browse_btn = QPushButton(self.tr("browse"))
+        browse_btn.clicked.connect(self._browse)
+        scan_btn = QPushButton(self.tr("yatai_scan"))
+        scan_btn.clicked.connect(self.scan)
+        fr.addWidget(browse_btn)
+        fr.addWidget(scan_btn)
+        root.addLayout(fr)
+
+        # Table
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels([
+            self.tr("yatai_col_folder"),
+            self.tr("yatai_col_title"),
+            self.tr("yatai_col_titleja"),
+            self.tr("yatai_col_genre"),
+            self.tr("yatai_col_collection"),
+            self.tr("yatai_col_back"),
+            self.tr("yatai_col_fore"),
+        ])
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(self.COL_FOLDER,  QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_TITLE,   QHeaderView.Stretch)
+        hh.setSectionResizeMode(self.COL_TITLEJA, QHeaderView.Stretch)
+        hh.setSectionResizeMode(self.COL_GENRE,   QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_COLL,    QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_BACK,    QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(self.COL_FORE,    QHeaderView.ResizeToContents)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        root.addWidget(self.table, 1)
+
+        # Info
+        info = QLabel(
+            "YataiDON: #TITLE / #TITLEJA / #GENRE / #COLLECTION (DAN DIFFICULTY RECOMMENDED "
+            "FAVORITE RECENT) / #BACKCOLOR / #FORECOLOR。"
+            "#BACKCOLOR＝盒子顏色，#FORECOLOR＝文字外框色。曲種顏色取自 ESE 官方配色；"
+            "特殊資料夾（COLLECTION）顏色留空＝使用內建圖示 / "
+            "#BACKCOLOR = box color, #FORECOLOR = title outline. Genre colors come from "
+            "ESE's official palette; COLLECTION folders are left blank to use built-in art."
+        )
+        info.setStyleSheet("color:#888;font-size:10px;")
+        info.setWordWrap(True)
+        root.addWidget(info)
+
+        # Buttons
+        br = QHBoxLayout()
+        gen_btn = QPushButton(self.tr("yatai_gen_all"))
+        gen_btn.setStyleSheet(
+            "QPushButton{background:#1976D2;color:white;font-weight:bold;"
+            "padding:8px 16px;border-radius:8px;}"
+            "QPushButton:hover{background:#1565C0;}"
+        )
+        gen_btn.clicked.connect(self.generate_all)
+        br.addStretch()
+        br.addWidget(gen_btn)
+        root.addLayout(br)
+
+    def _browse(self):
+        d = QFileDialog.getExistingDirectory(self, self.tr("browse"), self.folder_edit.text())
+        if d:
+            self.folder_edit.setText(d)
+            self.scan()
+
+    def _color_widget(self, row, col, initial=""):
+        """Color cell: hex QLineEdit + live swatch + picker button."""
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(2, 1, 2, 1)
+        edit = QLineEdit(initial.upper().lstrip("#"))
+        edit.setMaxLength(6)
+        edit.setPlaceholderText("RRGGBB")
+        edit.setFixedWidth(66)
+        swatch = QFrame()
+        swatch.setFixedSize(18, 18)
+        btn = QPushButton("🎨")
+        btn.setFixedWidth(28)
+        btn.setFlat(True)
+
+        def upd():
+            hx = edit.text().strip().upper()
+            ok = len(hx) == 6 and all(c in "0123456789ABCDEF" for c in hx)
+            swatch.setStyleSheet(
+                (f"background:#{hx};border:1px solid #555;border-radius:2px;") if ok
+                else "border:1px solid #555;border-radius:2px;"
+            )
+
+        def pick():
+            cur = edit.text().strip()
+            init = QColor("#" + cur) if len(cur) == 6 else QColor("#444444")
+            c = QColorDialog.getColor(init, self, self.tr("yatai_pick"))
+            if c.isValid():
+                edit.setText(c.name().lstrip("#").upper())
+
+        edit.textChanged.connect(upd)
+        btn.clicked.connect(pick)
+        h.addWidget(edit)
+        h.addWidget(swatch)
+        h.addWidget(btn)
+        upd()
+        self._color_edits[(row, col)] = edit
+        return w
+
+    def scan(self):
+        base = self.folder_edit.text().strip()
+        if not os.path.isdir(base):
+            return
+        self._color_edits.clear()
+        subs = sorted(d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d)))
+        self.table.setRowCount(0)
+
+        for row_idx, sub in enumerate(subs):
+            self.table.insertRow(row_idx)
+
+            # Try to read existing box.def
+            bpath = os.path.join(base, sub, "box.def")
+            ex_title  = sub
+            ex_titleja = ""
+            ex_genre  = ""
+            ex_coll   = ""
+            ex_back   = ""
+            ex_fore   = ""
+            if os.path.exists(bpath):
+                try:
+                    for line in _read_text(bpath).splitlines():
+                        s = line.strip()
+                        if s.startswith("#TITLEJA:"):
+                            ex_titleja = s[9:]
+                        elif s.startswith("#TITLE:") and ex_title == sub:
+                            ex_title = s[7:]
+                        elif s.startswith("#GENRE:"):
+                            ex_genre = s[7:]
+                        elif s.startswith("#COLLECTION:"):
+                            ex_coll = s[12:].upper()
+                        elif s.startswith("#BACKCOLOR:"):
+                            ex_back = s[11:].lstrip("#").upper()
+                        elif s.startswith("#FORECOLOR:"):
+                            ex_fore = s[11:].lstrip("#").upper()
+                except Exception:
+                    pass
+
+            # Auto-detect when existing file has no genre/collection
+            if not ex_genre and not ex_coll:
+                ex_genre, ex_coll = _detect_yatai_def(sub)
+            # Normalise any English/JP genre alias to a canonical preset key
+            ex_genre = _normalize_yatai_genre(ex_genre)
+
+            # Fill TITLEJA + colours from the genre preset (ESE palette) when
+            # missing. #BACKCOLOR = box colour, #FORECOLOR = text outline. For
+            # COLLECTION folders we leave colours blank so the built-in art shows.
+            preset = YATAI_GENRE_PRESETS.get(ex_genre)
+            if preset:
+                if not ex_titleja:
+                    ex_titleja = preset[0]
+                if not ex_back:
+                    ex_back = preset[1]
+                if not ex_fore:
+                    ex_fore = preset[2]
+
+            # Col 0: folder (read-only)
+            fi = QTableWidgetItem(sub)
+            fi.setFlags(fi.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row_idx, self.COL_FOLDER, fi)
+
+            # Col 1/2: titles
+            self.table.setItem(row_idx, self.COL_TITLE, QTableWidgetItem(ex_title))
+            self.table.setItem(row_idx, self.COL_TITLEJA, QTableWidgetItem(ex_titleja))
+
+            # Col 3: genre combo (editable so any English/JP name is allowed)
+            combo = QComboBox()
+            combo.setEditable(True)
+            combo.addItems(YATAI_VALID_GENRES)
+            combo.setCurrentText(ex_genre)
+            self.table.setCellWidget(row_idx, self.COL_GENRE, combo)
+
+            # Col 4: collection (free text)
+            self.table.setItem(row_idx, self.COL_COLL, QTableWidgetItem(ex_coll))
+
+            # Col 5/6: colors
+            self.table.setCellWidget(row_idx, self.COL_BACK, self._color_widget(row_idx, self.COL_BACK, ex_back))
+            self.table.setCellWidget(row_idx, self.COL_FORE, self._color_widget(row_idx, self.COL_FORE, ex_fore))
+
+        self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLE, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLEJA, QHeaderView.Stretch)
+
+    def generate_all(self):
+        base = self.folder_edit.text().strip()
+        if not os.path.isdir(base):
+            QMessageBox.warning(self, self.tr("yatai_title"), self.tr("boxdef_no_dir"))
+            return
+        created = 0
+        errors = []
+        for row in range(self.table.rowCount()):
+            sub_item = self.table.item(row, self.COL_FOLDER)
+            if not sub_item:
+                continue
+            sub = sub_item.text()
+            title_item = self.table.item(row, self.COL_TITLE)
+            title = title_item.text().strip() if title_item else sub
+            titleja_item = self.table.item(row, self.COL_TITLEJA)
+            titleja = titleja_item.text().strip() if titleja_item else ""
+            genre_w = self.table.cellWidget(row, self.COL_GENRE)
+            genre = genre_w.currentText().strip() if genre_w else ""
+            coll_item = self.table.item(row, self.COL_COLL)
+            coll = coll_item.text().strip().upper() if coll_item else ""
+            back_e = self._color_edits.get((row, self.COL_BACK))
+            fore_e = self._color_edits.get((row, self.COL_FORE))
+            back = back_e.text().strip() if back_e else ""
+            fore = fore_e.text().strip() if fore_e else ""
+
+            content = make_yatai_boxdef(sub, title=title, title_ja=titleja,
+                                        genre=genre, collection=coll,
+                                        back_color=back, fore_color=fore)
+            path = os.path.join(base, sub, "box.def")
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                created += 1
+            except Exception as e:
+                errors.append(f"{sub}: {e}")
+
+        msg = self.tr("yatai_done", c=created)
+        if errors:
+            msg += "\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, self.tr("yatai_title"), msg)
 
 
 # ------------------------------------------------------------- box.def 編輯器
@@ -1055,6 +1623,256 @@ class BoxDefDialog(QDialog):
                                self.tr("boxdef_batch_done", c=created, s=skipped))
 
 
+# ---------------------------------------------------------- 段位工具執行緒/對話框
+class DanGenThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str)         # ok, info
+
+    def __init__(self, url, out_dir, songs_folder, local_db=""):
+        super().__init__()
+        self.url, self.out_dir, self.songs_folder = url, out_dir, songs_folder
+        self.local_db = local_db
+
+    def run(self):
+        try:
+            n = dan_tools.generate_dan_from_wiki(
+                self.url, self.out_dir, songs_folder=self.songs_folder,
+                log=self.log.emit, local_db=self.local_db)
+            self.done.emit(True, str(n))
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
+class DanConvThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str)
+
+    def __init__(self, tja, out_dir, songs_folder):
+        super().__init__()
+        self.tja, self.out_dir, self.songs_folder = tja, out_dir, songs_folder
+
+    def run(self):
+        try:
+            dan_tools.convert_dan_tja(
+                self.tja, self.out_dir, simu_folder=self.songs_folder,
+                log=self.log.emit)
+            self.done.emit(True, "")
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
+class YataiDanThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str)
+
+    def __init__(self, url, yatai_root, source_songs, local_db=""):
+        super().__init__()
+        self.url, self.yatai_root = url, yatai_root
+        self.source_songs, self.local_db = source_songs, local_db
+
+    def run(self):
+        try:
+            n = dan_tools.generate_yatai_dan_from_wiki(
+                self.url, self.yatai_root, source_songs_folder=self.source_songs,
+                log=self.log.emit, local_db=self.local_db)
+            self.done.emit(True, str(n))
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
+class DanToolsDialog(QDialog):
+    """段位生成（Wiki）+ 段位變換（tja）+ YataiDON 段位。移植自 bluetaiko/SongConvertor。"""
+
+    def __init__(self, parent, tr, start_dir):
+        super().__init__(parent)
+        self.tr = tr
+        self.start_dir = start_dir
+        self._thread = None
+        self.setWindowTitle(tr("dan_title"))
+        self.resize(720, 560)
+
+        root = QVBoxLayout(self)
+        tabs = QTabWidget()
+        tabs.addTab(self._build_gen_tab(), tr("dan_tab_gen"))
+        tabs.addTab(self._build_conv_tab(), tr("dan_tab_conv"))
+        tabs.addTab(self._build_yatai_tab(), tr("ydan_tab"))
+        root.addWidget(tabs)
+
+        self.log_view = QPlainTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMaximumBlockCount(5000)
+        root.addWidget(self.log_view, 1)
+
+        credit = QLabel(
+            'Dan tools ported from '
+            '<a href="https://github.com/bluetaiko/SongConvertor">bluetaiko/SongConvertor</a>'
+            ' (MIT) — thanks!')
+        credit.setOpenExternalLinks(True)
+        credit.setStyleSheet("color:#888;")
+        root.addWidget(credit)
+
+    def _pick_dir(self, edit):
+        d = QFileDialog.getExistingDirectory(self, self.tr("dan_browse"),
+                                             edit.text() or self.start_dir)
+        if d:
+            edit.setText(d)
+
+    def _pick_file(self, edit, flt):
+        f, _ = QFileDialog.getOpenFileName(self, self.tr("dan_browse"),
+                                           edit.text() or self.start_dir, flt)
+        if f:
+            edit.setText(f)
+
+    def _build_gen_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(self.tr("dan_gen_hint"))
+        hint.setStyleSheet("color:#aaa;")
+        v.addWidget(hint)
+        form = QFormLayout()
+        self.gen_url = QLineEdit()
+        self.gen_url.setPlaceholderText(
+            "https://wikiwiki.jp/taiko-fumen/%E6%AE%B5%E4%BD%8D%E9%81%93%E5%A0%B4")
+        form.addRow(self.tr("dan_gen_url"), self.gen_url)
+        self.gen_out = QLineEdit()
+        form.addRow(self.tr("dan_out"), self._with_browse(self.gen_out, lambda: self._pick_dir(self.gen_out)))
+        self.gen_songs = QLineEdit()
+        form.addRow(self.tr("dan_songs"), self._with_browse(self.gen_songs, lambda: self._pick_dir(self.gen_songs)))
+        v.addLayout(form)
+        self.gen_btn = QPushButton(self.tr("dan_gen_run"))
+        self.gen_btn.setStyleSheet(
+            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
+            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.gen_btn.clicked.connect(self.run_gen)
+        v.addWidget(self.gen_btn)
+        v.addStretch()
+        return w
+
+    def _build_conv_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(self.tr("dan_conv_hint"))
+        hint.setStyleSheet("color:#aaa;")
+        v.addWidget(hint)
+        form = QFormLayout()
+        self.conv_tja = QLineEdit()
+        form.addRow(self.tr("dan_conv_tja"),
+                    self._with_browse(self.conv_tja,
+                                      lambda: self._pick_file(self.conv_tja, "TJA (*.tja)")))
+        self.conv_out = QLineEdit()
+        form.addRow(self.tr("dan_out"), self._with_browse(self.conv_out, lambda: self._pick_dir(self.conv_out)))
+        self.conv_songs = QLineEdit()
+        form.addRow(self.tr("dan_songs_opt"), self._with_browse(self.conv_songs, lambda: self._pick_dir(self.conv_songs)))
+        v.addLayout(form)
+        self.conv_btn = QPushButton(self.tr("dan_conv_run"))
+        self.conv_btn.setStyleSheet(
+            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
+            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.conv_btn.clicked.connect(self.run_conv)
+        v.addWidget(self.conv_btn)
+        v.addStretch()
+        return w
+
+    def _build_yatai_tab(self):
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(self.tr("ydan_hint"))
+        hint.setStyleSheet("color:#aaa;")
+        v.addWidget(hint)
+        form = QFormLayout()
+        self.ydan_url = QLineEdit()
+        self.ydan_url.setPlaceholderText(
+            "https://wikiwiki.jp/taiko-fumen/%E6%AE%B5%E4%BD%8D%E9%81%93%E5%A0%B4")
+        form.addRow(self.tr("dan_gen_url"), self.ydan_url)
+        self.ydan_root = QLineEdit()
+        form.addRow(self.tr("ydan_root"), self._with_browse(self.ydan_root, lambda: self._pick_dir(self.ydan_root)))
+        self.ydan_src = QLineEdit()
+        form.addRow(self.tr("ydan_src"), self._with_browse(self.ydan_src, lambda: self._pick_dir(self.ydan_src)))
+        v.addLayout(form)
+        self.ydan_btn = QPushButton(self.tr("ydan_run"))
+        self.ydan_btn.setStyleSheet(
+            "QPushButton{background:#1976D2;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
+            "QPushButton:hover{background:#1565C0;} QPushButton:disabled{background:#7c7c7c;}")
+        self.ydan_btn.clicked.connect(self.run_yatai)
+        v.addWidget(self.ydan_btn)
+        v.addStretch()
+        return w
+
+    def _with_browse(self, edit, cb):
+        box = QWidget()
+        h = QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(edit, 1)
+        b = QPushButton(self.tr("dan_browse"))
+        b.clicked.connect(cb)
+        h.addWidget(b)
+        return box
+
+    def _busy(self, on):
+        self.gen_btn.setEnabled(not on)
+        self.conv_btn.setEnabled(not on)
+        self.ydan_btn.setEnabled(not on)
+
+    def run_gen(self):
+        url = self.gen_url.text().strip()
+        out = self.gen_out.text().strip()
+        if not url:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_url"))
+            return
+        if not out:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_out"))
+            return
+        self._busy(True)
+        self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
+        local_db = os.path.abspath(LOCAL_DB_PATH) if os.path.isfile(LOCAL_DB_PATH) else ""
+        self._thread = DanGenThread(url, out, self.gen_songs.text().strip(), local_db)
+        self._thread.log.connect(self.log_view.appendPlainText)
+        self._thread.done.connect(self._on_done)
+        self._thread.start()
+
+    def run_conv(self):
+        tja = self.conv_tja.text().strip()
+        out = self.conv_out.text().strip()
+        if not tja:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_tja"))
+            return
+        if not out:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_out"))
+            return
+        self._busy(True)
+        self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
+        self._thread = DanConvThread(tja, out, self.conv_songs.text().strip())
+        self._thread.log.connect(self.log_view.appendPlainText)
+        self._thread.done.connect(self._on_done)
+        self._thread.start()
+
+    def run_yatai(self):
+        url = self.ydan_url.text().strip()
+        root = self.ydan_root.text().strip()
+        if not url:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_url"))
+            return
+        if not root:
+            QMessageBox.warning(self, self.tr("dan_title"), self.tr("ydan_need_root"))
+            return
+        self._busy(True)
+        self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
+        local_db = os.path.abspath(LOCAL_DB_PATH) if os.path.isfile(LOCAL_DB_PATH) else ""
+        self._thread = YataiDanThread(url, root, self.ydan_src.text().strip(), local_db)
+        self._thread.log.connect(self.log_view.appendPlainText)
+        self._thread.done.connect(self._on_done)
+        self._thread.start()
+
+    def _on_done(self, ok, info):
+        self._busy(False)
+        if ok:
+            self.log_view.appendPlainText("✓ " + self.tr("dan_done"))
+            QMessageBox.information(self, self.tr("dan_title"), self.tr("dan_done"))
+        else:
+            self.log_view.appendPlainText("✗ " + info)
+            QMessageBox.critical(self, self.tr("dan_title"), self.tr("dan_fail", e=info))
+
+
 # ---------------------------------------------------------------- 主視窗
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -1066,9 +1884,11 @@ class MainWindow(QMainWindow):
         self.lang = detect_system_lang() if self.lang_pref == "auto" else self.lang_pref
         self.has_local = os.path.exists(LOCAL_DB_PATH)
         self.jp_map = self.load_jp_map()
+        self.meta_map = self.load_meta_map()
+        self.all_songs = []          # 最近一次搜尋的完整結果（篩選前）
         self.dl_thread = None
 
-        self.song_model = SongModel(self.tr, self.jp_map)
+        self.song_model = SongModel(self.tr, self.jp_map, self.meta_map)
         self.dl_model = DownloadModel(self.tr)
 
         self.build_ui()
@@ -1123,6 +1943,46 @@ class MainWindow(QMainWindow):
                 print("load_jp_map:", e)
         return m
 
+    def load_meta_map(self):
+        """讀取 BPM / 五大難度等級，鍵同 jp_map（檔名 stem 優先、title 備援）。
+        舊版 ese_local.db 可能沒有難度欄位，故先檢查欄位存在與否再查詢。"""
+        m = {}
+        if not self.has_local:
+            return m
+        try:
+            conn = sqlite3.connect(LOCAL_DB_PATH)
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(local_songs)")}
+            lvl_cols = [c for c in ("level_easy", "level_normal", "level_hard",
+                                    "level_oni", "level_ura") if c in cols]
+            sel = ["title", "file_name", "bpm"] + lvl_cols
+            rows = conn.execute(f"SELECT {', '.join(sel)} FROM local_songs").fetchall()
+            conn.close()
+
+            def to_meta(row):
+                d = {"bpm": (row[2] or "").strip()}
+                for i, c in enumerate(lvl_cols):
+                    d[c] = row[3 + i]
+                return d
+
+            def has_levels(row):
+                return any(row[3 + i] is not None for i in range(len(lvl_cols)))
+
+            # 同一檔名可能有多筆（例：舊的本機掃描列 + 遠端列），其中只有一筆帶
+            # 難度。把「有難度」的排前面，setdefault 才會選到正確那筆而非空的。
+            rows = sorted(rows, key=lambda r: not has_levels(r))
+
+            for row in rows:                       # 先放檔名（主鍵）
+                fn = row[1]
+                if fn:
+                    m.setdefault(os.path.splitext(fn)[0], to_meta(row))
+            for row in rows:                       # 再用 title 補洞（不覆蓋）
+                t = row[0]
+                if t:
+                    m.setdefault(t, to_meta(row))
+        except Exception as e:
+            print("load_meta_map:", e)
+        return m
+
     # ---- UI
     def build_ui(self):
         self.setWindowTitle(self.tr("title"))
@@ -1145,14 +2005,26 @@ class MainWindow(QMainWindow):
         self.db_update_btn.clicked.connect(self.update_database)
         self.boxdef_btn = QPushButton(self.tr("boxdef_btn"))
         self.boxdef_btn.clicked.connect(self.open_boxdef)
+        self.dan_btn = QPushButton(self.tr("dan_btn"))
+        self.dan_btn.clicked.connect(self.open_dan_tools)
+        self.yatai_btn = QPushButton(self.tr("yatai_btn"))
+        self.yatai_btn.clicked.connect(self.open_yatai_boxdef)
         self.missing_btn = QPushButton(self.tr("check_missing"))
         self.missing_btn.clicked.connect(self.check_missing)
+        self.updates_btn = QPushButton(self.tr("check_updates"))
+        self.updates_btn.clicked.connect(self.check_updates)
         self.official_btn = QPushButton(self.tr("official"))
         self.official_btn.clicked.connect(lambda: webbrowser.open("https://taiko.ac"))
+        self.credits_btn = QPushButton(self.tr("credits_btn"))
+        self.credits_btn.clicked.connect(self.open_credits)
         top.addWidget(self.db_update_btn)
         top.addWidget(self.boxdef_btn)
+        top.addWidget(self.dan_btn)
+        top.addWidget(self.yatai_btn)
         top.addWidget(self.missing_btn)
+        top.addWidget(self.updates_btn)
         top.addWidget(self.official_btn)
+        top.addWidget(self.credits_btn)
         root.addLayout(top)
 
         # search row
@@ -1178,6 +2050,39 @@ class MainWindow(QMainWindow):
         sr.addWidget(self.clear_btn)
         root.addLayout(sr)
 
+        # filter row：BPM 區間 + 難度等級篩選（依本地資料庫的 BPM/難度）
+        fr = QHBoxLayout()
+        fr.addWidget(QLabel("🎚 " + self.tr("f_filter") + ":"))
+        fr.addWidget(QLabel(self.tr("f_bpm")))
+        self.bpm_min = QSpinBox(); self.bpm_min.setRange(0, 999)
+        self.bpm_min.setSpecialValueText(self.tr("f_any"))   # 0 顯示為「不限」
+        self.bpm_max = QSpinBox(); self.bpm_max.setRange(0, 999)
+        self.bpm_max.setSpecialValueText(self.tr("f_any"))
+        fr.addWidget(self.bpm_min); fr.addWidget(QLabel("–")); fr.addWidget(self.bpm_max)
+        fr.addSpacing(16)
+        fr.addWidget(QLabel(self.tr("f_diff")))
+        self.diff_combo = QComboBox()
+        self.diff_combo.addItem(self.tr("diff_all"), None)
+        for key, col in (("c_easy", "level_easy"), ("c_normal", "level_normal"),
+                         ("c_hard", "level_hard"), ("c_oni", "level_oni"),
+                         ("c_ura", "level_ura")):
+            self.diff_combo.addItem(self.tr(key), col)
+        fr.addWidget(self.diff_combo)
+        fr.addWidget(QLabel(self.tr("f_level")))
+        self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
+        self.lv_min.setSpecialValueText(self.tr("f_any"))
+        self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
+        self.lv_max.setSpecialValueText(self.tr("f_any"))
+        fr.addWidget(self.lv_min); fr.addWidget(QLabel("–")); fr.addWidget(self.lv_max)
+        self.reset_filter_btn = QPushButton(self.tr("f_reset"))
+        self.reset_filter_btn.clicked.connect(self.reset_filters)
+        fr.addWidget(self.reset_filter_btn)
+        fr.addStretch()
+        for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
+            w.valueChanged.connect(lambda _=None: self.apply_filters())
+        self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
+        root.addLayout(fr)
+
         # splitter: song table (top) + monitor (bottom)
         splitter = QSplitter(Qt.Vertical)
 
@@ -1195,11 +2100,11 @@ class MainWindow(QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.doubleClicked.connect(self.toggle_check)
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.Stretch)
-        hh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ✓
+        hh.setSectionResizeMode(1, QHeaderView.Stretch)            # 歌名
+        hh.setSectionResizeMode(2, QHeaderView.Stretch)            # 日文
+        for c in range(3, len(SongModel.COLS)):                    # 分類/BPM/難度×5/檔案
+            hh.setSectionResizeMode(c, QHeaderView.ResizeToContents)
         sb.addWidget(self.table)
 
         # selection row
@@ -1342,6 +2247,7 @@ class MainWindow(QMainWindow):
     def clear_search(self):
         self.search_edit.clear()
         self.cat_combo.setCurrentIndex(0)
+        self.all_songs = []
         self.song_model.set_songs([])
         self.count_label.setText(self.tr("total", n=0))
         self.update_sel_count()
@@ -1356,9 +2262,64 @@ class MainWindow(QMainWindow):
         self._search.start()
 
     def on_search_done(self, songs):
+        self.all_songs = songs
+        self.search_btn.setEnabled(True)
+        self.apply_filters()
+
+    @staticmethod
+    def _bpm_val(s):
+        """從 BPM 字串取出數值（取第一個數字；無則 None）。"""
+        if not s:
+            return None
+        m = re.search(r"\d+(?:\.\d+)?", str(s))
+        return float(m.group()) if m else None
+
+    def reset_filters(self):
+        for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
+            w.blockSignals(True); w.setValue(0); w.blockSignals(False)
+        self.diff_combo.blockSignals(True)
+        self.diff_combo.setCurrentIndex(0)
+        self.diff_combo.blockSignals(False)
+        self.apply_filters()
+
+    def apply_filters(self):
+        bmin, bmax = self.bpm_min.value(), self.bpm_max.value()
+        lmin, lmax = self.lv_min.value(), self.lv_max.value()
+        diff_col = self.diff_combo.currentData()
+        bpm_active = bmin > 0 or bmax > 0
+        lvl_active = lmin > 0 or lmax > 0 or diff_col is not None
+
+        if not bpm_active and not lvl_active:
+            songs = self.all_songs                       # 無篩選：全部顯示（含無中繼資料者）
+        else:
+            diff_cols = [diff_col] if diff_col else list(SongModel.LEVEL_COLS.values())
+            songs = []
+            for s in self.all_songs:
+                meta = self.meta_map.get(s["song_name"])
+                if not meta:
+                    continue                             # 篩選啟用但無資料 → 排除
+                if bpm_active:
+                    bpm = self._bpm_val(meta.get("bpm"))
+                    if bpm is None:
+                        continue
+                    if bmin and bpm < bmin:
+                        continue
+                    if bmax and bpm > bmax:
+                        continue
+                if lvl_active and (lmin or lmax):
+                    lvls = [meta.get(c) for c in diff_cols]
+                    lvls = [v for v in lvls if v is not None]
+                    if not any((not lmin or v >= lmin) and (not lmax or v <= lmax)
+                               for v in lvls):
+                        continue
+                elif diff_col is not None:
+                    # 只選了難度、沒設等級 → 要求該難度存在
+                    if meta.get(diff_col) is None:
+                        continue
+                songs.append(s)
+
         self.song_model.set_songs(songs)
         self.count_label.setText(self.tr("total", n=len(songs)))
-        self.search_btn.setEnabled(True)
         self.update_sel_count()
 
     def toggle_check(self, index):
@@ -1381,7 +2342,7 @@ class MainWindow(QMainWindow):
         files = [(s, f) for s in songs for f in s["files"]]
         self.start_download(files)
 
-    def start_download(self, files):
+    def start_download(self, files, overwrite=False):
         if self.dl_thread and self.dl_thread.isRunning():
             QMessageBox.warning(self, "", "下載進行中…")
             return
@@ -1401,7 +2362,7 @@ class MainWindow(QMainWindow):
         self.log_view.appendPlainText(f"——— 開始下載 {len(files)} 個檔案 ———")
 
         self.dl_thread = DownloadThread(files, self.dir_edit.text(),
-                                        self.workers_spin.value())
+                                        self.workers_spin.value(), overwrite=overwrite)
         self.dl_thread.log.connect(self.log_view.appendPlainText)
         self.dl_thread.finished_all.connect(self.on_download_done)
         self.dl_thread.start()
@@ -1503,6 +2464,42 @@ class MainWindow(QMainWindow):
             self.count_label.setText(self.tr("total", n=len(missing)))
             self.start_download(files)
 
+    # ---- check updates（比對 git blob sha，找出上游已更新的已下載檔案）
+    def check_updates(self):
+        ddir = self.dir_edit.text()
+        if not os.path.isdir(ddir):
+            QMessageBox.warning(self, self.tr("check_updates"), self.tr("boxdef_no_dir"))
+            return
+        self.updates_btn.setEnabled(False)
+        self.log_view.appendPlainText("▶ " + self.tr("upd_checking"))
+        self._upd = CheckUpdatesThread(ddir, None)
+        self._upd.progress.connect(
+            lambda d, t: self.count_label.setText(self.tr("upd_progress", d=d, t=t)))
+        self._upd.done.connect(self.on_updates_loaded)
+        self._upd.fail.connect(self._on_updates_fail)
+        self._upd.start()
+
+    def _on_updates_fail(self, e):
+        self.updates_btn.setEnabled(True)
+        if e == "__NO_SHA__":
+            QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_no_sha"))
+        else:
+            QMessageBox.critical(self, self.tr("check_updates"), e)
+
+    def on_updates_loaded(self, songs):
+        self.updates_btn.setEnabled(True)
+        if not songs:
+            QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_none"))
+            return
+        files = [(s, f) for s in songs for f in s["files"]]
+        if QMessageBox.question(
+                self, self.tr("check_updates"),
+                self.tr("upd_found", n=len(songs), f=len(files))) == QMessageBox.Yes:
+            self.song_model.set_songs(songs)
+            self.song_model.set_all(True)
+            self.count_label.setText(self.tr("total", n=len(songs)))
+            self.start_download(files, overwrite=True)   # 覆寫既有檔案
+
     # ---- misc
     def browse_dir(self):
         d = QFileDialog.getExistingDirectory(self, self.tr("browse"), self.dir_edit.text())
@@ -1524,6 +2521,20 @@ class MainWindow(QMainWindow):
     def open_boxdef(self):
         start = self.dir_edit.text() if os.path.isdir(self.dir_edit.text()) else os.getcwd()
         BoxDefDialog(self, start, self.tr).exec()
+
+    def open_dan_tools(self):
+        start = self.dir_edit.text() if os.path.isdir(self.dir_edit.text()) else os.getcwd()
+        DanToolsDialog(self, self.tr, start).exec()
+
+    def open_yatai_boxdef(self):
+        YataiBoxDefDialog(self, self.tr).exec()
+
+    def open_credits(self):
+        box = QMessageBox(self)
+        box.setWindowTitle(self.tr("credits_title"))
+        box.setText(self.tr("credits_body"))
+        box.setIcon(QMessageBox.Information)
+        box.exec()
 
     # ---- 一鍵更新資料庫（歌曲清單 + 日文標題；整合自 update_databases.bat）
     def update_database(self):
@@ -1571,11 +2582,14 @@ class MainWindow(QMainWindow):
         self.load_categories()
         self.has_local = os.path.exists(LOCAL_DB_PATH)
         self.jp_map = self.load_jp_map()
+        self.meta_map = self.load_meta_map()
         self.song_model.jp_map = self.jp_map
+        self.song_model.meta_map = self.meta_map
         if self.song_model.songs:
             self.song_model.dataChanged.emit(
                 self.song_model.index(0, 2),
-                self.song_model.index(self.song_model.rowCount() - 1, 2),
+                self.song_model.index(self.song_model.rowCount() - 1,
+                                      self.song_model.columnCount() - 1),
                 [Qt.DisplayRole])
         QMessageBox.information(self, self.tr("db_update"), self.tr("db_done"))
 
@@ -1626,7 +2640,9 @@ class MainWindow(QMainWindow):
         if ok:
             self.has_local = os.path.exists(LOCAL_DB_PATH)
             self.jp_map = self.load_jp_map()
+            self.meta_map = self.load_meta_map()
             self.song_model.jp_map = self.jp_map
+            self.song_model.meta_map = self.meta_map
             self.load_categories()
             QMessageBox.information(self, "資料庫更新", "✓ 更新成功")
         else:
@@ -1682,6 +2698,14 @@ class DBUpdateThread(QThread):
 
 
 def main():
+    # 打包後自我檢測：確認 lxml/dan_tools 等相依在 frozen exe 內可用（不開視窗）
+    if "--selftest-dan" in sys.argv:
+        from lxml import html as _h
+        doc = _h.fromstring("<table><tr><td>魂ゲージ</td></tr></table>")
+        ok = bool(doc.xpath("//td")) and hasattr(dan_tools, "generate_dan_from_wiki")
+        print("DAN_SELFTEST_OK" if ok else "DAN_SELFTEST_FAIL")
+        sys.exit(0 if ok else 1)
+
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
     w = MainWindow()

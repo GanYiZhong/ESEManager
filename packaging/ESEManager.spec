@@ -19,6 +19,10 @@ a = Analysis(
         'ese_scraper_git_v2',
         'build_local_db',
         'tja_parser',
+        'dan_tools',
+        'lxml',
+        'lxml.html',
+        'lxml.etree',
     ],
     hookspath=[],
     hooksconfig={},
@@ -37,20 +41,20 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# onedir（資料夾）而非 onefile：onefile 每次啟動都要把整包 ~73MB 解壓到 %TEMP%，
+# 再讓 Defender 逐一掃描解出的 DLL，實測冷啟動要 ~10 秒。onedir 直接從 _internal/
+# 載入 DLL、啟動時不解壓，冷啟動降到約 1 秒。發布時把整個 dist/ESEManager/ 資料夾
+# 打包進 .7z 即可（DB/version.txt/config.toml 仍放 exe 同層、相對路徑不變）。
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,     # onedir 關鍵：binaries 交給 COLLECT 放進資料夾
     name='ESEManager',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -58,4 +62,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='ESEManager',
 )
