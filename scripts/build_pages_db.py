@@ -29,12 +29,13 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
+import time  # noqa: E402
+
 import requests  # noqa: E402
 
-ESE_GIT = "https://ese.tjadataba.se/ESE/ESE.git"
-DEFAULT_PAGES_URL = "https://ganyizhong.github.io/ESEManager/"
+from appconfig import ESE_GIT, DB_RELEASE_URL as DEFAULT_PAGES_URL, SQLITE_MAGIC  # noqa: E402
+
 DB_FILES = ("ese_songs.db", "ese_local.db")
-SQLITE_MAGIC = b"SQLite format 3\x00"
 
 # Refuse to publish a database that is obviously broken (e.g. ESE was down).
 MIN_SONGS = 1000
@@ -50,9 +51,21 @@ def set_output(key, value):
     print(f"[output] {key}={value}")
 
 
+def retry(fn, attempts=3, what="request"):
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            if i == attempts - 1:
+                raise
+            print(f"{what} failed ({e}); retrying in {5 * (i + 1)}s")
+            time.sleep(5 * (i + 1))
+
+
 def upstream_commit():
-    out = subprocess.run(["git", "ls-remote", ESE_GIT, "refs/heads/master"],
-                         capture_output=True, text=True, timeout=120, check=True).stdout
+    out = retry(lambda: subprocess.run(
+        ["git", "ls-remote", ESE_GIT, "refs/heads/master"],
+        capture_output=True, text=True, timeout=120, check=True).stdout, what="git ls-remote")
     sha = out.split()[0] if out.strip() else ""
     if len(sha) != 40:
         raise RuntimeError(f"Could not read ESE master commit: {out!r}")
@@ -60,17 +73,24 @@ def upstream_commit():
 
 
 def fetch_previous(pages_url, work):
-    """Download the currently published manifest + databases. Returns the manifest or {}."""
+    """Download the currently published manifest + databases.
+
+    Returns {} only when the site has no release yet (404). Any other failure
+    raises: without the previous song count the shrink guard below cannot work,
+    so a transient Pages error must not lead to publishing a truncated build."""
     sess = requests.Session()
     sess.headers["User-Agent"] = "ESEManager-pages-builder"
-    try:
+
+    def get_manifest():
         r = sess.get(pages_url + "manifest.json", timeout=30)
-        if r.status_code != 200:
-            print(f"No previous release ({r.status_code}); building from scratch")
-            return {}
-        manifest = r.json()
-    except Exception as e:
-        print(f"No previous release ({e}); building from scratch")
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+
+    manifest = retry(get_manifest, what="manifest.json")
+    if manifest is None:
+        print("No previous release (404); building from scratch")
         return {}
 
     for name in DB_FILES:
@@ -100,8 +120,13 @@ def count(db, sql):
 
 def vacuum(db):
     conn = sqlite3.connect(db)
-    conn.execute("VACUUM")
-    conn.close()
+    try:
+        conn.execute("VACUUM")
+        result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        conn.close()
+    if result != "ok":
+        raise SystemExit(f"Refusing to publish: integrity_check failed for {db}: {result}")
 
 
 def sha256(path):

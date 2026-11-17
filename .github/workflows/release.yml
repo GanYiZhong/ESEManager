@@ -1,0 +1,156 @@
+# Build ESEManager for Windows and Linux (PyInstaller onedir), smoke-test both,
+# and attach them to a GitHub release.
+#
+# - release published / manual run with a tag: build, test and upload assets.
+# - push to main or pull request touching the app: build and test only, so
+#   packaging problems show up before release day.
+
+name: Release builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and upload to (e.g. v1.2.0)"
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "packaging/**"
+      - "scripts/fetch_release_dbs.py"
+      - "requirements*.txt"
+      - "tests/**"
+      - ".github/workflows/release.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "packaging/**"
+      - "scripts/fetch_release_dbs.py"
+      - "requirements*.txt"
+      - "tests/**"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ github.event.release.tag_name || inputs.tag || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0
+          pip install -r requirements-build.txt pytest
+      - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x86_64
+            exe: ESEManager.exe
+          # Older Ubuntu = older glibc, so the binary runs on more distros.
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+            exe: ESEManager
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+
+      - name: Install system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # Qt's xcb platform plugin needs these at runtime (also used for the smoke test).
+          sudo apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 \
+            libxcb-keysyms1 libxcb-shape0 libxcb-render-util0 libxcb-image0 libegl1
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-build.txt
+
+      - name: Build
+        run: pyinstaller --noconfirm --clean packaging/ESEManager.spec
+
+      - name: Add databases and docs
+        run: |
+          out=dist/ESEManager
+          cp README.md README.zh-TW.md "$out/"
+          python scripts/fetch_release_dbs.py "$out"
+          ls -la "$out"
+
+      - name: Smoke test
+        # Run from a copy: the app creates config.toml / Downloads next to the exe.
+        run: |
+          cp -r dist/ESEManager "$RUNNER_TEMP/smoke"
+          cd "$RUNNER_TEMP/smoke"
+          ./${{ matrix.exe }} --selftest-dan
+          # Start the GUI headless; it should still be running after 20s (timeout -> 124).
+          set +e
+          QT_QPA_PLATFORM=offscreen timeout 20 ./${{ matrix.exe }}
+          rc=$?
+          set -e
+          echo "GUI exit code: $rc"
+          test "$rc" = "124"
+
+      - name: Package
+        run: |
+          label="${TAG:-ci-${GITHUB_SHA::7}}"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            name="ESEManager_${label}_${{ matrix.platform }}.7z"
+            (cd dist && 7z a -t7z -mx=9 "../$name" ESEManager > /dev/null)
+          else
+            name="ESEManager_${label}_${{ matrix.platform }}.tar.gz"
+            tar -C dist -czf "$name" ESEManager
+          fi
+          sha256sum "$name" > "$name.sha256"
+          ls -la "$name" "$name.sha256"
+          echo "ASSET=$name" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Keep CI build as artifact
+        if: env.TAG == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+          retention-days: 7

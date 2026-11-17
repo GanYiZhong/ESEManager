@@ -20,6 +20,29 @@ COURSE_MAP = {
 DIFFICULTIES = ["easy", "normal", "hard", "oni", "ura"]
 
 
+def decode_tja_bytes(data: bytes) -> str:
+    """Decode TJA / box.def bytes. Every reader in the app uses this one function
+    so a file decodes the same way everywhere.
+
+    Order: UTF-16 with BOM, UTF-8 (with or without BOM), then CP932 (Shift-JIS
+    superset). Valid Shift-JIS Japanese text almost never parses as UTF-8, so
+    trying UTF-8 first is safe. Undecodable bytes are replaced, never dropped.
+    """
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", "replace")
+    for enc in ("utf-8-sig", "cp932"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", "replace")
+
+
+def read_text_file(path: str) -> str:
+    with open(path, "rb") as f:
+        return decode_tja_bytes(f.read())
+
+
 class TJAParser:
     """TJA 檔案解析器"""
 
@@ -41,14 +64,9 @@ class TJAParser:
         ]
 
     @staticmethod
-    def decode_bytes(data: bytes) -> Optional[str]:
-        """嘗試多種編碼把 .tja 的 bytes 解碼成文字（TJA 常見 utf-8 或 shift-jis）。"""
-        for enc in ('utf-8-sig', 'utf-8', 'shift-jis', 'cp932', 'latin-1'):
-            try:
-                return data.decode(enc)
-            except UnicodeDecodeError:
-                continue
-        return None
+    def decode_bytes(data: bytes) -> str:
+        """Decode .tja bytes to text (see decode_tja_bytes)."""
+        return decode_tja_bytes(data)
 
     def parse_text(self, content: str) -> Dict[str, str]:
         """從 TJA 文字內容解析 metadata（不含檔案路徑欄位）。"""

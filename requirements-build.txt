@@ -1,0 +1,13 @@
+# Exact versions used by the release builds (.github/workflows/release-*.yml).
+# requirements.txt keeps loose lower bounds for running from source; bump these
+# deliberately and check the smoke tests when upgrading.
+requests==2.34.2
+urllib3==2.8.0
+certifi==2026.10.23
+charset-normalizer==3.5.2
+idna==3.20
+PySide6==6.12.0
+lxml==6.1.3
+tomli-w==1.2.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.10

@@ -7,10 +7,11 @@ import sqlite3
 import os
 import sys
 import requests
-from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+
+from appconfig import live_url, safe_join, UnsafePathError
 
 # 修復 Windows 控制台編碼問題
 if sys.platform == 'win32':
@@ -221,7 +222,7 @@ class SongDownloader:
             # 下載
             # /raw/ 對 LFS 檔只回傳 pointer；改用 /media/（舊資料庫相容）
             url = url.replace("/raw/branch/", "/media/branch/")
-            response = requests.get(url, stream=True, timeout=60)
+            response = requests.get(live_url(url), stream=True, timeout=60)
             response.raise_for_status()
 
             total_size = int(response.headers.get('content-length', 0)) or file_size or 0
@@ -289,8 +290,13 @@ class SongDownloader:
             download_url = file_info['download_url']
             file_size = file_info.get('size', 0)
 
-            # 建立完整的儲存路徑
-            save_path = os.path.join(self.download_dir, file_path)
+            # 建立完整的儲存路徑（資料庫內容不受信任：不得跳出下載目錄）
+            try:
+                save_path = safe_join(self.download_dir, file_path)
+            except UnsafePathError as e:
+                safe_print(f"✗ 略過不安全的路徑: {e}")
+                self.stats["failed"] += 1
+                continue
 
             # 下載
             self.stats["total_files"] += 1

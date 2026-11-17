@@ -18,10 +18,9 @@ import shutil
 import unicodedata
 
 import requests
-import urllib3
 from lxml import html as lxml_html
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from tja_parser import read_text_file
 
 
 # ============================================================ 共用：標準化工具
@@ -336,15 +335,16 @@ def find_song_dir(dir_index, jp_index, jp_title):
 
 
 # =========================================================== 共用：tja 讀檔/解碼
+def _safe_wave(name):
+    """#NEXTSONG's WAVE field comes from an untrusted .tja. Keep only the bare
+    file name so reading/copying the audio cannot leave the TJA/output folders."""
+    base = os.path.basename((name or "").replace("\\", "/")).strip()
+    base = base.replace(":", "_")
+    return base if base not in ("", ".", "..") else "song.ogg"
+
+
 def _read_tja_text(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    for enc in ("cp932", "shift_jis", "utf-8-sig", "utf-8"):
-        try:
-            return data.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("latin-1")
+    return read_text_file(path)
 
 
 def _genre_from_color(color):
@@ -426,7 +426,7 @@ def _split_sections(lines, global_meta):
             def g(i, dflt=""):
                 return parts[i].strip() if len(parts) > i else dflt
             cur = {"title": g(0, "Untitled"), "subtitle": g(1), "genre": g(2),
-                   "wave": g(3, "song.ogg"), "scoreinit": g(4), "scorediff": g(5),
+                   "wave": _safe_wave(g(3, "song.ogg")), "scoreinit": g(4), "scorediff": g(5),
                    "demostart": g(6, "0"), "bpm": last_bpm, "offset": "0",
                    "course": "Oni", "balloon": "", "content": [], "exam": []}
             in_song = True
@@ -815,7 +815,7 @@ def _fetch_html(source, timeout=30):
         sess = requests.Session()
         sess.headers["User-Agent"] = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                       "ESEManager DanGenerator")
-        r = sess.get(source, timeout=timeout, verify=False)
+        r = sess.get(source, timeout=timeout)
         r.raise_for_status()
         r.encoding = r.apparent_encoding or r.encoding
         return r.text

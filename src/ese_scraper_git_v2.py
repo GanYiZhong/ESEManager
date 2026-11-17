@@ -9,20 +9,19 @@ import os
 import sys
 import subprocess
 import shutil
+import threading
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
-# 檔案下載來源（git.vanillaaaa.org 已停用，改用官方 ese.tjadataba.se）
-DOWNLOAD_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
-
-# 可攜版 git 解壓後的位置（找不到系統 git 時的備援）
-PORTABLE_GIT_DIR = os.path.join(os.getcwd(), "portablegit")
+from appconfig import ESE_RAW_BASE as DOWNLOAD_BASE, PORTABLE_GIT_DIR, ESE_GIT
 
 
 def find_git() -> Optional[str]:
     """回傳可用的 git 執行檔路徑：先找系統 PATH，再找本機可攜版；都沒有回 None。"""
-    sys_git = shutil.which("git")
+    # Pass PATH explicitly: on Windows, shutil.which() without it also searches
+    # the current directory, which could run a planted git.exe.
+    sys_git = shutil.which("git", path=os.environ.get("PATH", ""))
     if sys_git:
         return sys_git
     for sub in ("cmd/git.exe", "bin/git.exe", "mingw64/bin/git.exe"):
@@ -40,6 +39,7 @@ def download_portable_git(dest_dir: str = PORTABLE_GIT_DIR) -> Optional[str]:
     import requests
     import zipfile
     import io
+    import hashlib
 
     if sys.platform != "win32":
         print("✗ 自動下載可攜版 git 僅支援 Windows，請手動安裝 git")
@@ -66,12 +66,25 @@ def download_portable_git(dest_dir: str = PORTABLE_GIT_DIR) -> Optional[str]:
     dl.raise_for_status()
     buf = io.BytesIO()
     got = 0
+    h = hashlib.sha256()
     for chunk in dl.iter_content(1 << 16):
         if chunk:
             buf.write(chunk)
+            h.update(chunk)
             got += len(chunk)
             if got % (4 << 20) < (1 << 16):
                 print(f"  已下載 {got/1024/1024:.0f} MB...")
+
+    # GitHub publishes a sha256 digest for each release asset; refuse a mismatch.
+    digest = (asset.get("digest") or "").lower()
+    if digest.startswith("sha256:"):
+        if h.hexdigest() != digest.split(":", 1)[1]:
+            print("✗ MinGit checksum mismatch; aborted")
+            return None
+        print("✓ sha256 OK")
+    elif asset.get("size") and got != asset["size"]:
+        print("✗ MinGit download incomplete; aborted")
+        return None
 
     print("解壓中...")
     if os.path.exists(dest_dir):
@@ -117,7 +130,7 @@ class ESEScraperGitV2:
             clone_dir: Git clone 目錄
             git_exe: git 執行檔路徑（預設 "git"，GUI 可傳入可攜版路徑）
         """
-        self.git_url = "https://ese.tjadataba.se/ESE/ESE.git"
+        self.git_url = ESE_GIT
         self.db_path = db_path
         self.clone_dir = clone_dir
         self.git_exe = git_exe or "git"
@@ -195,19 +208,32 @@ class ESEScraperGitV2:
 
     def _run_git(self, args, timeout) -> int:
         """執行 git 並逐行 print 其輸出（讓 GUI 可用 stdout 重導擷取、CLI 也看得到）。"""
+        # Abort transfers that stall (< 1 KB/s for 60 s) instead of hanging forever.
+        env = dict(os.environ, GIT_HTTP_LOW_SPEED_LIMIT="1000",
+                   GIT_HTTP_LOW_SPEED_TIME="60", GIT_TERMINAL_PROMPT="0")
         proc = subprocess.Popen(
             args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, encoding="utf-8", errors="replace"
+            text=True, bufsize=1, encoding="utf-8", errors="replace", env=env
         )
-        try:
+
+        def pump():
             for line in proc.stdout:
                 line = line.rstrip()
                 if line:
                     print(line)
+
+        # Read output on a helper thread so the timeout below applies even when
+        # git prints nothing (reading stdout inline would block until EOF).
+        reader = threading.Thread(target=pump, daemon=True)
+        reader.start()
+        try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
+            proc.wait()
             raise
+        finally:
+            reader.join(5)
         return proc.returncode
 
     def clone_repository(self) -> bool:
@@ -482,7 +508,7 @@ class ESEScraperGitV2:
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", "replace") if result.stderr else ""
             print(f"✗ 讀取 git 檔案清單失敗: {err}")
-            return
+            raise RuntimeError(f"git ls-tree failed: {err.strip()}")
 
         raw = result.stdout.decode("utf-8", "replace")
         cat_ids = {}       # category name -> id（快取，避免每檔 SELECT/INSERT）
@@ -603,7 +629,7 @@ class ESEScraperGitV2:
         # Clone repository
         if not self.clone_repository():
             print("\n✗ 無法 clone repository，請檢查網路連接或 Git 安裝")
-            return
+            raise RuntimeError("git clone/fetch failed (check the network or git install)")
 
         print()
         print("開始讀取 git 檔案清單（不下載檔案內容）...")

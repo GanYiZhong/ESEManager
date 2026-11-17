@@ -22,6 +22,7 @@ on:
       - "src/ese_scraper_git_v2.py"
       - "src/build_local_db.py"
       - "src/tja_parser.py"
+      - "src/appconfig.py"
 
 permissions:
   contents: read
@@ -47,7 +48,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install "requests==2.34.2"
 
       - name: Build databases
         id: build

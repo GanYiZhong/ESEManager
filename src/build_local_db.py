@@ -6,7 +6,6 @@
 import sqlite3
 import os
 import sys
-from pathlib import Path
 from tja_parser import TJAParser
 
 # 修復 Windows 控制台編碼問題
@@ -242,11 +241,10 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
     不需本機曲庫、不下載音檔；涵蓋資料庫中全部歌曲（.tja 檔很小，總量約 10MB）。
     .tja 清單與下載網址直接取自已建好的 ese_songs.db。
     """
+    import time
     import requests
-    import urllib3
     import urllib.parse
     from concurrent.futures import ThreadPoolExecutor
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     if not os.path.exists(song_db):
         print(f"✗ 找不到歌曲資料庫: {song_db}（請先更新歌曲庫）")
@@ -308,18 +306,26 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
 
     # 下載連結是 file_path 的決定性衍生值；舊資料庫可能有 download_url 為空的列，
     # 缺就即時補上，避免解析日文標題時整首漏掉。
-    _RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/raw/branch/master/"
+    from appconfig import ESE_RAW_BASE, live_url
+    failures = []
 
     def fetch(row):
         file_path, url, filename, category = row
         if not url:
-            url = _RAW_BASE + urllib.parse.quote(file_path)
+            url = ESE_RAW_BASE + urllib.parse.quote(file_path)
         try:
-            r = sess.get(url, timeout=30, verify=False)
+            r = None
+            for attempt in range(3):
+                try:
+                    r = sess.get(live_url(url), timeout=30)
+                    if r.status_code < 500 and r.status_code != 429:
+                        break
+                except (requests.ConnectionError, requests.Timeout):
+                    if attempt == 2:
+                        raise
+                time.sleep(1 + attempt * 2)
             r.raise_for_status()
             text = TJAParser.decode_bytes(r.content)
-            if text is None:
-                return None
             meta = parser.parse_text(text)
             for diff, lv in parser.parse_courses(text).items():
                 meta[f"level_{diff}"] = lv
@@ -329,7 +335,8 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
             if category:
                 meta["category"] = category
             return meta
-        except Exception:
+        except Exception as e:
+            failures.append(f"{file_path}: {e}")
             return None
 
     done = 0
@@ -347,10 +354,18 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
                 print(f"進度: {done}/{todo_total} ({done*100//todo_total}%)")
 
     db.conn.commit()   # 一次性提交
+    sess.close()
+    if failures:
+        print(f"✗ {len(failures)} 個 .tja 下載失敗，例如: {failures[0]}")
+    # Every fetch failing (or most of them) means no network or a broken host:
+    # report it instead of claiming success with stale data.
+    if failures and len(failures) >= max(1, todo_total // 2):
+        db.close()
+        raise RuntimeError(f"{len(failures)}/{todo_total} .tja downloads failed "
+                           f"(network problem?): {failures[0]}")
     print("-" * 60)
     print(f"✓ 完成：本次新增 {new_count} 首，其中 {ja_count} 首有日文標題")
     db.show_stats()
-    sess.close()
     db.close()
 
 
