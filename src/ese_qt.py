@@ -220,6 +220,8 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)  # no initial sort
         self.table.doubleClicked.connect(self.toggle_check)
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ✓
@@ -481,7 +483,7 @@ class MainWindow(QMainWindow):
         if index.column() == 0:
             return
         row = index.row()
-        cur = row in self.song_model.checked
+        cur = self.song_model.is_checked(row)
         self.song_model.setData(self.song_model.index(row, 0),
                                 Qt.Unchecked if cur else Qt.Checked, Qt.CheckStateRole)
 

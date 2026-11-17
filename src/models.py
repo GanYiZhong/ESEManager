@@ -1,5 +1,7 @@
 """Qt table models for the song list and the download monitor."""
 
+import re
+
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PySide6.QtGui import QColor
 
@@ -39,17 +41,29 @@ class SongModel(QAbstractTableModel):
         self.tr = tr
         self.jp_map = jp_map
         self.meta_map = meta_map or {}
-        self.songs = []
-        self.checked = set()
+        self.songs = []          # source order, as given to set_songs()
+        self._view = []          # same songs in display (sorted) order
+        self._sort_col = -1      # -1 = original order
+        self._sort_desc = False
+        # checked state is keyed by song identity so it follows the song when sorted
+        self.checked = set()     # {(song_name, category), ...}
+
+    @staticmethod
+    def _key(song):
+        return (song["song_name"], song["category"])
+
+    def is_checked(self, row):
+        return self._key(self._view[row]) in self.checked
 
     def set_songs(self, songs):
         self.beginResetModel()
-        self.songs = songs
+        self.songs = list(songs)
         self.checked = set()
+        self._view = self._sorted(self.songs, self._sort_col, self._sort_desc)
         self.endResetModel()
 
     def rowCount(self, parent=QModelIndex()):
-        return len(self.songs)
+        return len(self._view)
 
     def columnCount(self, parent=QModelIndex()):
         return len(self.COLS)
@@ -69,10 +83,20 @@ class SongModel(QAbstractTableModel):
         if not index.isValid():
             return None
         row, col = index.row(), index.column()
-        song = self.songs[row]
+        song = self._view[row]
         if col == 0:
             if role == Qt.CheckStateRole:
-                return Qt.Checked if row in self.checked else Qt.Unchecked
+                return Qt.Checked if self.is_checked(row) else Qt.Unchecked
+            return None
+        if role == Qt.ToolTipRole:
+            if col in (1, 2):
+                jp = self.jp_map.get(song["song_name"]) or ""
+                cat = CATEGORY_NAMES.get(song["category"], song["category"])
+                return "\n".join(x for x in (song["song_name"], jp, str(cat)) if x)
+            if col in self.LEVEL_COLS:
+                meta = self.meta_map.get(song["song_name"]) or {}
+                lv = meta.get(self.LEVEL_COLS[col])
+                return f"{self.tr(self.COLS[col])}: {lv if lv is not None else '−'}"
             return None
         if role == Qt.DisplayRole:
             if col == 1:
@@ -100,24 +124,64 @@ class SongModel(QAbstractTableModel):
 
     def setData(self, index, value, role=Qt.EditRole):
         if index.column() == 0 and role == Qt.CheckStateRole:
-            row = index.row()
+            key = self._key(self._view[index.row()])
             if Qt.CheckState(value) == Qt.Checked:
-                self.checked.add(row)
+                self.checked.add(key)
             else:
-                self.checked.discard(row)
+                self.checked.discard(key)
             self.dataChanged.emit(index, index, [Qt.CheckStateRole])
             return True
         return False
 
     def set_all(self, checked):
-        self.checked = set(range(len(self.songs))) if checked else set()
-        if self.songs:
+        self.checked = {self._key(s) for s in self.songs} if checked else set()
+        if self._view:
             self.dataChanged.emit(self.index(0, 0),
-                                  self.index(len(self.songs) - 1, 0),
+                                  self.index(len(self._view) - 1, 0),
                                   [Qt.CheckStateRole])
 
     def selected_songs(self):
-        return [self.songs[i] for i in sorted(self.checked)]
+        """Checked songs, in the current display order."""
+        return [s for s in self._view if self._key(s) in self.checked]
+
+    # ---- sorting
+    def sort(self, column, order=Qt.AscendingOrder):
+        self._sort_col = column if 0 <= column < len(self.COLS) else -1
+        self._sort_desc = order == Qt.DescendingOrder
+        self.beginResetModel()
+        self._view = self._sorted(self.songs, self._sort_col, self._sort_desc)
+        self.endResetModel()
+
+    def _sorted(self, songs, column, desc):
+        if column == 0:
+            # checked songs first (ascending); stable within each group
+            return sorted(songs, key=lambda s: 0 if self._key(s) in self.checked else 1,
+                           reverse=desc)
+        if column < 0:
+            return list(songs)
+        pairs = [(self._sort_value(column, s), s) for s in songs]
+        present = [p for p in pairs if p[0] is not None]
+        missing = [s for v, s in pairs if v is None]
+        present.sort(key=lambda p: p[0], reverse=desc)   # stable, also when desc
+        return [s for _, s in present] + missing          # missing values always last
+
+    def _sort_value(self, col, song):
+        name = song["song_name"]
+        if col == 1:
+            return name.casefold()
+        if col == 2:
+            return (self.jp_map.get(name) or "").casefold()
+        if col == 3:
+            return str(CATEGORY_NAMES.get(song["category"], song["category"])).casefold()
+        if col == 10:
+            return len(song["files"])
+        meta = self.meta_map.get(name) or {}
+        if col == 4:
+            m = re.search(r"\d+(?:\.\d+)?", str(meta.get("bpm") or ""))
+            return float(m.group()) if m else None
+        if col in self.LEVEL_COLS:
+            return meta.get(self.LEVEL_COLS[col])
+        return None
 
 
 # ------------------------------------------------------------- 下載清單 model
