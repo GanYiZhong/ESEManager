@@ -422,3 +422,37 @@ TR["ja"].update({
     "th_dark": "ダーク",
     "th_tip": "外観：ライト／ダーク。自動は OS の設定に合わせて切り替わります",
 })
+
+# --- dialogs polish
+TR["zh_TW"].update({
+    "dlg_color_invalid": "色碼無效：請輸入 6 位十六進位數字，例如 RRGGBB 或 #RRGGBB",
+    "dlg_boxdef_unsaved": "有尚未儲存的修改，要捨棄嗎？",
+    "dlg_boxdef_bad_color": "以下顏色格式無效，請修正後再儲存：{fields}",
+    "dlg_yatai_overwrite_q": "已有 {n} 個 box.def 會被覆寫，要繼續嗎？",
+    "dlg_yatai_bad_color": "以下資料夾的顏色格式無效，請先修正：{rows}",
+    "dlg_dan_busy_q": "工作仍在執行中。要等它完成後關閉視窗嗎？",
+    "dlg_dan_closing": "工作完成後將自動關閉視窗。",
+    "dlg_dan_missing": "{name} 不存在：{path}",
+})
+
+TR["en"].update({
+    "dlg_color_invalid": "Invalid colour: use 6 hex digits, e.g. RRGGBB or #RRGGBB",
+    "dlg_boxdef_unsaved": "There are unsaved changes. Discard them?",
+    "dlg_boxdef_bad_color": "Invalid colour value(s), fix them before saving: {fields}",
+    "dlg_yatai_overwrite_q": "{n} existing box.def file(s) will be overwritten. Continue?",
+    "dlg_yatai_bad_color": "Invalid colour value(s) in: {rows}. Fix them first.",
+    "dlg_dan_busy_q": "A task is still running. Close this window after it finishes?",
+    "dlg_dan_closing": "The window will close when the current task finishes.",
+    "dlg_dan_missing": "{name} does not exist: {path}",
+})
+
+TR["ja"].update({
+    "dlg_color_invalid": "色の形式が不正です：16進数6桁で入力してください（例：RRGGBB または #RRGGBB）",
+    "dlg_boxdef_unsaved": "保存していない変更があります。破棄しますか？",
+    "dlg_boxdef_bad_color": "色の形式が不正です。修正してから保存してください：{fields}",
+    "dlg_yatai_overwrite_q": "既存の box.def {n} 件を上書きします。続けますか？",
+    "dlg_yatai_bad_color": "色の形式が不正なフォルダがあります。先に修正してください：{rows}",
+    "dlg_dan_busy_q": "処理が実行中です。完了後にウィンドウを閉じますか？",
+    "dlg_dan_closing": "現在の処理が終わり次第、ウィンドウを閉じます。",
+    "dlg_dan_missing": "{name} が存在しません：{path}",
+})

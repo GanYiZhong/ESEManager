@@ -1,25 +1,55 @@
 """Dialogs: OpenTaiko box.def editor, YataiDON box.def generator and Dan tools."""
 
+import json
 import os
 import re
 import sqlite3
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox,
     QHeaderView, QFileDialog, QPlainTextEdit, QTabWidget, QMessageBox, QDialog,
-    QFormLayout, QColorDialog, QFrame, QScrollArea, QTableWidget, QTableWidgetItem
+    QFormLayout, QColorDialog, QFrame, QScrollArea, QTableWidget, QTableWidgetItem,
+    QProgressBar
 )
 
 import dan_tools
-from appconfig import DB_PATH, LOCAL_DB_PATH
+from appconfig import DB_PATH, LOCAL_DB_PATH, app_path
 from i18n import CATEGORY_NAMES
 from tja_parser import read_text_file
 from boxdef import (_hex_to_rgb, _norm_hex, _clean_name, _cat_color, make_boxdef,
                     YATAI_GENRE_PRESETS, YATAI_VALID_GENRES, _normalize_yatai_genre,
                     _detect_yatai_def, make_yatai_boxdef)
 from workers import BoxDefFetchThread
+
+
+# ------------------------------------------------------------ shared helpers
+_HEX6_RE = re.compile(r"#?[0-9A-Fa-f]{6}")
+_BAD_COLOR_STYLE = "QLineEdit{border:2px solid #E53935;}"
+
+
+def _color_ok(text):
+    """True when the text is empty or a 6-digit hex colour, with or without '#'."""
+    s = (text or "").strip()
+    return not s or _HEX6_RE.fullmatch(s) is not None
+
+
+def _mark_color_edit(edit, tip):
+    """Red border + tooltip while the colour text is invalid."""
+    bad = not _color_ok(edit.text())
+    edit.setStyleSheet(_BAD_COLOR_STYLE if bad else "")
+    edit.setToolTip(tip if bad else "")
+
+
+def _load_dialog_prefs():
+    """Contents of dialogs.json as a dict; a missing or corrupt file gives {}."""
+    try:
+        with open(app_path("dialogs.json"), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 class YataiBoxDefDialog(QDialog):
@@ -115,9 +145,9 @@ class YataiBoxDefDialog(QDialog):
         h = QHBoxLayout(w)
         h.setContentsMargins(2, 1, 2, 1)
         edit = QLineEdit(initial.upper().lstrip("#"))
-        edit.setMaxLength(6)
+        edit.setMaxLength(7)   # room for a leading '#'
         edit.setPlaceholderText("RRGGBB")
-        edit.setFixedWidth(66)
+        edit.setFixedWidth(72)
         swatch = QFrame()
         swatch.setFixedSize(18, 18)
         btn = QPushButton("🎨")
@@ -125,16 +155,16 @@ class YataiBoxDefDialog(QDialog):
         btn.setFlat(True)
 
         def upd():
-            hx = edit.text().strip().upper()
-            ok = len(hx) == 6 and all(c in "0123456789ABCDEF" for c in hx)
+            hx = _norm_hex(edit.text())
             swatch.setStyleSheet(
-                (f"background:#{hx};border:1px solid #555;border-radius:2px;") if ok
+                (f"background:#{hx};border:1px solid #555;border-radius:2px;") if hx
                 else "border:1px solid #555;border-radius:2px;"
             )
+            _mark_color_edit(edit, self.tr("dlg_color_invalid"))
 
         def pick():
-            cur = edit.text().strip()
-            init = QColor("#" + cur) if len(cur) == 6 else QColor("#444444")
+            cur = _norm_hex(edit.text())
+            init = QColor("#" + cur) if cur else QColor("#444444")
             c = QColorDialog.getColor(init, self, self.tr("yatai_pick"))
             if c.isValid():
                 edit.setText(c.name().lstrip("#").upper())
@@ -231,10 +261,33 @@ class YataiBoxDefDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLE, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(self.COL_TITLEJA, QHeaderView.Stretch)
 
+    def _folder_names(self):
+        return [self.table.item(r, self.COL_FOLDER).text()
+                for r in range(self.table.rowCount()) if self.table.item(r, self.COL_FOLDER)]
+
     def generate_all(self):
         base = self.folder_edit.text().strip()
         if not os.path.isdir(base):
             QMessageBox.warning(self, self.tr("yatai_title"), self.tr("boxdef_no_dir"))
+            return
+        # Refuse to write anything while a colour is invalid.
+        bad = []
+        for row in range(self.table.rowCount()):
+            if any(not _color_ok(self._color_edits[(row, c)].text())
+                   for c in (self.COL_BACK, self.COL_FORE) if (row, c) in self._color_edits):
+                item = self.table.item(row, self.COL_FOLDER)
+                bad.append(item.text() if item else str(row + 1))
+        if bad:
+            QMessageBox.warning(self, self.tr("yatai_title"),
+                                self.tr("dlg_yatai_bad_color", rows=", ".join(bad)))
+            return
+        # Ask before overwriting existing box.def files.
+        existing = [s for s in self._folder_names()
+                    if os.path.exists(os.path.join(base, s, "box.def"))]
+        if existing and QMessageBox.question(
+                self, self.tr("yatai_title"),
+                self.tr("dlg_yatai_overwrite_q", n=len(existing)),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         created = 0
         errors = []
@@ -253,8 +306,8 @@ class YataiBoxDefDialog(QDialog):
             coll = coll_item.text().strip().upper() if coll_item else ""
             back_e = self._color_edits.get((row, self.COL_BACK))
             fore_e = self._color_edits.get((row, self.COL_FORE))
-            back = back_e.text().strip() if back_e else ""
-            fore = fore_e.text().strip() if fore_e else ""
+            back = _norm_hex(back_e.text()) if back_e else ""
+            fore = _norm_hex(fore_e.text()) if fore_e else ""
 
             content = make_yatai_boxdef(sub, title=title, title_ja=titleja,
                                         genre=genre, collection=coll,
@@ -296,9 +349,12 @@ class BoxDefDialog(QDialog):
     def __init__(self, parent, default_dir, tr):
         super().__init__(parent)
         self.tr = tr
-        self.setWindowTitle(tr("boxdef_title"))
+        self._base_title = tr("boxdef_title")
+        self.setWindowTitle(self._base_title)
         self.resize(600, 720)
         self.extra = []   # 保留無法辨識的行，存檔時原樣寫回
+        self._dirty = False   # unsaved edits in the form
+        self._quiet = 0       # >0 while load/fill code sets fields programmatically
         outer = QVBoxLayout(self)
 
         # 資料夾列
@@ -307,7 +363,7 @@ class BoxDefDialog(QDialog):
         browse = QPushButton(tr("browse"))
         browse.clicked.connect(self.browse)
         load = QPushButton(tr("boxdef_load"))
-        load.clicked.connect(self.load)
+        load.clicked.connect(lambda: self.load())
         fr.addWidget(QLabel("📁"))
         fr.addWidget(self.dir_edit, 1)
         fr.addWidget(browse)
@@ -333,6 +389,7 @@ class BoxDefDialog(QDialog):
         for code, key in BOXDEF_LANGS:
             e = QLineEdit()
             e.textChanged.connect(self._update_preview)
+            e.textChanged.connect(self._touch)
             self.title_edits[code] = e
             form.addRow("%s (%s)" % (key, BOXDEF_LANG_LABEL[code]), e)
 
@@ -341,6 +398,7 @@ class BoxDefDialog(QDialog):
         self.genre.setEditable(True)
         self.genre.addItems([""] + BOXDEF_GENRES)
         self.genre.editTextChanged.connect(self._update_preview)
+        self.genre.editTextChanged.connect(self._touch)
         form.addRow("#GENRE", self.genre)
 
         # 顏色（HEX + 調色盤 + 色塊）
@@ -354,6 +412,7 @@ class BoxDefDialog(QDialog):
         self.text_edits = {}
         for tk in BOXDEF_TEXTS:
             e = QLineEdit()
+            e.textChanged.connect(self._touch)
             self.text_edits[tk] = e
             form.addRow("#" + tk, e)
 
@@ -361,6 +420,7 @@ class BoxDefDialog(QDialog):
         self.exp_edits = []
         for i in range(3):
             e = QLineEdit()
+            e.textChanged.connect(self._touch)
             self.exp_edits.append(e)
             form.addRow("#BOXEXPLANATION%d" % (i + 1), e)
 
@@ -372,7 +432,8 @@ class BoxDefDialog(QDialog):
         gen = QPushButton(tr("boxdef_gen"))
         gen.clicked.connect(self.generate)
         save = QPushButton(tr("boxdef_save"))
-        save.clicked.connect(self.save)
+        save.clicked.connect(lambda: self.save())
+        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.save)
         batch = QPushButton(tr("boxdef_batch"))
         batch.clicked.connect(self.batch)
         br.addWidget(fetch)
@@ -410,10 +471,12 @@ class BoxDefDialog(QDialog):
             hx = _norm_hex(edit.text())
             swatch.setStyleSheet(("background-color:#%s;border:1px solid #888;" % hx) if hx
                                  else "background:transparent;border:1px solid #888;")
+            _mark_color_edit(edit, self.tr("dlg_color_invalid"))
             self._update_preview()
 
         btn.clicked.connect(pick)
         edit.textChanged.connect(upd)
+        edit.textChanged.connect(self._touch)
         h.addWidget(edit)
         h.addWidget(btn)
         h.addWidget(swatch)
@@ -441,11 +504,28 @@ class BoxDefDialog(QDialog):
     def _path(self):
         return os.path.join(self.dir_edit.text(), "box.def")
 
+    def _touch(self, *_):
+        """Any user edit marks the form dirty (ignored while loading)."""
+        if not self._quiet:
+            self._set_dirty(True)
+
+    def _set_dirty(self, dirty):
+        self._dirty = dirty
+        self.setWindowTitle(self._base_title + (" *" if dirty else ""))
+
+    def _confirm_discard(self):
+        """Ask before throwing away unsaved edits. True means it is safe to go on."""
+        if not self._dirty:
+            return True
+        return QMessageBox.question(
+            self, self.tr("boxdef_title"), self.tr("dlg_boxdef_unsaved"),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+
     def browse(self):
         d = QFileDialog.getExistingDirectory(self, self.tr("browse"), self.dir_edit.text())
-        if d:
+        if d and self._confirm_discard():
             self.dir_edit.setText(d)
-            self.load()
+            self.load(confirm=False)
 
     def _clear(self):
         for e in self.title_edits.values():
@@ -495,17 +575,23 @@ class BoxDefDialog(QDialog):
             else:
                 self.extra.append(line)
 
-    def load(self):
-        self._clear()
-        p = self._path()
-        if not os.path.exists(p):
-            self._fill_template()
-            self._update_preview()
+    def load(self, confirm=True):
+        if confirm and not self._confirm_discard():
             return
+        self._quiet += 1
         try:
-            self._apply_text(read_text_file(p))
-        except Exception as e:
-            print("boxdef load:", e)
+            self._clear()
+            p = self._path()
+            if not os.path.exists(p):
+                self._fill_template()
+            else:
+                try:
+                    self._apply_text(read_text_file(p))
+                except Exception as e:
+                    print("boxdef load:", e)
+        finally:
+            self._quiet -= 1
+        self._set_dirty(False)
         self._update_preview()
 
     def fetch_ese(self):
@@ -539,6 +625,8 @@ class BoxDefDialog(QDialog):
         if not target:
             QMessageBox.information(self, self.tr("boxdef_title"), self.tr("boxdef_fetch_none"))
             return
+        if not self._confirm_discard():
+            return
         self.fetch_btn.setEnabled(False)
         self.fetch_btn.setText(self.tr("boxdef_fetching"))
         self._fetch = BoxDefFetchThread(target)
@@ -552,13 +640,20 @@ class BoxDefDialog(QDialog):
             QMessageBox.critical(self, self.tr("boxdef_title"),
                                  self.tr("boxdef_fetch_fail", e=text))
             return
-        self._clear()
-        self._apply_text(text)
+        self._quiet += 1
+        try:
+            self._clear()
+            self._apply_text(text)
+        finally:
+            self._quiet -= 1
+        self._set_dirty(True)   # fetched content is not saved yet
         self._update_preview()
         QMessageBox.information(self, self.tr("boxdef_title"),
                                 self.tr("boxdef_fetch_ok", c=target.split("/")[0]))
 
     def done(self, r):
+        if not self._confirm_discard():
+            return
         # Do not destroy the dialog while its fetch thread is still running.
         if getattr(self, "_fetch", None) and self._fetch.isRunning():
             self._fetch.wait(35000)
@@ -597,9 +692,15 @@ class BoxDefDialog(QDialog):
         if not os.path.isdir(d):
             QMessageBox.warning(self, self.tr("boxdef_title"), self.tr("boxdef_no_dir"))
             return
+        bad = [ck for ck in BOXDEF_COLORS if not _color_ok(self.color_edits[ck].text())]
+        if bad:
+            QMessageBox.warning(self, self.tr("boxdef_title"),
+                                self.tr("dlg_boxdef_bad_color", fields=", ".join("#" + b for b in bad)))
+            return
         try:
             with open(self._path(), "w", encoding="utf-8") as f:
                 f.write(self._to_text())
+            self._set_dirty(False)
             QMessageBox.information(self, self.tr("boxdef_title"),
                                     self.tr("boxdef_saved", p=self._path()))
         except Exception as e:
@@ -698,15 +799,23 @@ class DanToolsDialog(QDialog):
         self.tr = tr
         self.start_dir = start_dir
         self._thread = None
+        self._close_after = False   # user chose to close once the running task ends
         self.setWindowTitle(tr("dan_title"))
         self.resize(720, 560)
 
         root = QVBoxLayout(self)
-        tabs = QTabWidget()
-        tabs.addTab(self._build_gen_tab(), tr("dan_tab_gen"))
-        tabs.addTab(self._build_conv_tab(), tr("dan_tab_conv"))
-        tabs.addTab(self._build_yatai_tab(), tr("ydan_tab"))
-        root.addWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_gen_tab(), tr("dan_tab_gen"))
+        self.tabs.addTab(self._build_conv_tab(), tr("dan_tab_conv"))
+        self.tabs.addTab(self._build_yatai_tab(), tr("ydan_tab"))
+        root.addWidget(self.tabs)
+
+        # Indeterminate busy bar, shown only while a worker thread runs.
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setVisible(False)
+        root.addWidget(self.progress)
 
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
@@ -720,6 +829,48 @@ class DanToolsDialog(QDialog):
         credit.setOpenExternalLinks(True)
         credit.setStyleSheet("color:#888;")
         root.addWidget(credit)
+
+        self._restore_prefs()
+
+    # ------------------------------------------------ remembered folders
+    def _folder_fields(self):
+        return {"gen_out": self.gen_out, "gen_songs": self.gen_songs,
+                "conv_tja": self.conv_tja, "conv_out": self.conv_out,
+                "conv_songs": self.conv_songs, "ydan_root": self.ydan_root,
+                "ydan_src": self.ydan_src}
+
+    def _restore_prefs(self):
+        saved = _load_dialog_prefs().get("dan_tools")
+        if not isinstance(saved, dict):
+            return
+        for key, edit in self._folder_fields().items():
+            if isinstance(saved.get(key), str):
+                edit.setText(saved[key])
+
+    def _save_prefs(self):
+        data = _load_dialog_prefs()
+        data["dan_tools"] = {k: e.text().strip() for k, e in self._folder_fields().items()}
+        try:
+            with open(app_path("dialogs.json"), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except (OSError, TypeError, ValueError):
+            pass
+
+    # ------------------------------------------------ busy / close handling
+    def _running(self):
+        return self._thread is not None and self._thread.isRunning()
+
+    def done(self, r):
+        if self._running():
+            if not self._close_after:
+                if QMessageBox.question(self, self.tr("dan_title"), self.tr("dlg_dan_busy_q"),
+                                        QMessageBox.Yes | QMessageBox.No,
+                                        QMessageBox.No) == QMessageBox.Yes:
+                    self._close_after = True
+                    self.log_view.appendPlainText("… " + self.tr("dlg_dan_closing"))
+            return   # keep the dialog open until the thread has finished
+        self._save_prefs()
+        super().done(r)
 
     def _pick_dir(self, edit):
         d = QFileDialog.getExistingDirectory(self, self.tr("dan_browse"),
@@ -819,9 +970,23 @@ class DanToolsDialog(QDialog):
         return box
 
     def _busy(self, on):
-        self.gen_btn.setEnabled(not on)
-        self.conv_btn.setEnabled(not on)
-        self.ydan_btn.setEnabled(not on)
+        # Lock every tab page (inputs, browse buttons and run buttons).
+        for i in range(self.tabs.count()):
+            self.tabs.widget(i).setEnabled(not on)
+        self.progress.setVisible(on)
+
+    def _path_problem(self, checks):
+        """checks: [(label_key, path, must_be_file)]. Warn and return True on the first
+        non-empty path that does not exist. Empty paths are skipped (optional fields)."""
+        for key, path, is_file in checks:
+            if not path:
+                continue
+            ok = os.path.isfile(path) if is_file else os.path.isdir(path)
+            if not ok:
+                QMessageBox.warning(self, self.tr("dan_title"),
+                                    self.tr("dlg_dan_missing", name=self.tr(key), path=path))
+                return True
+        return False
 
     def run_gen(self):
         url = self.gen_url.text().strip()
@@ -832,6 +997,9 @@ class DanToolsDialog(QDialog):
         if not out:
             QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_out"))
             return
+        if self._path_problem([("dan_songs", self.gen_songs.text().strip(), False)]):
+            return
+        self._save_prefs()
         self._busy(True)
         self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
         local_db = os.path.abspath(LOCAL_DB_PATH) if os.path.isfile(LOCAL_DB_PATH) else ""
@@ -849,6 +1017,10 @@ class DanToolsDialog(QDialog):
         if not out:
             QMessageBox.warning(self, self.tr("dan_title"), self.tr("dan_need_out"))
             return
+        if self._path_problem([("dan_conv_tja", tja, True),
+                               ("dan_songs_opt", self.conv_songs.text().strip(), False)]):
+            return
+        self._save_prefs()
         self._busy(True)
         self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
         self._thread = DanConvThread(tja, out, self.conv_songs.text().strip())
@@ -865,6 +1037,10 @@ class DanToolsDialog(QDialog):
         if not root:
             QMessageBox.warning(self, self.tr("dan_title"), self.tr("ydan_need_root"))
             return
+        if self._path_problem([("ydan_root", root, False),
+                               ("ydan_src", self.ydan_src.text().strip(), False)]):
+            return
+        self._save_prefs()
         self._busy(True)
         self.log_view.appendPlainText("▶ " + self.tr("dan_running"))
         local_db = os.path.abspath(LOCAL_DB_PATH) if os.path.isfile(LOCAL_DB_PATH) else ""
@@ -881,3 +1057,8 @@ class DanToolsDialog(QDialog):
         else:
             self.log_view.appendPlainText("✗ " + info)
             QMessageBox.critical(self, self.tr("dan_title"), self.tr("dan_fail", e=info))
+        if self._close_after:
+            self._close_after = False
+            self._thread.wait()   # the worker has emitted done; let it exit before closing
+            self._save_prefs()
+            QDialog.done(self, QDialog.Rejected)
