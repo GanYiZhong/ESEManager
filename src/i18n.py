@@ -372,3 +372,63 @@ TR["ja"].update({
     "db_latest": "データベースは最新です（{v}）。",
     "db_offline": "データベースサーバーに接続できません。ネットワークを確認して再試行してください。",
 })
+
+
+# --- ESE-Version-Sorting download
+TR["zh_TW"].update({
+    "vsort_action": "下載版本分類（ESE-Version-Sorting）",
+    "vsort_tip": "下載 YataiDON 用的版本分類資料夾到下載目錄（約 21 MB，整包一次下載）",
+    "vsort_done": "已下載到下載目錄的 ESE-Version-Sorting 資料夾（{c}）。",
+    "vsort_latest": "ESE-Version-Sorting 已是最新版本（{c}）。",
+    "vsort_fail": "下載 ESE-Version-Sorting 失敗：{e}",
+})
+TR["en"].update({
+    "vsort_action": "Download version sorting (ESE-Version-Sorting)",
+    "vsort_tip": "Download the YataiDON version-sorting folders into the download folder (about 21 MB, one archive)",
+    "vsort_done": "Installed ESE-Version-Sorting into the download folder ({c}).",
+    "vsort_latest": "ESE-Version-Sorting is already up to date ({c}).",
+    "vsort_fail": "Downloading ESE-Version-Sorting failed: {e}",
+})
+TR["ja"].update({
+    "vsort_action": "バージョン別フォルダをダウンロード（ESE-Version-Sorting）",
+    "vsort_tip": "YataiDON 用のバージョン別フォルダをダウンロード先に取得します（約 21 MB、アーカイブ 1 回）",
+    "vsort_done": "ダウンロード先に ESE-Version-Sorting をインストールしました（{c}）。",
+    "vsort_latest": "ESE-Version-Sorting は最新です（{c}）。",
+    "vsort_fail": "ESE-Version-Sorting のダウンロードに失敗しました：{e}",
+})
+
+
+# --- command-line mode
+TR["zh_TW"].update({
+    "cli_found": "將下載 {n} 首（{f} 個檔案）",
+    "cli_missing": "缺少 {n} 首（{f} 個檔案）",
+    "cli_updated": "{n} 首有更新（{f} 個檔案）",
+    "cli_no_db": "尚未有歌曲資料庫，請先執行：ESEManager-cli update-db",
+    "cli_app_dir": "程式資料夾",
+    "cli_db_local": "本機資料庫版本",
+    "cli_db_remote": "最新資料庫版本",
+    "cli_download_what": "請指定關鍵字、--category，或用 --all 下載全部。",
+    "cli_continue": "要繼續嗎？",
+})
+TR["en"].update({
+    "cli_found": "{n} songs ({f} files) to download",
+    "cli_missing": "{n} songs ({f} files) missing",
+    "cli_updated": "{n} songs ({f} files) changed upstream",
+    "cli_no_db": "No song database yet. Run: ESEManager-cli update-db",
+    "cli_app_dir": "App folder",
+    "cli_db_local": "Local database",
+    "cli_db_remote": "Latest database",
+    "cli_download_what": "Give a keyword, --category, or --all to download everything.",
+    "cli_continue": "Continue?",
+})
+TR["ja"].update({
+    "cli_found": "{n} 曲（{f} ファイル）をダウンロードします",
+    "cli_missing": "{n} 曲（{f} ファイル）が不足しています",
+    "cli_updated": "{n} 曲（{f} ファイル）に更新があります",
+    "cli_no_db": "曲データベースがありません。先に実行してください：ESEManager-cli update-db",
+    "cli_app_dir": "アプリのフォルダー",
+    "cli_db_local": "ローカルのデータベース",
+    "cli_db_remote": "最新のデータベース",
+    "cli_download_what": "キーワード、--category、またはすべてなら --all を指定してください。",
+    "cli_continue": "続行しますか？",
+})

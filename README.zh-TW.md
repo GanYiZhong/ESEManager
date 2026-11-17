@@ -15,6 +15,9 @@
   啟動時有新版也會詢問
 - 下載會驗證（TLS、檔案大小、譜面的 git blob 雜湊），並先寫到 `.part` 檔，中斷也不會留下壞檔
 - 淺色／深色主題，介面語言自動偵測（English／繁體中文／日本語）
+- 一鍵下載 [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)（YataiDON 版本分類資料夾）
+  到下載目錄：**檔案 → 下載版本分類**
+- 命令列模式（`ESEManager-cli`），方便寫腳本或在伺服器上使用
 - Rolling release：有新版本時狀態列會提示
 
 ## 快速開始
@@ -27,6 +30,24 @@
 
 Linux 若出現無法載入 Qt `xcb` 外掛的錯誤，請安裝 `libxcb-cursor0`（Debian/Ubuntu）或
 `xcb-util-cursor`（Fedora/Arch）。
+
+## 命令列模式
+
+Release 版在主程式旁附有 `ESEManager-cli`（Windows 為 `ESEManager-cli.exe`）；從原始碼執行則用
+`python src/cli.py`。與 GUI 共用同一份資料庫、設定與下載目錄。
+
+```
+ESEManager-cli status                      # 版本、資料夾、歌曲數
+ESEManager-cli update-db                   # 下載最新歌曲資料庫
+ESEManager-cli search 千本桜               # 也支援日文標題
+ESEManager-cli download Senbonzakura -y    # 下載符合的歌
+ESEManager-cli download --all -y           # 全部下載
+ESEManager-cli missing --download -y       # 下載缺少的歌
+ESEManager-cli updates --download -y       # 下載上游更新過的譜面
+ESEManager-cli version-sorting             # 安裝／更新 ESE-Version-Sorting
+```
+
+選項：`--dir 資料夾`、`--workers 數量`、`--lang zh_TW|en|ja`。結束碼 0＝成功、1＝有失敗、2＝沒事可做或用法錯誤。
 
 ## 從原始碼執行
 
@@ -74,6 +95,13 @@ PR 只會打包與測試。要重新打包既有 release 的檔案，可手動�
 `.github/workflows/pages-db.yml` 每 6 小時從 ESE 重建 `ese_songs.db` 與 `ese_local.db`（ESE 沒有新
 commit 時直接略過），發佈到 <https://ganyizhong.github.io/ESEManager/>，並附上 `version.txt` 與含
 SHA-256 的 `manifest.json`。手動執行時勾選 **force** 可強制重建。
+
+這個流程盡量不佔用 ESE 伺服器：
+
+- 每 6 小時只做一次 `git ls-remote`，ESE 沒更新就到此為止；
+- 用淺層、blobless clone（只有檔案清單、不含音檔），並在每次執行之間快取，更新時只抓新 commit 的目錄樹；
+- 譜面（`.tja`）透過 git 批次取得，而且只抓內容有變的（以 git blob 雜湊判斷），不會一個檔案一個 HTTP 請求；
+- 音檔（Git LFS）永遠不下載。
 
 在本機建立同樣的資料庫（需要 Git）：
 

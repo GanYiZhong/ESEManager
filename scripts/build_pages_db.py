@@ -193,9 +193,12 @@ def main():
     songs_db = os.path.join(args.work, "ese_songs.db")
     local_db = os.path.join(args.work, "ese_local.db")
 
-    scraper = ESEScraperGitV2(db_path=songs_db, clone_dir=os.path.join(args.work, "ESE_clone"))
+    # The clone is kept (and cached between CI runs), so later builds only
+    # fetch what changed upstream.
+    clone_dir = os.path.join(args.work, "ESE_clone")
+    scraper = ESEScraperGitV2(db_path=songs_db, clone_dir=clone_dir)
     try:
-        scraper.scrape(keep_clone=False)
+        scraper.scrape(keep_clone=True)
     finally:
         scraper.close()
 
@@ -204,7 +207,9 @@ def main():
     if songs < MIN_SONGS or (prev_songs and songs < prev_songs * MAX_SHRINK):
         raise SystemExit(f"Refusing to publish: only {songs} songs (previous release had {prev_songs})")
 
-    build_local_db.build_from_remote(song_db=songs_db, local_db=local_db, workers=12)
+    # Japanese titles / BPM / levels: read the .tja blobs through git in a few
+    # batched requests, only for charts whose content changed.
+    build_local_db.build_from_git(song_db=songs_db, local_db=local_db, clone_dir=clone_dir)
 
     for db in (songs_db, local_db):
         vacuum(db)

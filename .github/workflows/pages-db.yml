@@ -50,6 +50,15 @@ jobs:
       - name: Install dependencies
         run: pip install "requests==2.34.2"
 
+      # Keep the partial ESE clone between runs so each build only fetches what
+      # changed upstream (new commit tree + changed .tja blobs).
+      - name: Restore ESE clone
+        uses: actions/cache/restore@v4
+        with:
+          path: pages_work/ESE_clone
+          key: ese-clone-${{ github.run_id }}
+          restore-keys: ese-clone-
+
       - name: Build databases
         id: build
         env:
@@ -60,6 +69,13 @@ jobs:
           args="--out site"
           if [ "$FORCE" = "true" ]; then args="$args --force"; fi
           python scripts/build_pages_db.py $args
+
+      - name: Save ESE clone
+        if: steps.build.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: pages_work/ESE_clone
+          key: ese-clone-${{ github.run_id }}
 
       - uses: actions/upload-pages-artifact@v3
         if: steps.build.outputs.changed == 'true'

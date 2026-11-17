@@ -18,6 +18,9 @@ from the **ESE (Every Song Ever)** project.
 - Downloads are verified (TLS, size and git blob hash for charts) and written to a `.part` file
   first, so an interrupted download never leaves a broken file behind
 - Light / dark theme and UI language auto-detect (English / 繁體中文 / 日本語)
+- One-click download of [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)
+  (YataiDON version folders) into the download folder: **File → Download version sorting**
+- Command-line mode (`ESEManager-cli`) for scripts and servers
 - Rolling releases: the status bar tells you when a newer version is available
 
 ## Quick start
@@ -32,6 +35,25 @@ extract a new version over the old folder.
 
 On Linux, if Qt reports it cannot load the `xcb` platform plugin, install `libxcb-cursor0`
 (Debian/Ubuntu) or `xcb-util-cursor` (Fedora/Arch).
+
+## Command-line mode
+
+Release builds include `ESEManager-cli` (`ESEManager-cli.exe` on Windows) next to the GUI; from
+source run `python src/cli.py`. It uses the same databases, settings and download folder.
+
+```
+ESEManager-cli status                      # versions, folders, song count
+ESEManager-cli update-db                   # download the latest song database
+ESEManager-cli search 千本桜               # Japanese titles work too
+ESEManager-cli download Senbonzakura -y    # download matching songs
+ESEManager-cli download --all -y           # everything
+ESEManager-cli missing --download -y       # songs you don't have yet
+ESEManager-cli updates --download -y       # charts changed upstream
+ESEManager-cli version-sorting             # install/refresh ESE-Version-Sorting
+```
+
+Options: `--dir DIR`, `--workers N`, `--lang zh_TW|en|ja`. Exit code 0 = success,
+1 = something failed, 2 = nothing to do / bad usage.
 
 ## Run from source
 
@@ -79,9 +101,18 @@ tested only. To rebuild an existing release's files, run the workflow manually w
 ## Prebuilt databases (GitHub Pages)
 
 `.github/workflows/pages-db.yml` rebuilds `ese_songs.db` and `ese_local.db` from ESE every
-6 hours (skipped when ESE's master commit has not changed) and publishes them to
+6 hours and publishes them to
 <https://ganyizhong.github.io/ESEManager/> together with `version.txt` and `manifest.json`
 (sizes + SHA-256). Run the workflow manually with **force** to rebuild anyway.
+
+It is designed to be light on ESE's server:
+
+- one `git ls-remote` every 6 hours; nothing else when ESE has not changed;
+- a shallow, blobless clone (file list only, no audio) that is cached between runs, so an
+  update only fetches the new commit's tree;
+- chart files (`.tja`) are fetched through git in batched requests, and only those whose
+  content changed (tracked by git blob hash) — never one HTTP request per file;
+- audio (Git LFS) is never downloaded.
 
 One-time setup: **Settings → Pages → Source: GitHub Actions**.
 

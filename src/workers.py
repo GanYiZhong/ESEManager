@@ -17,7 +17,8 @@ from PySide6.QtCore import QThread, Signal
 
 from appconfig import (DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
-                       UnsafePathError, APP_VERSION, LATEST_RELEASE_API, is_newer)
+                       UnsafePathError, APP_VERSION, LATEST_RELEASE_API, is_newer,
+                       VSORT_REPO, VSORT_FOLDER, VSORT_BRANCH_API, VSORT_ARCHIVE_URL)
 from download_songs import SongDownloader
 from tja_parser import decode_tja_bytes
 
@@ -151,50 +152,56 @@ class MetaLoadThread(QThread):
 
 
 # ---------------------------------------------------------------- search
+def has_cjk(text):
+    return any('぀' <= c <= 'ヿ' or '一' <= c <= '鿿' for c in text or "")
+
+
+def search_songs(keyword, category=None):
+    """Search the song database. A Japanese keyword also matches songs whose
+    Japanese title (from the local title database) contains it. box.def rows
+    are dropped and only songs with files are returned. Shared by GUI and CLI."""
+    d = SongDownloader(db_path=DB_PATH)
+    try:
+        songs = d.search_songs(keyword=keyword or None, category=category)
+        if keyword and has_cjk(keyword) and os.path.exists(LOCAL_DB_PATH):
+            conn = connect_ro(LOCAL_DB_PATH)
+            try:
+                titles = [r[0] for r in conn.execute(
+                    "SELECT title FROM local_songs WHERE title_ja LIKE ?",
+                    (f"%{keyword}%",)) if r[0]]
+            finally:
+                conn.close()
+            if titles:
+                extra = d.search_songs(keywords=titles, category=category)
+                seen = {(s["song_name"], s["category"]) for s in songs}
+                for s in extra:
+                    k = (s["song_name"], s["category"])
+                    if k not in seen:
+                        seen.add(k)
+                        songs.append(s)
+    finally:
+        d.close()
+    out = []
+    for s in songs:
+        s["files"] = [f for f in s["files"] if f["filename"].lower() != "box.def"]
+        if s["files"]:
+            out.append(s)
+    return out
+
+
 class SearchThread(QThread):
     done = Signal(int, object)       # seq, songs
     fail = Signal(int, str)          # seq, message
 
-    def __init__(self, keyword, category, has_local, seq=0):
+    def __init__(self, keyword, category, has_local=True, seq=0):
         super().__init__()
         self.keyword = keyword
         self.category = category
-        self.has_local = has_local
         self.seq = seq
 
     def run(self):
         try:
-            d = SongDownloader(db_path=DB_PATH)
-            try:
-                songs = d.search_songs(keyword=self.keyword or None, category=self.category)
-                # Japanese keyword: look up matching English titles in the local DB
-                # and add them with one OR query.
-                if self.keyword and self.has_local and any(
-                        '぀' <= c <= 'ヿ' or '一' <= c <= '鿿' for c in self.keyword):
-                    conn = connect_ro(LOCAL_DB_PATH)
-                    try:
-                        titles = [r[0] for r in conn.execute(
-                            "SELECT title FROM local_songs WHERE title_ja LIKE ?",
-                            (f"%{self.keyword}%",)) if r[0]]
-                    finally:
-                        conn.close()
-                    if titles:
-                        extra = d.search_songs(keywords=titles, category=self.category)
-                        seen = {(s["song_name"], s["category"]) for s in songs}
-                        for s in extra:
-                            k = (s["song_name"], s["category"])
-                            if k not in seen:
-                                seen.add(k)
-                                songs.append(s)
-            finally:
-                d.close()
-            # Drop box.def entries; keep only songs that still have files.
-            out = []
-            for s in songs:
-                s["files"] = [f for f in s["files"] if f["filename"].lower() != "box.def"]
-                if s["files"]:
-                    out.append(s)
-            self.done.emit(self.seq, out)
+            self.done.emit(self.seq, search_songs(self.keyword, self.category))
         except Exception as e:
             self.fail.emit(self.seq, str(e))
 
@@ -542,28 +549,94 @@ def read_local_version():
         return ""
 
 
+def fetch_remote_version():
+    """Published database version from GitHub Pages; "" if unreachable or invalid."""
+    try:
+        r = requests.get(DB_RELEASE_URL + "version.txt", timeout=10,
+                         headers={"User-Agent": USER_AGENT})
+        r.raise_for_status()
+        text = r.text.strip()
+        if looks_like_version(text):
+            return text
+        print("version: unexpected response, ignored")
+    except Exception as e:
+        print("version:", e)
+    return ""
+
+
 class VersionThread(QThread):
     result = Signal(str, str)  # remote, local
 
     def run(self):
-        remote = ""
+        self.result.emit(fetch_remote_version(), read_local_version())
+
+
+def update_databases(version="", log=print, tr=None):
+    """Download the prebuilt databases from GitHub Pages, verify them against
+    manifest.json, then swap them in together (rolling back on failure).
+    Raises on any error; returns the installed version."""
+    tr = tr or (lambda key, **kw: f"{key} {kw}")
+    app_dir = os.path.dirname(DB_PATH)
+    targets = [os.path.join(app_dir, n) for n in DB_NAMES]
+    parts = [t + ".part" for t in targets]
+    backups = []
+    sess = new_session()
+    try:
+        r = get_with_retry(sess, DB_RELEASE_URL + "manifest.json", timeout=15)
+        manifest = r.json()
+        files = manifest["files"]
+        for name, target, part in zip(DB_NAMES, targets, parts):
+            log(tr("log_db_dl", n=name))
+            want = (files.get(name) or {}).get("sha256")
+            if not want:
+                raise ValueError(tr("log_db_bad", n=name))
+            h = hashlib.sha256()
+            with get_with_retry(sess, DB_RELEASE_URL + name, stream=True, timeout=120) as r:
+                with open(part, "wb") as f:
+                    for chunk in r.iter_content(1 << 16):
+                        if chunk:
+                            f.write(chunk)
+                            h.update(chunk)
+            with open(part, "rb") as f:
+                if f.read(16) != SQLITE_MAGIC:
+                    raise ValueError(tr("log_db_bad", n=name))
+            if h.hexdigest() != want:
+                raise ValueError(tr("log_db_sha", n=name))
+        # Swap both in; keep backups so a failed second replace can roll back.
         try:
-            r = requests.get(DB_RELEASE_URL + "version.txt", timeout=10,
-                             headers={"User-Agent": USER_AGENT})
-            r.raise_for_status()
-            text = r.text.strip()
-            if looks_like_version(text):
-                remote = text
-            else:
-                print("version: unexpected response, ignored")
-        except Exception as e:
-            print("version:", e)
-        self.result.emit(remote, read_local_version())
+            for target, part in zip(targets, parts):
+                if os.path.exists(target):
+                    bak = target + ".bak"
+                    os.replace(target, bak)
+                    backups.append((bak, target))
+                os.replace(part, target)
+        except Exception:
+            for bak, target in backups:
+                try:
+                    os.replace(bak, target)
+                except OSError:
+                    pass
+            backups = []
+            raise
+        installed = manifest.get("version") or version
+        with open(VERSION_FILE, "w", encoding="utf-8") as f:
+            f.write(installed)
+        return installed
+    finally:
+        sess.close()
+        for bak, _ in backups:
+            try:
+                os.remove(bak)
+            except OSError:
+                pass
+        for part in parts:
+            try:
+                os.remove(part)
+            except OSError:
+                pass
 
 
 class DBUpdateThread(QThread):
-    """Download the prebuilt databases from GitHub Pages, verify them against
-    manifest.json, then swap them in together (rolling back on failure)."""
     log = Signal(str)
     done = Signal(bool, str)
 
@@ -573,66 +646,11 @@ class DBUpdateThread(QThread):
         self.tr = tr or (lambda key, **kw: key)
 
     def run(self):
-        app_dir = os.path.dirname(DB_PATH)
-        targets = [os.path.join(app_dir, n) for n in DB_NAMES]
-        parts = [t + ".part" for t in targets]
-        backups = []
-        sess = new_session()
         try:
-            r = get_with_retry(sess, DB_RELEASE_URL + "manifest.json", timeout=15)
-            manifest = r.json()
-            files = manifest["files"]
-            for name, target, part in zip(DB_NAMES, targets, parts):
-                self.log.emit(self.tr("log_db_dl", n=name))
-                want = (files.get(name) or {}).get("sha256")
-                if not want:
-                    raise ValueError(self.tr("log_db_bad", n=name))
-                h = hashlib.sha256()
-                with get_with_retry(sess, DB_RELEASE_URL + name, stream=True,
-                                    timeout=120) as r:
-                    with open(part, "wb") as f:
-                        for chunk in r.iter_content(1 << 16):
-                            if chunk:
-                                f.write(chunk)
-                                h.update(chunk)
-                with open(part, "rb") as f:
-                    if f.read(16) != SQLITE_MAGIC:
-                        raise ValueError(self.tr("log_db_bad", n=name))
-                if h.hexdigest() != want:
-                    raise ValueError(self.tr("log_db_sha", n=name))
-            # Swap both in; keep backups so a failed second replace can roll back.
-            try:
-                for target, part in zip(targets, parts):
-                    if os.path.exists(target):
-                        bak = target + ".bak"
-                        os.replace(target, bak)
-                        backups.append((bak, target))
-                    os.replace(part, target)
-            except Exception:
-                for bak, target in backups:
-                    try:
-                        os.replace(bak, target)
-                    except OSError:
-                        pass
-                backups = []
-                raise
-            with open(VERSION_FILE, "w", encoding="utf-8") as f:
-                f.write(manifest.get("version") or self.version)
+            update_databases(self.version, log=self.log.emit, tr=self.tr)
             self.done.emit(True, "ok")
         except Exception as e:
             self.done.emit(False, str(e))
-        finally:
-            sess.close()
-            for bak, _ in backups:
-                try:
-                    os.remove(bak)
-                except OSError:
-                    pass
-            for part in parts:
-                try:
-                    os.remove(part)
-                except OSError:
-                    pass
 
 
 # ---------------------------------------------------------------- app update check
@@ -658,3 +676,107 @@ class AppUpdateThread(QThread):
                 self.found.emit(tag, url)
         except Exception as e:
             print("app update check:", e)
+
+
+# ---------------------------------------------------------------- ESE-Version-Sorting
+VSORT_MARKER = ".ese_commit"
+
+
+def vsort_latest_commit(sess=None):
+    """Latest commit id of the version-sorting repo (one small API request)."""
+    sess = sess or new_session()
+    r = get_with_retry(sess, VSORT_BRANCH_API, timeout=20)
+    return r.json()["commit"]["id"]
+
+
+def vsort_installed_commit(download_dir):
+    try:
+        with open(os.path.join(download_dir, VSORT_FOLDER, VSORT_MARKER), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def download_version_sorting(download_dir, log=print, force=False, sess=None):
+    """Download Yonokid/ESE-Version-Sorting as one zip archive and install it
+    as <download_dir>/ESE-Version-Sorting (YataiDON version folders).
+
+    Skips the download when the installed commit is already the latest. The
+    new copy is extracted next to the old one and swapped in only when complete.
+    Returns (status, commit): status is "updated" or "latest".
+    """
+    import shutil
+    import tempfile
+    import zipfile
+
+    own = sess is None
+    sess = sess or new_session()
+    try:
+        commit = vsort_latest_commit(sess)
+        if not force and vsort_installed_commit(download_dir) == commit:
+            return "latest", commit
+        os.makedirs(download_dir, exist_ok=True)
+        target = os.path.join(download_dir, VSORT_FOLDER)
+        work = tempfile.mkdtemp(prefix=".vsort-", dir=download_dir)
+        try:
+            archive = os.path.join(work, "repo.zip")
+            log(f"⬇ {VSORT_REPO} ({commit[:7]})")
+            with get_with_retry(sess, VSORT_ARCHIVE_URL.format(ref=commit),
+                                stream=True, timeout=120) as r:
+                with open(archive, "wb") as f:
+                    for chunk in r.iter_content(1 << 16):
+                        if chunk:
+                            f.write(chunk)
+            staging = os.path.join(work, VSORT_FOLDER)
+            os.makedirs(staging)
+            count = 0
+            with zipfile.ZipFile(archive) as z:
+                for info in z.infolist():
+                    # Archives wrap everything in one top folder ("ese-version-sorting/").
+                    parts = info.filename.replace("\\", "/").split("/", 1)
+                    if len(parts) < 2 or not parts[1] or info.is_dir():
+                        continue
+                    if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                        continue                       # never extract symlinks
+                    dest = safe_join(staging, parts[1])   # rejects ../ and absolute paths
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with z.open(info) as src, open(dest, "wb") as out:
+                        shutil.copyfileobj(src, out)
+                    count += 1
+            if count == 0:
+                raise IOError("archive is empty")
+            with open(os.path.join(staging, VSORT_MARKER), "w", encoding="utf-8") as f:
+                f.write(commit)
+            # Swap: old -> backup, new -> target, then drop the backup.
+            backup = os.path.join(work, "old")
+            if os.path.exists(target):
+                os.replace(target, backup)
+            try:
+                os.replace(staging, target)
+            except OSError:
+                if os.path.exists(backup):
+                    os.replace(backup, target)
+                raise
+            log(f"✓ {VSORT_FOLDER}: {count} files")
+            return "updated", commit
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    finally:
+        if own:
+            sess.close()
+
+
+class VersionSortingThread(QThread):
+    log = Signal(str)
+    done = Signal(bool, str, str)    # ok, "updated"/"latest" or error, commit
+
+    def __init__(self, download_dir):
+        super().__init__()
+        self.download_dir = download_dir
+
+    def run(self):
+        try:
+            status, commit = download_version_sorting(self.download_dir, log=self.log.emit)
+            self.done.emit(True, status, commit)
+        except Exception as e:
+            self.done.emit(False, str(e), "")

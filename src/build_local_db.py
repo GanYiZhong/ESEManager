@@ -369,6 +369,160 @@ def build_from_remote(song_db: str = "ese_songs.db", local_db: str = "ese_local.
     db.close()
 
 
+# ============================================================ git-batched build
+# Used by the GitHub Pages builder. Compared with build_from_remote (one HTTP
+# request per .tja), this asks ESE's git server for all needed .tja blobs in a
+# few batched requests, and only for charts whose content changed since the
+# previous build (tracked by git blob sha), which is much lighter for ESE.
+
+FETCH_BATCH = 2000          # object ids per `git fetch` request
+
+
+def _git_env():
+    # Never let git fetch missing objects one at a time behind our back
+    # (honoured by git >= 2.45; older versions ignore it, and we only read
+    # objects after checking they are present).
+    return dict(os.environ, GIT_NO_LAZY_FETCH="1", GIT_TERMINAL_PROMPT="0",
+                GIT_HTTP_LOW_SPEED_LIMIT="1000", GIT_HTTP_LOW_SPEED_TIME="60")
+
+
+def _missing_blobs(git_exe, clone_dir, ref, wanted):
+    """Which of `wanted` object ids are not in the local (partial) clone.
+    `rev-list --missing=print` reports them without fetching anything."""
+    import subprocess
+    out = subprocess.run(
+        [git_exe, "-C", clone_dir, "rev-list", "--objects", "--missing=print",
+         "--no-object-names", ref],
+        capture_output=True, text=True, env=_git_env(), timeout=600, check=True).stdout
+    missing = {line[1:].strip() for line in out.splitlines() if line.startswith("?")}
+    return [oid for oid in wanted if oid in missing]
+
+
+def _fetch_blobs(git_exe, clone_dir, oids):
+    """Fetch the given blob ids from origin in batches (one request each)."""
+    import subprocess
+    for i in range(0, len(oids), FETCH_BATCH):
+        chunk = oids[i:i + FETCH_BATCH]
+        print(f"git fetch: {len(chunk)} .tja blobs "
+              f"(batch {i // FETCH_BATCH + 1}/{(len(oids) - 1) // FETCH_BATCH + 1})")
+        subprocess.run(
+            [git_exe, "-C", clone_dir, "-c", "fetch.negotiationAlgorithm=noop",
+             "fetch", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no",
+             "--filter=blob:none", "--stdin", "origin"],
+            # bytes, not text: on Windows text mode would send "\r\n"
+            input=("\n".join(chunk) + "\n").encode("ascii"), env=_git_env(),
+            timeout=1800, check=True)
+
+
+def _read_blobs(git_exe, clone_dir, oids):
+    """Yield (oid, bytes) for objects already present locally."""
+    import subprocess
+    proc = subprocess.Popen([git_exe, "-C", clone_dir, "cat-file", "--batch"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            env=_git_env())
+    try:
+        for oid in oids:
+            proc.stdin.write(oid.encode() + b"\n")
+            proc.stdin.flush()
+            header = proc.stdout.readline().decode().split()
+            if len(header) != 3 or header[1] != "blob":
+                raise RuntimeError(f"git cat-file: unexpected reply for {oid}: {header}")
+            size = int(header[2])
+            data = proc.stdout.read(size)
+            proc.stdout.read(1)              # trailing newline
+            yield oid, data
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=60)
+
+
+def build_from_git(song_db: str, local_db: str, clone_dir: str, git_exe: str = "git",
+                   ref: str = "master"):
+    """Build/refresh ese_local.db from the .tja files in a partial ESE clone.
+
+    Incremental by content: a chart is (re)parsed only when its git blob sha
+    differs from the one recorded in local_db. Missing blobs are fetched in
+    batches; nothing is downloaded one file at a time.
+    """
+    if not os.path.exists(song_db):
+        raise FileNotFoundError(f"song database not found: {song_db}")
+
+    conn = sqlite3.connect(song_db)
+    try:
+        rows = conn.execute(
+            "SELECT f.file_path, f.filename, c.name, f.blob_sha "
+            "FROM song_files f "
+            "LEFT JOIN songs s ON f.song_id = s.id "
+            "LEFT JOIN categories c ON s.category_id = c.id "
+            "WHERE f.file_type = '.tja'").fetchall()
+    finally:
+        conn.close()
+    if any(not r[3] for r in rows):
+        raise RuntimeError("song database has .tja rows without blob_sha; rebuild it first")
+
+    db = LocalTJADatabase(db_path=local_db)
+    db.init_database()
+    cur = db.conn.cursor()
+    if "blob_sha" not in {r[1] for r in cur.execute("PRAGMA table_info(local_songs)")}:
+        cur.execute("ALTER TABLE local_songs ADD COLUMN blob_sha TEXT")
+
+    # Drop rows for charts that no longer exist upstream.
+    cur.execute("CREATE TEMP TABLE IF NOT EXISTS _keep(fp TEXT PRIMARY KEY)")
+    cur.execute("DELETE FROM _keep")
+    cur.executemany("INSERT OR IGNORE INTO _keep(fp) VALUES(?)", [(r[0],) for r in rows])
+    cur.execute("DELETE FROM local_songs WHERE file_path NOT IN (SELECT fp FROM _keep)")
+    pruned = cur.rowcount
+    cur.execute("DROP TABLE _keep")
+    db.conn.commit()
+    if pruned:
+        print(f"Pruned {pruned} charts no longer in ESE")
+
+    known = {fp: sha for fp, sha in cur.execute(
+        "SELECT file_path, blob_sha FROM local_songs WHERE blob_sha IS NOT NULL")}
+    todo = [r for r in rows if known.get(r[0]) != r[3]]
+    print(f"{len(rows)} charts; {len(todo)} new or changed since the last build")
+    if not todo:
+        db.close()
+        return 0
+
+    wanted = sorted({r[3] for r in todo})
+    missing = _missing_blobs(git_exe, clone_dir, ref, wanted)
+    if missing:
+        _fetch_blobs(git_exe, clone_dir, missing)
+        still = _missing_blobs(git_exe, clone_dir, ref, missing)
+        if still:
+            db.close()
+            raise RuntimeError(f"{len(still)} .tja blobs could not be fetched, e.g. {still[0]}")
+    else:
+        print("All needed .tja blobs are already in the local clone")
+
+    parser = TJAParser()
+    by_sha = {}
+    for r in todo:
+        by_sha.setdefault(r[3], []).append(r)
+    done = ja = 0
+    for oid, data in _read_blobs(git_exe, clone_dir, wanted):
+        text = TJAParser.decode_bytes(data)
+        base = parser.parse_text(text)
+        for diff, lv in parser.parse_courses(text).items():
+            base[f"level_{diff}"] = lv
+        for file_path, filename, category, sha in by_sha[oid]:
+            meta = dict(base, file_path=file_path, file_name=filename,
+                        directory=os.path.dirname(file_path))
+            if category:
+                meta["category"] = category
+            db.insert_song(meta)
+            cur.execute("UPDATE local_songs SET blob_sha = ? WHERE file_path = ?",
+                        (sha, file_path))
+            done += 1
+            if meta.get("titleja"):
+                ja += 1
+    db.conn.commit()
+    print(f"Parsed {done} charts ({ja} with Japanese titles)")
+    db.close()
+    return done
+
+
 def main():
     """主程式"""
     import argparse

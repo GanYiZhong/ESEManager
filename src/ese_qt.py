@@ -39,6 +39,7 @@ import theme  # light/dark palette and style-sheet helpers
 from models import SongModel, DownloadModel, human_speed, human_eta
 from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
+                     VersionSortingThread,
                      load_jp_map,
                      load_meta_map, read_local_version)
 from notify import Notifier, set_app_icon
@@ -153,10 +154,11 @@ class MainWindow(QMainWindow):
         self.act_missing = self._action(self.check_missing)
         self.act_updates = self._action(self.check_updates)
         self.act_open_dir = self._action(self.open_dir)
+        self.act_vsort = self._action(self.download_version_sorting)
         self.act_settings = self._action(self.open_settings)
         self.act_settings.setShortcut(QKeySequence("Ctrl+,"))
         self.act_quit = self._action(self.close)
-        for a in (self.act_update_db, self.act_missing, self.act_updates):
+        for a in (self.act_update_db, self.act_missing, self.act_updates, self.act_vsort):
             self.menu_file.addAction(a)
         self.menu_file.addSeparator()
         self.menu_file.addAction(self.act_open_dir)
@@ -211,6 +213,8 @@ class MainWindow(QMainWindow):
         self.act_missing.setText(self.tr("check_missing"))
         self.act_updates.setText(self.tr("check_updates"))
         self.act_open_dir.setText(self.tr("mw_act_open_dir"))
+        self.act_vsort.setText(self.tr("vsort_action"))
+        self.act_vsort.setToolTip(self.tr("vsort_tip"))
         self.act_settings.setText(self.tr("mw_settings"))
         self.act_quit.setText(self.tr("mw_act_quit"))
         self.act_official.setText(self.tr("official"))
@@ -877,6 +881,32 @@ class MainWindow(QMainWindow):
                 subprocess.Popen(["open", d])
             else:
                 subprocess.Popen(["xdg-open", d])
+
+    # ---- ESE-Version-Sorting (YataiDON version folders)
+    def download_version_sorting(self):
+        t = getattr(self, "_vsort", None)
+        if t and t.isRunning():
+            return
+        ddir = resolve_dir(self.dir_edit.text())
+        self.act_vsort.setEnabled(False)
+        self.show_monitor(1)
+        self.log_view.appendPlainText("——— " + self.tr("vsort_action") + " ———")
+        t = self._vsort = self._track(VersionSortingThread(ddir))
+        t.log.connect(self.log_view.appendPlainText)
+        t.done.connect(self.on_version_sorting_done)
+        t.start()
+
+    def on_version_sorting_done(self, ok, info, commit):
+        self.act_vsort.setEnabled(True)
+        if self._closing:
+            return
+        if not ok:
+            QMessageBox.critical(self, self.tr("vsort_action"), self.tr("vsort_fail", e=info))
+            return
+        key = "vsort_latest" if info == "latest" else "vsort_done"
+        text = self.tr(key, c=commit[:7])
+        self.notifier.notify(self.tr("vsort_action"), text)
+        QMessageBox.information(self, self.tr("vsort_action"), text)
 
     # ---- database update (prebuilt databases from GitHub Pages)
     def _db_busy(self):

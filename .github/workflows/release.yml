@@ -184,6 +184,10 @@ jobs:
           cd "$RUNNER_TEMP/smoke"
           # Builds the real main window offscreen; any startup error exits non-zero.
           QT_QPA_PLATFORM=offscreen ./${{ matrix.exe }} --selftest
+          # Command-line mode: a real (small) request to GitHub Pages.
+          if [ "$RUNNER_OS" = "Windows" ]; then cli=./ESEManager-cli.exe; else cli=./ESEManager-cli; fi
+          "$cli" --version
+          "$cli" status --lang en
           # Start the GUI headless; it should still be running after 20s (timeout -> 124).
           set +e
           QT_QPA_PLATFORM=offscreen timeout 20 ./${{ matrix.exe }}
@@ -252,6 +256,8 @@ jobs:
             echo "|---|---|"
             echo "| Windows 10/11 x64 | \`ESEManager_${VERSION}_windows-x86_64.7z\` |"
             echo "| Linux x86_64 (glibc 2.35+) | \`ESEManager_${VERSION}_linux-x86_64.tar.gz\` |"
+            echo
+            echo "Command-line mode: \`ESEManager-cli --help\` (same folder)."
             echo
             echo "Each file has a \`.sha256\`. Extract over your existing folder to keep settings,"
             echo "databases and downloads. The app tells you in its status bar when a newer"

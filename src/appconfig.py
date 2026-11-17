@@ -37,6 +37,12 @@ ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
 # Prebuilt databases, rebuilt by .github/workflows/pages-db.yml.
 DB_RELEASE_URL = "https://ganyizhong.github.io/ESEManager/"
 USER_AGENT = "ESEManager"
+# Version-sorted folder layout for YataiDON (box.def + song lists), installed
+# as one folder inside the download (Songs) directory.
+VSORT_REPO = "Yonokid/ESE-Version-Sorting"
+VSORT_FOLDER = "ESE-Version-Sorting"
+VSORT_BRANCH_API = f"https://ese.tjadataba.se/api/v1/repos/{VSORT_REPO}/branches/master"
+VSORT_ARCHIVE_URL = f"https://ese.tjadataba.se/{VSORT_REPO}/archive/{{ref}}.zip"
 GITHUB_REPO = "GanYiZhong/ESEManager"
 RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
