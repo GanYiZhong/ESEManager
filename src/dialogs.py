@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 import dan_tools
+import theme
 from appconfig import DB_PATH, LOCAL_DB_PATH, app_path
 from i18n import CATEGORY_NAMES
 from tja_parser import read_text_file
@@ -116,7 +117,7 @@ class YataiBoxDefDialog(QDialog):
 
         # Info
         info = QLabel(self.tr("yatai_info"))
-        info.setStyleSheet("color:#888;font-size:10px;")
+        info.setStyleSheet(theme.muted_label_qss(font_px=10))
         info.setWordWrap(True)
         root.addWidget(info)
 
@@ -827,7 +828,7 @@ class DanToolsDialog(QDialog):
             '<a href="https://github.com/bluetaiko/SongConvertor">bluetaiko/SongConvertor</a>'
             ' (MIT) — thanks!')
         credit.setOpenExternalLinks(True)
-        credit.setStyleSheet("color:#888;")
+        credit.setStyleSheet(theme.muted_label_qss())
         root.addWidget(credit)
 
         self._restore_prefs()
@@ -888,7 +889,7 @@ class DanToolsDialog(QDialog):
         w = QWidget()
         v = QVBoxLayout(w)
         hint = QLabel(self.tr("dan_gen_hint"))
-        hint.setStyleSheet("color:#aaa;")
+        hint.setStyleSheet(theme.muted_label_qss())
         v.addWidget(hint)
         form = QFormLayout()
         self.gen_url = QLineEdit()
@@ -901,9 +902,7 @@ class DanToolsDialog(QDialog):
         form.addRow(self.tr("dan_songs"), self._with_browse(self.gen_songs, lambda: self._pick_dir(self.gen_songs)))
         v.addLayout(form)
         self.gen_btn = QPushButton(self.tr("dan_gen_run"))
-        self.gen_btn.setStyleSheet(
-            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
-            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.gen_btn.setStyleSheet(theme.primary_button_qss(padding="8px"))
         self.gen_btn.clicked.connect(self.run_gen)
         v.addWidget(self.gen_btn)
         v.addStretch()
@@ -913,7 +912,7 @@ class DanToolsDialog(QDialog):
         w = QWidget()
         v = QVBoxLayout(w)
         hint = QLabel(self.tr("dan_conv_hint"))
-        hint.setStyleSheet("color:#aaa;")
+        hint.setStyleSheet(theme.muted_label_qss())
         v.addWidget(hint)
         form = QFormLayout()
         self.conv_tja = QLineEdit()
@@ -926,9 +925,7 @@ class DanToolsDialog(QDialog):
         form.addRow(self.tr("dan_songs_opt"), self._with_browse(self.conv_songs, lambda: self._pick_dir(self.conv_songs)))
         v.addLayout(form)
         self.conv_btn = QPushButton(self.tr("dan_conv_run"))
-        self.conv_btn.setStyleSheet(
-            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px;border-radius:8px;}"
-            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.conv_btn.setStyleSheet(theme.primary_button_qss(padding="8px"))
         self.conv_btn.clicked.connect(self.run_conv)
         v.addWidget(self.conv_btn)
         v.addStretch()
@@ -938,7 +935,7 @@ class DanToolsDialog(QDialog):
         w = QWidget()
         v = QVBoxLayout(w)
         hint = QLabel(self.tr("ydan_hint"))
-        hint.setStyleSheet("color:#aaa;")
+        hint.setStyleSheet(theme.muted_label_qss())
         v.addWidget(hint)
         form = QFormLayout()
         self.ydan_url = QLineEdit()

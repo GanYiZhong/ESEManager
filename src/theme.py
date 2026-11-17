@@ -43,9 +43,11 @@ _TOKENS = {
         "highlight": "#42A5F5", "highlight_text": "#0D0D0D",
         "tooltip_base": "#3A3A3A", "tooltip_text": "#EEEEEE",
         "link": "#64B5F6", "placeholder": "#9A9A9A",
-        "mid": "#4A4A4A", "dark": "#1A1A1A", "light": "#505050",
+        # Fusion draws check-box and frame borders from Dark/Mid; keep them
+        # clearly lighter than Base so unchecked boxes stay visible.
+        "mid": "#5A5A5A", "dark": "#7A7A7A", "light": "#505050",
         "disabled_text": "#7A7A7A",
-        "accent": "#66BB6A", "accent_hover": "#81C784", "accent_text": "#0F1A10",
+        "accent": "#2E7D32", "accent_hover": "#388E3C", "accent_text": "#FFFFFF",
         "disabled_bg": "#4A4A4A", "disabled_fg": "#9A9A9A",
         "hint_bg": "#3D3314", "hint_fg": "#FFE08A", "hint_border": "#7A6320",
         "muted": "#9E9E9E",
@@ -189,3 +191,14 @@ def muted_label_qss(dark=None, font_px=None):
     t = colours(dark)
     size = f"font-size:{font_px}px;" if font_px else ""
     return f"color:{t['muted']};{size}"
+
+
+def check_indicator_qss(dark=None):
+    """Item-view check boxes. Fusion outlines them with a darker shade of the
+    window colour, which disappears on a dark background; draw them explicitly."""
+    t = colours(dark)
+    border = "#A0A0A0" if t is _TOKENS[True] else "#8A8A8A"
+    return (f"QTableView::indicator{{width:14px;height:14px;border-radius:3px;"
+            f"border:1px solid {border};background:{t['base']};}}"
+            f"QTableView::indicator:checked{{background:{t['highlight']};"
+            f"border:1px solid {t['highlight']};}}")

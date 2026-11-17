@@ -350,6 +350,7 @@ class MainWindow(QMainWindow):
         selr = QHBoxLayout()
         self.download_btn = QPushButton(self.tr("download"))
         self.download_btn.setStyleSheet(theme.primary_button_qss())
+        self.table.setStyleSheet(theme.check_indicator_qss())
         theme.add_listener(self._restyle_theme)  # re-colour these on theme change
         self.download_btn.clicked.connect(self.start_download_selected)
         self.selall_btn = QPushButton(self.tr("sel_all"))
@@ -969,6 +970,7 @@ class MainWindow(QMainWindow):
         try:
             self.download_btn.setStyleSheet(theme.primary_button_qss(dark))
             self.empty_hint.setStyleSheet(theme.hint_qss(dark))
+            self.table.setStyleSheet(theme.check_indicator_qss(dark))
         except RuntimeError:  # widgets already deleted by Qt
             pass
 

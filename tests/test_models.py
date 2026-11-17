@@ -55,8 +55,10 @@ def test_sort_song_name_case_insensitive(qapp):
 def test_sort_japanese_title_as_text(qapp):
     m = make_model()
     m.sort(2, Qt.AscendingOrder)
-    # Charlie has no JP title, so it sorts first as an empty string
-    assert names(m) == ["Charlie", "alpha", "Bravo"]
+    # Charlie has no JP title, so it goes last in both directions
+    assert names(m) == ["alpha", "Bravo", "Charlie"]
+    m.sort(2, Qt.DescendingOrder)
+    assert names(m)[-1] == "Charlie"
 
 
 def test_sort_category_as_text(qapp):

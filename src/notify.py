@@ -9,6 +9,7 @@
 import os
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -54,9 +55,10 @@ class Notifier:
             return False
         QApplication.alert(win)
         if self.tray is not None:
-            # The tray icon is shown on first use and stays until the app exits.
             if not self.tray.isVisible():
                 self.tray.show()
             self.tray.showMessage(title, message,
                                   QSystemTrayIcon.MessageIcon.Information, BALLOON_MS)
+            # Remove the tray icon again once the balloon is gone.
+            QTimer.singleShot(BALLOON_MS + 2000, self.tray.hide)
         return True

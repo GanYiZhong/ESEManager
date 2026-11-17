@@ -170,7 +170,7 @@ class SongModel(QAbstractTableModel):
         if col == 1:
             return name.casefold()
         if col == 2:
-            return (self.jp_map.get(name) or "").casefold()
+            return (self.jp_map.get(name) or "").casefold() or None   # untitled last
         if col == 3:
             return str(CATEGORY_NAMES.get(song["category"], song["category"])).casefold()
         if col == 10:
