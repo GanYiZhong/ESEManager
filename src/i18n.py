@@ -367,3 +367,35 @@ def detect_system_lang():
     if code.startswith("zh"):
         return "zh_TW"
     return "en"
+
+
+# --- main window layout
+TR["zh_TW"].update({
+    "mw_menu_file": "檔案(&F)",
+    "mw_menu_tools": "工具(&T)",
+    "mw_menu_help": "說明(&H)",
+    "mw_act_open_dir": "開啟下載資料夾",
+    "mw_act_quit": "結束",
+    "mw_status_db": "資料庫版本：{v}",
+    "mw_status_songs": "歌曲總數：{n}",
+})
+
+TR["en"].update({
+    "mw_menu_file": "&File",
+    "mw_menu_tools": "&Tools",
+    "mw_menu_help": "&Help",
+    "mw_act_open_dir": "Open Download Folder",
+    "mw_act_quit": "Quit",
+    "mw_status_db": "Database version: {v}",
+    "mw_status_songs": "Songs: {n}",
+})
+
+TR["ja"].update({
+    "mw_menu_file": "ファイル(&F)",
+    "mw_menu_tools": "ツール(&T)",
+    "mw_menu_help": "ヘルプ(&H)",
+    "mw_act_open_dir": "ダウンロードフォルダーを開く",
+    "mw_act_quit": "終了",
+    "mw_status_db": "データベース版：{v}",
+    "mw_status_songs": "楽曲数：{n}",
+})

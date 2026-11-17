@@ -24,7 +24,7 @@ except ImportError:
 import tomli_w
 
 from PySide6.QtCore import Qt, QTimer, QProcess
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
@@ -40,7 +40,7 @@ from i18n import TR, CATEGORY_NAMES, detect_system_lang
 from models import SongModel, DownloadModel, human_speed, human_eta
 from workers import (SearchThread, CheckUpdatesThread, DownloadThread, DBBuildThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, load_jp_map,
-                     load_meta_map)
+                     load_meta_map, read_local_version)
 from dialogs import BoxDefDialog, DanToolsDialog, YataiBoxDefDialog
 from notify import Notifier, set_app_icon
 
@@ -63,14 +63,29 @@ class MainWindow(QMainWindow):
         self._search = None
         self._search_seq = 0         # newest search wins; stale results are ignored
         self._threads = []           # every worker started, so closeEvent can stop them
+        self._db_version = read_local_version()
+        self._total_songs = None     # song count, shown in the status bar after a search
+        self._unfiltered_seq = None  # seq of the search that was not filtered by keyword/category
+
+        # Live search: restart this single-shot timer on every keystroke.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(self.SEARCH_DELAY_MS)
+        self._search_timer.timeout.connect(self.do_search)
 
         self.song_model = SongModel(self.tr, self.jp_map, self.meta_map)
         self.dl_model = DownloadModel(self.tr)
 
+        self.build_menus()          # created once; texts refreshed in retranslate_chrome
+        self.build_status_bar()
+        self.build_shortcuts()
         self.build_ui()
         self.notifier = Notifier(self)
         self.load_categories()
         QTimer.singleShot(1200, self.check_db_update)
+
+    SEARCH_DELAY_MS = 300
+    DEFAULT_WINDOW = (1280, 860)
 
     # ---- i18n / config
     def tr(self, key, **kw):
@@ -87,22 +102,128 @@ class MainWindow(QMainWindow):
         return {"download": {"directory": DEFAULT_DOWNLOAD_DIR, "workers": 5},
                 "display": {"page_size": 20, "ui_language": "auto"}}
 
+    @staticmethod
+    def _cfg_int(d, key, default, lo):
+        """Read an int from a config section; anything missing or invalid -> default."""
+        v = d.get(key)
+        return v if isinstance(v, int) and not isinstance(v, bool) and v >= lo else default
+
     def save_config(self):
+        prev = self.config.get("display", {})
+        # Keep the last normal (not maximized) size; a maximized window would store the screen size.
+        if self.isMaximized() or self.isMinimized():
+            win_w = self._cfg_int(prev, "window_w", self.DEFAULT_WINDOW[0], 1)
+            win_h = self._cfg_int(prev, "window_h", self.DEFAULT_WINDOW[1], 1)
+        else:
+            win_w, win_h = self.width(), self.height()
+        display = {"page_size": 20, "ui_language": self.lang_pref,
+                   "window_w": win_w, "window_h": win_h}
+        sizes = self.splitter.sizes() if hasattr(self, "splitter") else []
+        if len(sizes) == 2 and all(s > 0 for s in sizes):
+            display["splitter"] = [int(s) for s in sizes]
+        elif isinstance(prev.get("splitter"), list):
+            display["splitter"] = prev["splitter"]
         cfg = {
             "download": {"directory": self.dir_edit.text(),
                          "workers": self.workers_spin.value()},
-            "display": {"page_size": 20, "ui_language": self.lang_pref},
+            "display": display,
         }
+        self.config = {**self.config, "display": display}
         try:
             with open(CONFIG_FILE, "wb") as f:
                 tomli_w.dump(cfg, f)
         except Exception as e:
             print("save_config:", e)
 
+    # ---- menus, status bar, shortcuts (created once; texts via retranslate_chrome)
+    def _action(self, slot):
+        act = QAction(self)
+        act.triggered.connect(slot)
+        return act
+
+    def build_menus(self):
+        mb = self.menuBar()
+        # File: maintenance actions (also on the top bar), folder, quit
+        self.menu_file = mb.addMenu("")
+        self.act_update_db = self._action(self.update_database)
+        self.act_missing = self._action(self.check_missing)
+        self.act_updates = self._action(self.check_updates)
+        self.act_open_dir = self._action(self.open_dir)
+        self.act_quit = self._action(self.close)
+        for a in (self.act_update_db, self.act_missing, self.act_updates):
+            self.menu_file.addAction(a)
+        self.menu_file.addSeparator()
+        self.menu_file.addAction(self.act_open_dir)
+        self.menu_file.addSeparator()
+        self.menu_file.addAction(self.act_quit)
+
+        # Tools: box.def editor, YataiDON generator, Dan tools
+        self.menu_tools = mb.addMenu("")
+        self.act_boxdef = self._action(self.open_boxdef)
+        self.act_yatai = self._action(self.open_yatai_boxdef)
+        self.act_dan = self._action(self.open_dan_tools)
+        for a in (self.act_boxdef, self.act_yatai, self.act_dan):
+            self.menu_tools.addAction(a)
+
+        # Help: official site, credits
+        self.menu_help = mb.addMenu("")
+        self.act_official = self._action(lambda: webbrowser.open("https://taiko.ac"))
+        self.act_credits = self._action(self.open_credits)
+        self.menu_help.addAction(self.act_official)
+        self.menu_help.addAction(self.act_credits)
+
+    def build_status_bar(self):
+        sb = self.statusBar()
+        self.db_ver_label = QLabel()
+        self.song_count_label = QLabel()
+        sb.addWidget(self.db_ver_label)
+        sb.addPermanentWidget(self.song_count_label)
+
+    def build_shortcuts(self):
+        for seq, slot in (("Ctrl+F", self._focus_search), ("Ctrl+D", self._shortcut_download)):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.activated.connect(slot)
+
+    def _focus_search(self):
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
+    def _shortcut_download(self):
+        # Same guard as the button: nothing to do while a download is running.
+        if self.download_btn.isEnabled():
+            self.start_download_selected()
+
+    def _refresh_status(self):
+        self.db_ver_label.setText(
+            self.tr("mw_status_db", v=self._db_version or self.tr("dbv_none")))
+        self.song_count_label.setText(
+            self.tr("mw_status_songs",
+                    n="-" if self._total_songs is None else self._total_songs))
+
+    def retranslate_chrome(self):
+        """Apply the current language to menus, actions and status bar."""
+        self.menu_file.setTitle(self.tr("mw_menu_file"))
+        self.menu_tools.setTitle(self.tr("mw_menu_tools"))
+        self.menu_help.setTitle(self.tr("mw_menu_help"))
+        self.act_update_db.setText(self.tr("db_update"))
+        self.act_missing.setText(self.tr("check_missing"))
+        self.act_updates.setText(self.tr("check_updates"))
+        self.act_open_dir.setText(self.tr("mw_act_open_dir"))
+        self.act_quit.setText(self.tr("mw_act_quit"))
+        self.act_boxdef.setText(self.tr("boxdef_btn"))
+        self.act_yatai.setText(self.tr("yatai_btn"))
+        self.act_dan.setText(self.tr("dan_btn"))
+        self.act_official.setText(self.tr("official"))
+        self.act_credits.setText(self.tr("credits_btn"))
+        self._refresh_status()
+
     # ---- UI
     def build_ui(self):
         self.setWindowTitle(self.tr("title"))
-        self.resize(1280, 860)
+        w, h = self.DEFAULT_WINDOW
+        disp = self.config.get("display", {})
+        self.resize(self._cfg_int(disp, "window_w", w, 640),
+                    self._cfg_int(disp, "window_h", h, 480))
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
@@ -116,38 +237,29 @@ class MainWindow(QMainWindow):
         title.setFont(tf)
         top.addWidget(title)
         top.addStretch()
+        # Only the most-used actions stay on the bar; the rest live in the menu bar.
         self.db_update_btn = QPushButton(self.tr("db_update"))
         self.db_update_btn.setToolTip(self.tr("db_confirm"))
         self.db_update_btn.clicked.connect(self.update_database)
-        self.boxdef_btn = QPushButton(self.tr("boxdef_btn"))
-        self.boxdef_btn.clicked.connect(self.open_boxdef)
-        self.dan_btn = QPushButton(self.tr("dan_btn"))
-        self.dan_btn.clicked.connect(self.open_dan_tools)
-        self.yatai_btn = QPushButton(self.tr("yatai_btn"))
-        self.yatai_btn.clicked.connect(self.open_yatai_boxdef)
         self.missing_btn = QPushButton(self.tr("check_missing"))
         self.missing_btn.clicked.connect(self.check_missing)
         self.updates_btn = QPushButton(self.tr("check_updates"))
         self.updates_btn.clicked.connect(self.check_updates)
-        self.official_btn = QPushButton(self.tr("official"))
-        self.official_btn.clicked.connect(lambda: webbrowser.open("https://taiko.ac"))
-        self.credits_btn = QPushButton(self.tr("credits_btn"))
-        self.credits_btn.clicked.connect(self.open_credits)
         top.addWidget(self.db_update_btn)
-        top.addWidget(self.boxdef_btn)
-        top.addWidget(self.dan_btn)
-        top.addWidget(self.yatai_btn)
         top.addWidget(self.missing_btn)
         top.addWidget(self.updates_btn)
-        top.addWidget(self.official_btn)
-        top.addWidget(self.credits_btn)
         root.addLayout(top)
 
         # search row
         sr = QHBoxLayout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText(self.tr("ph"))
-        self.search_edit.returnPressed.connect(self.do_search)
+        self.search_edit.returnPressed.connect(self._search_now)
+        self.search_edit.textChanged.connect(lambda _=None: self._search_timer.start())
+        # Esc clears the box; the debounced search then shows everything again.
+        esc = QShortcut(QKeySequence(Qt.Key_Escape), self.search_edit)
+        esc.setContext(Qt.WidgetShortcut)
+        esc.activated.connect(self.search_edit.clear)
         self.cat_combo = QComboBox()
         self.cat_combo.setMinimumWidth(220)
         self.cat_combo.currentIndexChanged.connect(lambda _: self.do_search())
@@ -200,7 +312,7 @@ class MainWindow(QMainWindow):
         root.addLayout(fr)
 
         # splitter: song table (top) + monitor (bottom)
-        splitter = QSplitter(Qt.Vertical)
+        splitter = self.splitter = QSplitter(Qt.Vertical)
 
         # song table
         song_box = QWidget()
@@ -257,6 +369,11 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.build_monitor())
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
+        saved = disp.get("splitter")
+        if (isinstance(saved, list) and len(saved) == 2
+                and all(isinstance(s, int) and not isinstance(s, bool) and s > 0
+                        for s in saved)):
+            splitter.setSizes(saved)
         root.addWidget(splitter, 1)
 
         # settings row
@@ -291,6 +408,7 @@ class MainWindow(QMainWindow):
 
         # connect selection count
         self.song_model.dataChanged.connect(self.update_sel_count)
+        self.retranslate_chrome()
 
     def build_monitor(self):
         box = QGroupBox(self.tr("monitor"))
@@ -377,6 +495,11 @@ class MainWindow(QMainWindow):
         return thread
 
     # ---- search
+    def _search_now(self):
+        """Enter in the search box: search immediately, skipping the debounce."""
+        self._search_timer.stop()
+        self.do_search()
+
     def do_search(self):
         kw = self.search_edit.text().strip()
         cat = self.cat_combo.currentData()
@@ -384,6 +507,7 @@ class MainWindow(QMainWindow):
 
     def show_all(self):
         self.search_edit.clear()
+        self._search_timer.stop()      # clearing the box must not queue a second search
         self.cat_combo.blockSignals(True)
         self.cat_combo.setCurrentIndex(0)
         self.cat_combo.blockSignals(False)
@@ -391,6 +515,7 @@ class MainWindow(QMainWindow):
 
     def clear_search(self):
         self.search_edit.clear()
+        self._search_timer.stop()
         self.cat_combo.blockSignals(True)
         self.cat_combo.setCurrentIndex(0)
         self.cat_combo.blockSignals(False)
@@ -408,6 +533,8 @@ class MainWindow(QMainWindow):
         # Each search gets a sequence number; results from an older search that
         # finishes late are ignored, so typing quickly never shows stale rows.
         self._search_seq += 1
+        if not kw and cat is None:
+            self._unfiltered_seq = self._search_seq   # full list: its size is the song total
         self.count_label.setText("🔍 ...")
         t = self._track(SearchThread(kw, cat, self.has_local, seq=self._search_seq))
         t.done.connect(self.on_search_done)
@@ -419,6 +546,10 @@ class MainWindow(QMainWindow):
         if seq != self._search_seq:
             return
         self.all_songs = songs
+        # Status bar total: set by the first search, then refreshed by unfiltered searches.
+        if self._total_songs is None or seq == self._unfiltered_seq:
+            self._total_songs = len(songs)
+            self._refresh_status()
         self.apply_filters()
 
     def on_search_fail(self, seq, err):
@@ -778,6 +909,8 @@ class MainWindow(QMainWindow):
         self.load_categories()
         self.refresh_empty_hint()
         self.has_local = os.path.exists(LOCAL_DB_PATH)
+        self._db_version = read_local_version()
+        self._refresh_status()
         self.count_label.setText(self.tr("db_reloading"))
 
         def apply(jp_map, meta_map):
