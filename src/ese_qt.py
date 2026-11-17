@@ -24,13 +24,13 @@ except ImportError:
 import tomli_w
 
 from PySide6.QtCore import Qt, QTimer, QProcess
-from PySide6.QtGui import QFont, QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QGroupBox
+    QDialog, QFormLayout, QMenu, QToolButton, QWidgetAction
 )
 
 import dan_tools  # Dan generator/convertor (ported from bluetaiko/SongConvertor)
@@ -120,7 +120,9 @@ class MainWindow(QMainWindow):
         else:
             win_w, win_h = self.width(), self.height()
         display = {"page_size": 20, "ui_language": self.lang_pref,
-                   "theme": self.theme_pref, "window_w": win_w, "window_h": win_h}
+                   "theme": self.theme_pref, "window_w": win_w, "window_h": win_h,
+                   "monitor_open": bool(getattr(self, "monitor_btn", None)
+                                        and self.monitor_btn.isChecked())}
         sizes = self.splitter.sizes() if hasattr(self, "splitter") else []
         if len(sizes) == 2 and all(s > 0 for s in sizes):
             display["splitter"] = [int(s) for s in sizes]
@@ -152,11 +154,14 @@ class MainWindow(QMainWindow):
         self.act_missing = self._action(self.check_missing)
         self.act_updates = self._action(self.check_updates)
         self.act_open_dir = self._action(self.open_dir)
+        self.act_settings = self._action(self.open_settings)
+        self.act_settings.setShortcut(QKeySequence("Ctrl+,"))
         self.act_quit = self._action(self.close)
         for a in (self.act_update_db, self.act_missing, self.act_updates):
             self.menu_file.addAction(a)
         self.menu_file.addSeparator()
         self.menu_file.addAction(self.act_open_dir)
+        self.menu_file.addAction(self.act_settings)
         self.menu_file.addSeparator()
         self.menu_file.addAction(self.act_quit)
 
@@ -177,10 +182,10 @@ class MainWindow(QMainWindow):
 
     def build_status_bar(self):
         sb = self.statusBar()
+        self.count_label = QLabel(self.tr("total", n=0))   # current list / progress text
         self.db_ver_label = QLabel()
-        self.song_count_label = QLabel()
-        sb.addWidget(self.db_ver_label)
-        sb.addPermanentWidget(self.song_count_label)
+        sb.addWidget(self.count_label)
+        sb.addPermanentWidget(self.db_ver_label)
 
     def build_shortcuts(self):
         for seq, slot in (("Ctrl+F", self._focus_search), ("Ctrl+D", self._shortcut_download)):
@@ -199,9 +204,6 @@ class MainWindow(QMainWindow):
     def _refresh_status(self):
         self.db_ver_label.setText(
             self.tr("mw_status_db", v=self._db_version or self.tr("dbv_none")))
-        self.song_count_label.setText(
-            self.tr("mw_status_songs",
-                    n="-" if self._total_songs is None else self._total_songs))
 
     def retranslate_chrome(self):
         """Apply the current language to menus, actions and status bar."""
@@ -212,6 +214,7 @@ class MainWindow(QMainWindow):
         self.act_missing.setText(self.tr("check_missing"))
         self.act_updates.setText(self.tr("check_updates"))
         self.act_open_dir.setText(self.tr("mw_act_open_dir"))
+        self.act_settings.setText(self.tr("mw_settings"))
         self.act_quit.setText(self.tr("mw_act_quit"))
         self.act_boxdef.setText(self.tr("boxdef_btn"))
         self.act_yatai.setText(self.tr("yatai_btn"))
@@ -221,6 +224,11 @@ class MainWindow(QMainWindow):
         self._refresh_status()
 
     # ---- UI
+    # Layout (compact): one top row (search, category, filter, maintenance
+    # buttons), the song table filling the window, one bottom row (download
+    # actions + a slim progress bar), and a download monitor that only opens
+    # while downloading or when toggled. Rarely-changed settings live in a
+    # Settings dialog (File > Settings).
     def build_ui(self):
         self.setWindowTitle(self.tr("title"))
         w, h = self.DEFAULT_WINDOW
@@ -230,33 +238,15 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(10, 8, 10, 6)
+        root.setSpacing(6)
 
-        # top bar
+        # ---- top row: search + category + filter + maintenance actions
         top = QHBoxLayout()
-        title = QLabel(self.tr("title"))
-        tf = QFont(); tf.setPointSize(18); tf.setBold(True)
-        title.setFont(tf)
-        top.addWidget(title)
-        top.addStretch()
-        # Only the most-used actions stay on the bar; the rest live in the menu bar.
-        self.db_update_btn = QPushButton(self.tr("db_update"))
-        self.db_update_btn.setToolTip(self.tr("db_confirm"))
-        self.db_update_btn.clicked.connect(self.update_database)
-        self.missing_btn = QPushButton(self.tr("check_missing"))
-        self.missing_btn.clicked.connect(self.check_missing)
-        self.updates_btn = QPushButton(self.tr("check_updates"))
-        self.updates_btn.clicked.connect(self.check_updates)
-        top.addWidget(self.db_update_btn)
-        top.addWidget(self.missing_btn)
-        top.addWidget(self.updates_btn)
-        root.addLayout(top)
-
-        # search row
-        sr = QHBoxLayout()
+        top.setSpacing(6)
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText(self.tr("ph"))
+        self.search_edit.setPlaceholderText("🔍  " + self.tr("ph"))
+        self.search_edit.setClearButtonEnabled(True)
         self.search_edit.returnPressed.connect(self._search_now)
         self.search_edit.textChanged.connect(lambda _=None: self._search_timer.start())
         # Esc clears the box; the debounced search then shows everything again.
@@ -264,76 +254,48 @@ class MainWindow(QMainWindow):
         esc.setContext(Qt.WidgetShortcut)
         esc.activated.connect(self.search_edit.clear)
         self.cat_combo = QComboBox()
-        self.cat_combo.setMinimumWidth(220)
+        self.cat_combo.setMinimumWidth(180)
         self.cat_combo.currentIndexChanged.connect(lambda _: self.do_search())
-        self.search_btn = QPushButton(self.tr("search"))
-        self.search_btn.clicked.connect(self.do_search)
-        self.showall_btn = QPushButton(self.tr("show_all"))
-        self.showall_btn.clicked.connect(self.show_all)
-        self.clear_btn = QPushButton(self.tr("clear"))
-        self.clear_btn.clicked.connect(self.clear_search)
-        sr.addWidget(QLabel("🔍"))
-        sr.addWidget(self.search_edit, 1)
-        sr.addWidget(QLabel("📁"))
-        sr.addWidget(self.cat_combo)
-        sr.addWidget(self.search_btn)
-        sr.addWidget(self.showall_btn)
-        sr.addWidget(self.clear_btn)
-        root.addLayout(sr)
+        self.filter_btn = QToolButton()
+        self.filter_btn.setPopupMode(QToolButton.InstantPopup)
+        self.filter_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        filter_menu = QMenu(self.filter_btn)
+        fa = QWidgetAction(filter_menu)
+        fa.setDefaultWidget(self.build_filter_panel())
+        filter_menu.addAction(fa)
+        self.filter_btn.setMenu(filter_menu)
+        top.addWidget(self.search_edit, 1)
+        top.addWidget(self.cat_combo)
+        top.addWidget(self.filter_btn)
+        top.addSpacing(12)
+        # Most-used maintenance actions; everything else is in the menu bar.
+        self.db_update_btn = QPushButton(self.tr("db_update"))
+        self.db_update_btn.setToolTip(self.tr("db_confirm"))
+        self.db_update_btn.clicked.connect(self.update_database)
+        self.missing_btn = QPushButton(self.tr("check_missing"))
+        self.missing_btn.clicked.connect(self.check_missing)
+        self.updates_btn = QPushButton(self.tr("check_updates"))
+        self.updates_btn.clicked.connect(self.check_updates)
+        for b in (self.db_update_btn, self.missing_btn, self.updates_btn):
+            top.addWidget(b)
+        root.addLayout(top)
 
-        # filter row：BPM 區間 + 難度等級篩選（依本地資料庫的 BPM/難度）
-        fr = QHBoxLayout()
-        fr.addWidget(QLabel("🎚 " + self.tr("f_filter") + ":"))
-        fr.addWidget(QLabel(self.tr("f_bpm")))
-        self.bpm_min = QSpinBox(); self.bpm_min.setRange(0, 999)
-        self.bpm_min.setSpecialValueText(self.tr("f_any"))   # 0 顯示為「不限」
-        self.bpm_max = QSpinBox(); self.bpm_max.setRange(0, 999)
-        self.bpm_max.setSpecialValueText(self.tr("f_any"))
-        fr.addWidget(self.bpm_min); fr.addWidget(QLabel("–")); fr.addWidget(self.bpm_max)
-        fr.addSpacing(16)
-        fr.addWidget(QLabel(self.tr("f_diff")))
-        self.diff_combo = QComboBox()
-        self.diff_combo.addItem(self.tr("diff_all"), None)
-        for key, col in (("c_easy", "level_easy"), ("c_normal", "level_normal"),
-                         ("c_hard", "level_hard"), ("c_oni", "level_oni"),
-                         ("c_ura", "level_ura")):
-            self.diff_combo.addItem(self.tr(key), col)
-        fr.addWidget(self.diff_combo)
-        fr.addWidget(QLabel(self.tr("f_level")))
-        self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
-        self.lv_min.setSpecialValueText(self.tr("f_any"))
-        self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
-        self.lv_max.setSpecialValueText(self.tr("f_any"))
-        fr.addWidget(self.lv_min); fr.addWidget(QLabel("–")); fr.addWidget(self.lv_max)
-        self.reset_filter_btn = QPushButton(self.tr("f_reset"))
-        self.reset_filter_btn.clicked.connect(self.reset_filters)
-        fr.addWidget(self.reset_filter_btn)
-        fr.addStretch()
-        for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
-            w.valueChanged.connect(lambda _=None: self.apply_filters())
-        self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
-        root.addLayout(fr)
-
-        # splitter: song table (top) + monitor (bottom)
-        splitter = self.splitter = QSplitter(Qt.Vertical)
-
-        # song table
-        song_box = QWidget()
-        sb = QVBoxLayout(song_box)
-        sb.setContentsMargins(0, 0, 0, 0)
-        self.count_label = QLabel(self.tr("total", n=0))
-        sb.addWidget(self.count_label)
         # First-run / empty-database hint, hidden once a song database exists.
         self.empty_hint = QLabel(self.tr("empty_hint"))
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setStyleSheet(theme.hint_qss())
-        sb.addWidget(self.empty_hint)
+        root.addWidget(self.empty_hint)
         self.refresh_empty_hint()
+
+        # ---- splitter: song table (top) + download monitor (bottom, collapsible)
+        splitter = self.splitter = QSplitter(Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
         self.table = QTableView()
         self.table.setModel(self.song_model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(26)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)  # no initial sort
@@ -344,12 +306,22 @@ class MainWindow(QMainWindow):
         hh.setSectionResizeMode(2, QHeaderView.Stretch)            # 日文
         for c in range(3, len(SongModel.COLS)):                    # 分類/BPM/難度×5/檔案
             hh.setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        sb.addWidget(self.table)
+        splitter.addWidget(self.table)
+        splitter.addWidget(self.build_monitor())
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        saved = disp.get("splitter")
+        if (isinstance(saved, list) and len(saved) == 2
+                and all(isinstance(s, int) and not isinstance(s, bool) and s > 0
+                        for s in saved)):
+            splitter.setSizes(saved)
+        root.addWidget(splitter, 1)
 
-        # selection row
-        selr = QHBoxLayout()
+        # ---- bottom row: download actions + slim progress
+        bottom = QHBoxLayout()
+        bottom.setSpacing(6)
         self.download_btn = QPushButton(self.tr("download"))
-        self.download_btn.setStyleSheet(theme.primary_button_qss())
+        self.download_btn.setStyleSheet(theme.primary_button_qss(padding="6px 14px"))
         self.table.setStyleSheet(theme.check_indicator_qss())
         theme.add_listener(self._restyle_theme)  # re-colour these on theme change
         self.download_btn.clicked.connect(self.start_download_selected)
@@ -358,45 +330,119 @@ class MainWindow(QMainWindow):
         self.deselall_btn = QPushButton(self.tr("desel_all"))
         self.deselall_btn.clicked.connect(lambda: self.song_model.set_all(False))
         self.sel_label = QLabel(self.tr("selected", n=0))
-        selr.addWidget(self.download_btn)
-        selr.addWidget(self.selall_btn)
-        selr.addWidget(self.deselall_btn)
-        selr.addStretch()
-        selr.addWidget(self.sel_label)
-        sb.addLayout(selr)
-        splitter.addWidget(song_box)
+        self.overall_bar = QProgressBar()
+        self.overall_bar.setFormat("%v / %m")
+        self.overall_bar.setMaximumWidth(220)
+        self.overall_bar.setMaximumHeight(16)
+        self.overall_label = QLabel(self.tr("ready"))
+        self.pause_btn = QToolButton()
+        self.pause_btn.setText(self.tr("pause"))
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        self.pause_btn.setEnabled(False)
+        self.stop_btn = QToolButton()
+        self.stop_btn.setText(self.tr("stop"))
+        self.stop_btn.clicked.connect(self.stop_download)
+        self.stop_btn.setEnabled(False)
+        self.monitor_btn = QToolButton()
+        self.monitor_btn.setCheckable(True)
+        self.monitor_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.monitor_btn.toggled.connect(self.set_monitor_open)
+        for wdg in (self.download_btn, self.selall_btn, self.deselall_btn, self.sel_label):
+            bottom.addWidget(wdg)
+        bottom.addStretch()
+        for wdg in (self.overall_label, self.overall_bar, self.pause_btn, self.stop_btn,
+                    self.monitor_btn):
+            bottom.addWidget(wdg)
+        root.addLayout(bottom)
 
-        # monitor
-        splitter.addWidget(self.build_monitor())
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        saved = disp.get("splitter")
-        if (isinstance(saved, list) and len(saved) == 2
-                and all(isinstance(s, int) and not isinstance(s, bool) and s > 0
-                        for s in saved)):
-            splitter.setSizes(saved)
-        root.addWidget(splitter, 1)
+        self.build_settings_dialog()
+        self.set_monitor_open(bool(disp.get("monitor_open", False)))
+        self.update_filter_button()
 
-        # settings row
-        st = QHBoxLayout()
-        st.addWidget(QLabel("💾 " + self.tr("dir")))
+        # connect selection count
+        self.song_model.dataChanged.connect(self.update_sel_count)
+        self.retranslate_chrome()
+
+    def build_filter_panel(self):
+        """BPM range + difficulty/level filter, shown in the filter button's popup."""
+        panel = QWidget()
+        form = QFormLayout(panel)
+        form.setContentsMargins(10, 8, 10, 8)
+        self.bpm_min = QSpinBox(); self.bpm_min.setRange(0, 999)
+        self.bpm_min.setSpecialValueText(self.tr("f_any"))   # 0 顯示為「不限」
+        self.bpm_max = QSpinBox(); self.bpm_max.setRange(0, 999)
+        self.bpm_max.setSpecialValueText(self.tr("f_any"))
+        form.addRow(self.tr("f_bpm"), self._range_row(self.bpm_min, self.bpm_max))
+        self.diff_combo = QComboBox()
+        self.diff_combo.addItem(self.tr("diff_all"), None)
+        for key, col in (("c_easy", "level_easy"), ("c_normal", "level_normal"),
+                         ("c_hard", "level_hard"), ("c_oni", "level_oni"),
+                         ("c_ura", "level_ura")):
+            self.diff_combo.addItem(self.tr(key), col)
+        form.addRow(self.tr("f_diff"), self.diff_combo)
+        self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
+        self.lv_min.setSpecialValueText(self.tr("f_any"))
+        self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
+        self.lv_max.setSpecialValueText(self.tr("f_any"))
+        form.addRow(self.tr("f_level"), self._range_row(self.lv_min, self.lv_max))
+        self.reset_filter_btn = QPushButton(self.tr("f_reset"))
+        self.reset_filter_btn.clicked.connect(self.reset_filters)
+        form.addRow(self.reset_filter_btn)
+        for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
+            w.valueChanged.connect(lambda _=None: self.apply_filters())
+        self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
+        return panel
+
+    @staticmethod
+    def _range_row(lo, hi):
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(lo)
+        h.addWidget(QLabel("–"))
+        h.addWidget(hi)
+        return w
+
+    def active_filter_count(self):
+        n = 0
+        if self.bpm_min.value() or self.bpm_max.value():
+            n += 1
+        if self.diff_combo.currentData() is not None:
+            n += 1
+        if self.lv_min.value() or self.lv_max.value():
+            n += 1
+        return n
+
+    def update_filter_button(self):
+        n = self.active_filter_count()
+        self.filter_btn.setText(("🎚 " + self.tr("f_filter"))
+                                + (f" ({n})" if n else "") + "  ")
+
+    def build_settings_dialog(self):
+        """Download folder, parallel downloads, language and theme. The widgets
+        belong to the main window (other code reads them), shown in a dialog."""
+        dlg = self.settings_dlg = QDialog(self)
+        dlg.setWindowTitle(self.tr("mw_settings_title"))
+        form = QFormLayout(dlg)
         self.dir_edit = QLineEdit(os.path.abspath(self.download_dir))
+        self.dir_edit.editingFinished.connect(self.save_config)
         self.browse_btn = QPushButton(self.tr("browse"))
         self.browse_btn.clicked.connect(self.browse_dir)
         self.opendir_btn = QPushButton(self.tr("open_dir"))
         self.opendir_btn.clicked.connect(self.open_dir)
-        st.addWidget(self.dir_edit, 1)
-        st.addWidget(self.browse_btn)
-        st.addWidget(self.opendir_btn)
-        st.addSpacing(20)
-        st.addWidget(QLabel("⚡ " + self.tr("workers")))
+        dir_row = QWidget()
+        dh = QHBoxLayout(dir_row)
+        dh.setContentsMargins(0, 0, 0, 0)
+        dh.addWidget(self.dir_edit, 1)
+        dh.addWidget(self.browse_btn)
+        dh.addWidget(self.opendir_btn)
+        dir_row.setMinimumWidth(560)
+        form.addRow(self.tr("dir"), dir_row)
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, 16)
         self.workers_spin.setValue(self.config.get("download", {}).get("workers", 5))
         self.workers_spin.valueChanged.connect(lambda _: self.save_config())
-        st.addWidget(self.workers_spin)
-        st.addSpacing(20)
-        st.addWidget(QLabel("🌐 " + self.tr("lang")))
+        form.addRow(self.tr("workers"), self.workers_spin)
         self.lang_combo = QComboBox()
         for label, code in (("自動 Auto", "auto"), ("繁體中文", "zh_TW"),
                             ("English", "en"), ("日本語", "ja")):
@@ -404,9 +450,7 @@ class MainWindow(QMainWindow):
         idx = self.lang_combo.findData(self.lang_pref)
         self.lang_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.lang_combo.currentIndexChanged.connect(self.change_lang)
-        st.addWidget(self.lang_combo)
-        st.addSpacing(20)
-        st.addWidget(QLabel("🎨 " + self.tr("th_label")))
+        form.addRow(self.tr("lang"), self.lang_combo)
         self.theme_combo = QComboBox()
         self.theme_combo.setToolTip(self.tr("th_tip"))
         for label_key, code in (("th_auto", "auto"), ("th_light", "light"),
@@ -415,36 +459,21 @@ class MainWindow(QMainWindow):
         idx = self.theme_combo.findData(self.theme_pref)
         self.theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.theme_combo.currentIndexChanged.connect(self.change_theme)
-        st.addWidget(self.theme_combo)
-        root.addLayout(st)
+        form.addRow(self.tr("th_label"), self.theme_combo)
+        close = QPushButton(self.tr("mw_close"))
+        close.clicked.connect(dlg.accept)
+        form.addRow(close)
+        dlg.finished.connect(lambda _=None: self.save_config())
 
-        # connect selection count
-        self.song_model.dataChanged.connect(self.update_sel_count)
-        self.retranslate_chrome()
+    def open_settings(self):
+        self.settings_dlg.show()
+        self.settings_dlg.raise_()
+        self.settings_dlg.activateWindow()
 
     def build_monitor(self):
-        box = QGroupBox(self.tr("monitor"))
-        v = QVBoxLayout(box)
-        # overall progress + speed/eta
-        pr = QHBoxLayout()
-        self.overall_bar = QProgressBar()
-        self.overall_bar.setFormat("%v / %m")
-        self.overall_label = QLabel(self.tr("ready"))
-        self.overall_label.setMinimumWidth(260)
-        self.pause_btn = QPushButton(self.tr("pause"))
-        self.pause_btn.clicked.connect(self.toggle_pause)
-        self.pause_btn.setEnabled(False)
-        self.stop_btn = QPushButton(self.tr("stop"))
-        self.stop_btn.clicked.connect(self.stop_download)
-        self.stop_btn.setEnabled(False)
-        pr.addWidget(QLabel(self.tr("overall")))
-        pr.addWidget(self.overall_bar, 1)
-        pr.addWidget(self.overall_label)
-        pr.addWidget(self.pause_btn)
-        pr.addWidget(self.stop_btn)
-        v.addLayout(pr)
-
+        """Per-file progress, log and failed list (the collapsible part)."""
         self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
         # progress tab (per-file table)
         self.dl_table = QTableView()
         self.dl_table.setModel(self.dl_model)
@@ -465,6 +494,7 @@ class MainWindow(QMainWindow):
         # failed tab
         fail_w = QWidget()
         fv = QVBoxLayout(fail_w)
+        fv.setContentsMargins(0, 4, 0, 0)
         self.fail_list = QListWidget()
         self.retry_btn = QPushButton(self.tr("retry"))
         self.retry_btn.clicked.connect(self.retry_failed)
@@ -472,8 +502,23 @@ class MainWindow(QMainWindow):
         fv.addWidget(self.fail_list)
         fv.addWidget(self.retry_btn)
         self.tabs.addTab(fail_w, self.tr("tab_fail"))
-        v.addWidget(self.tabs)
-        return box
+        return self.tabs
+
+    def set_monitor_open(self, on):
+        """Show or hide the download monitor below the song table."""
+        on = bool(on)
+        self.tabs.setVisible(on)
+        if self.monitor_btn.isChecked() != on:
+            self.monitor_btn.blockSignals(True)
+            self.monitor_btn.setChecked(on)
+            self.monitor_btn.blockSignals(False)
+        self.monitor_btn.setText(("▾ " if on else "▴ ") + self.tr("monitor"))
+
+    def show_monitor(self, tab=None):
+        """Open the monitor (e.g. when a download starts) and pick a tab."""
+        self.set_monitor_open(True)
+        if tab is not None:
+            self.tabs.setCurrentIndex(tab)
 
     # ---- categories
     def load_categories(self):
@@ -623,6 +668,7 @@ class MainWindow(QMainWindow):
         self.song_model.set_songs(songs)
         self.count_label.setText(self.tr("total", n=len(songs)))
         self.update_sel_count()
+        self.update_filter_button()
 
     def toggle_check(self, index):
         if index.column() == 0:
@@ -663,7 +709,7 @@ class MainWindow(QMainWindow):
         self.dl_model.load(files)
         self.overall_bar.setMaximum(len(files))
         self.overall_bar.setValue(0)
-        self.tabs.setCurrentIndex(0)
+        self.show_monitor(0)
         self.pause_btn.setText(self.tr("pause"))
         self.pause_btn.setEnabled(True)
         self.stop_btn.setEnabled(True)
@@ -732,7 +778,7 @@ class MainWindow(QMainWindow):
             self.fail_list.addItem(it)
         self.retry_btn.setEnabled(fail > 0)
         if fail > 0:
-            self.tabs.setCurrentIndex(2)
+            self.show_monitor(2)
         if self._closing:
             return
         key = "stopped_msg" if stopped else "done_msg"
@@ -889,7 +935,7 @@ class MainWindow(QMainWindow):
                 return
 
         self.db_update_btn.setEnabled(False)
-        self.tabs.setCurrentIndex(1)   # 切到 Log 分頁
+        self.show_monitor(1)   # 切到 Log 分頁
         self.overall_label.setText(self.tr("db_building"))
         self.log_view.appendPlainText("——— " + self.tr("db_building") + " ———")
         self._db_thread = self._track(DBBuildThread(git_exe, download_git=download_git))
@@ -1003,7 +1049,7 @@ class MainWindow(QMainWindow):
             self._dbu = self._track(DBUpdateThread(remote, tr=self.tr))
             self._dbu.log.connect(self.log_view.appendPlainText)
             self._dbu.done.connect(self.on_db_updated)
-            self.tabs.setCurrentIndex(1)
+            self.show_monitor(1)
             self._dbu.start()
 
     def on_db_updated(self, ok, msg):

@@ -456,3 +456,21 @@ TR["ja"].update({
     "dlg_dan_closing": "現在の処理が終わり次第、ウィンドウを閉じます。",
     "dlg_dan_missing": "{name} が存在しません：{path}",
 })
+
+
+# --- compact layout
+TR["zh_TW"].update({
+    "mw_settings": "設定…",
+    "mw_settings_title": "設定",
+    "mw_close": "關閉",
+})
+TR["en"].update({
+    "mw_settings": "Settings…",
+    "mw_settings_title": "Settings",
+    "mw_close": "Close",
+})
+TR["ja"].update({
+    "mw_settings": "設定…",
+    "mw_settings_title": "設定",
+    "mw_close": "閉じる",
+})
