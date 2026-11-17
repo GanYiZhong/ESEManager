@@ -18,7 +18,8 @@ from PySide6.QtCore import QThread, Signal
 from appconfig import (DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
                        UnsafePathError, APP_VERSION, LATEST_RELEASE_API, is_newer,
-                       VSORT_REPO, VSORT_FOLDER, VSORT_BRANCH_API, VSORT_ARCHIVE_URL)
+                       VSORT_REPO, VSORT_FOLDER, VSORT_SKIP, VSORT_BRANCH_API,
+                       VSORT_ARCHIVE_URL)
 from download_songs import SongDownloader
 from tja_parser import decode_tja_bytes
 
@@ -714,6 +715,11 @@ def download_version_sorting(download_dir, log=print, force=False, sess=None):
     try:
         commit = vsort_latest_commit(sess)
         if not force and vsort_installed_commit(download_dir) == commit:
+            # Earlier versions installed the skipped folders; remove them now.
+            for name in os.listdir(os.path.join(download_dir, VSORT_FOLDER)):
+                path = os.path.join(download_dir, VSORT_FOLDER, name)
+                if name.lower() in VSORT_SKIP and os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
             return "latest", commit
         os.makedirs(download_dir, exist_ok=True)
         target = os.path.join(download_dir, VSORT_FOLDER)
@@ -736,6 +742,8 @@ def download_version_sorting(download_dir, log=print, force=False, sess=None):
                     parts = info.filename.replace("\\", "/").split("/", 1)
                     if len(parts) < 2 or not parts[1] or info.is_dir():
                         continue
+                    if parts[1].split("/", 1)[0].lower() in VSORT_SKIP:
+                        continue                       # e.g. Template/: not for players
                     if (info.external_attr >> 16) & 0o170000 == 0o120000:
                         continue                       # never extract symlinks
                     dest = safe_join(staging, parts[1])   # rejects ../ and absolute paths

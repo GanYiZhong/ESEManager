@@ -41,6 +41,7 @@ USER_AGENT = "ESEManager"
 # as one folder inside the download (Songs) directory.
 VSORT_REPO = "Yonokid/ESE-Version-Sorting"
 VSORT_FOLDER = "ESE-Version-Sorting"
+VSORT_SKIP = {"template"}      # top-level folders of the repo not installed (lower case)
 VSORT_BRANCH_API = f"https://ese.tjadataba.se/api/v1/repos/{VSORT_REPO}/branches/master"
 VSORT_ARCHIVE_URL = f"https://ese.tjadataba.se/{VSORT_REPO}/archive/{{ref}}.zip"
 GITHUB_REPO = "GanYiZhong/ESEManager"
