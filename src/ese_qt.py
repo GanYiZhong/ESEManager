@@ -42,6 +42,7 @@ from workers import (SearchThread, CheckUpdatesThread, DownloadThread, DBBuildTh
                      VersionThread, DBUpdateThread, MetaLoadThread, load_jp_map,
                      load_meta_map)
 from dialogs import BoxDefDialog, DanToolsDialog, YataiBoxDefDialog
+from notify import Notifier, set_app_icon
 
 
 # ---------------------------------------------------------------- 主視窗
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         self.dl_model = DownloadModel(self.tr)
 
         self.build_ui()
+        self.notifier = Notifier(self)
         self.load_categories()
         QTimer.singleShot(1200, self.check_db_update)
 
@@ -591,8 +593,9 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
         key = "stopped_msg" if stopped else "done_msg"
-        QMessageBox.information(self, self.tr("monitor"),
-                                self.tr(key, d=dl, s=skip, f=fail, t=total))
+        text = self.tr(key, d=dl, s=skip, f=fail, t=total)
+        self.notifier.notify(self.tr("title"), text)
+        QMessageBox.information(self, self.tr("monitor"), text)
 
     def retry_failed(self):
         files = [self.fail_list.item(i).data(Qt.UserRole)
@@ -754,6 +757,13 @@ class MainWindow(QMainWindow):
     def on_db_build_done(self, ok, info):
         self.db_update_btn.setEnabled(True)
         self.overall_label.setText(self.tr("ready"))
+        if ok:
+            text = self.tr("db_done")
+        elif info == "NOGIT":
+            text = self.tr("db_no_git_fail")
+        else:
+            text = self.tr("db_fail", e=info)
+        self.notifier.notify(self.tr("db_update"), text)
         if not ok:
             if info == "NOGIT":
                 QMessageBox.critical(self, "Git", self.tr("db_no_git_fail"))
@@ -838,6 +848,8 @@ class MainWindow(QMainWindow):
     def on_db_updated(self, ok, msg):
         self.db_update_btn.setEnabled(True)
         self.overall_label.setText(self.tr("ready"))
+        self.notifier.notify(self.tr("dbv_title"),
+                             self.tr("dbv_ok") if ok else self.tr("db_fail", e=msg))
         if ok:
             self.reload_databases(self.tr("dbv_ok"))
         elif not self._closing:
@@ -885,6 +897,7 @@ def main():
     os.chdir(APP_DIR)
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
+    set_app_icon(app)
     w = MainWindow()
     w.show()
     rc = app.exec()
