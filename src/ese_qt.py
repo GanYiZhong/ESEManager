@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import sqlite3
+import subprocess
 import threading
 import hashlib
 import webbrowser
@@ -16,14 +17,16 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # ESE 檔案下載/取得來源（live host；舊 host git.vanillaaaa.org 已停用）
-ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/raw/branch/master/"
+ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
 
 
 def _live_url(url):
     """把舊 host 換成 live host，讓舊版資料庫的連結仍可用。"""
     if not url:
         return url
-    return url.replace("git.vanillaaaa.org", "ese.tjadataba.se")
+    # /raw/ 對 LFS 檔（.ogg）只回傳 pointer 文字；/media/ 會回傳實際內容
+    return (url.replace("git.vanillaaaa.org", "ese.tjadataba.se")
+               .replace("/raw/branch/", "/media/branch/"))
 
 import requests
 import urllib3
@@ -2507,7 +2510,12 @@ class MainWindow(QMainWindow):
     def open_dir(self):
         d = self.dir_edit.text()
         if os.path.isdir(d):
-            os.startfile(d)  # Windows
+            if sys.platform == "win32":
+                os.startfile(d)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", d])
+            else:
+                subprocess.Popen(["xdg-open", d])
 
     # ---- box.def 編輯器
     def open_boxdef(self):
@@ -2537,13 +2545,17 @@ class MainWindow(QMainWindow):
                                 self.tr("db_confirm")) != QMessageBox.Yes:
             return
 
-        # 解析 git；沒有就詢問是否下載可攜版
+        # 解析 git；Windows 沒有就詢問是否下載可攜版；其他平台直接提示手動安裝
         from ese_scraper_git_v2 import find_git
         git_exe = find_git()
         download_git = False
         if not git_exe:
-            if QMessageBox.question(self, "Git", self.tr("db_no_git_q")) == QMessageBox.Yes:
-                download_git = True
+            if sys.platform == "win32":
+                if QMessageBox.question(self, "Git", self.tr("db_no_git_q")) == QMessageBox.Yes:
+                    download_git = True
+                else:
+                    QMessageBox.information(self, "Git", self.tr("db_no_git_fail"))
+                    return
             else:
                 QMessageBox.information(self, "Git", self.tr("db_no_git_fail"))
                 return

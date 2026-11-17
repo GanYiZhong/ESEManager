@@ -23,12 +23,12 @@ from the **ESE (Every Song Ever)** project.
 
 ## Quick start
 
-Download `ESEManager.exe` and run it. The first time, click **🔄 Update database** to
+Download the release for your platform and run it. The first time, click **🔄 Update database** to
 fetch the song list and Japanese titles, then search and download.
 
 ## Run from source
 
-Requires Python 3.9+ on Windows.
+Requires Python 3.9+ and Git installed.
 
 ```
 pip install -r requirements.txt
@@ -42,14 +42,20 @@ pip install pyinstaller
 pyinstaller --noconfirm --clean packaging/ESEManager.spec
 ```
 
-Output: `dist/ESEManager.exe`.
+Output: `dist/ESEManager` (Linux/macOS) or `dist/ESEManager.exe` (Windows).
 
 ## Update databases from the command line (optional)
 
 The in-app **Update database** button already does this. The CLI equivalent:
 
+**Windows:**
 ```
 update_databases.bat
+```
+
+**Linux / macOS:**
+```
+./update_databases.sh
 ```
 
 or manually:

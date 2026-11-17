@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 # 檔案下載來源（git.vanillaaaa.org 已停用，改用官方 ese.tjadataba.se）
-DOWNLOAD_BASE = "https://ese.tjadataba.se/ESE/ESE/raw/branch/master/"
+DOWNLOAD_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
 
 # 可攜版 git 解壓後的位置（找不到系統 git 時的備援）
 PORTABLE_GIT_DIR = os.path.join(os.getcwd(), "portablegit")
