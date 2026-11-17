@@ -37,6 +37,7 @@ import dan_tools  # Dan generator/convertor (ported from bluetaiko/SongConvertor
 from appconfig import (APP_DIR, CONFIG_FILE, DB_PATH, LOCAL_DB_PATH,
                        DEFAULT_DOWNLOAD_DIR, resolve_dir, safe_join, UnsafePathError)
 from i18n import TR, CATEGORY_NAMES, detect_system_lang
+import theme  # light/dark palette and style-sheet helpers
 from models import SongModel, DownloadModel, human_speed, human_eta
 from workers import (SearchThread, CheckUpdatesThread, DownloadThread, DBBuildThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, load_jp_map,
@@ -55,6 +56,8 @@ class MainWindow(QMainWindow):
         # ui_language 偏好可為 "auto"（依系統語言）或固定的 zh_TW/en/ja；新安裝預設 auto
         self.lang_pref = self.config.get("display", {}).get("ui_language", "auto")
         self.lang = detect_system_lang() if self.lang_pref == "auto" else self.lang_pref
+        # display.theme: "auto" (follow OS) | "light" | "dark"
+        self.theme_pref = self.config.get("display", {}).get("theme", "auto")
         self.has_local = os.path.exists(LOCAL_DB_PATH)
         self.jp_map = load_jp_map()
         self.meta_map = load_meta_map()
@@ -100,7 +103,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         return {"download": {"directory": DEFAULT_DOWNLOAD_DIR, "workers": 5},
-                "display": {"page_size": 20, "ui_language": "auto"}}
+                "display": {"page_size": 20, "ui_language": "auto", "theme": "auto"}}
 
     @staticmethod
     def _cfg_int(d, key, default, lo):
@@ -117,7 +120,7 @@ class MainWindow(QMainWindow):
         else:
             win_w, win_h = self.width(), self.height()
         display = {"page_size": 20, "ui_language": self.lang_pref,
-                   "window_w": win_w, "window_h": win_h}
+                   "theme": self.theme_pref, "window_w": win_w, "window_h": win_h}
         sizes = self.splitter.sizes() if hasattr(self, "splitter") else []
         if len(sizes) == 2 and all(s > 0 for s in sizes):
             display["splitter"] = [int(s) for s in sizes]
@@ -323,9 +326,7 @@ class MainWindow(QMainWindow):
         # First-run / empty-database hint, hidden once a song database exists.
         self.empty_hint = QLabel(self.tr("empty_hint"))
         self.empty_hint.setWordWrap(True)
-        self.empty_hint.setStyleSheet(
-            "QLabel{background:#FFF3CD;color:#5c4400;border:1px solid #E0C36C;"
-            "border-radius:6px;padding:8px;}")
+        self.empty_hint.setStyleSheet(theme.hint_qss())
         sb.addWidget(self.empty_hint)
         self.refresh_empty_hint()
         self.table = QTableView()
@@ -348,9 +349,8 @@ class MainWindow(QMainWindow):
         # selection row
         selr = QHBoxLayout()
         self.download_btn = QPushButton(self.tr("download"))
-        self.download_btn.setStyleSheet(
-            "QPushButton{background:#43A047;color:white;font-weight:bold;padding:8px 16px;border-radius:8px;}"
-            "QPushButton:hover{background:#388E3C;} QPushButton:disabled{background:#7c7c7c;}")
+        self.download_btn.setStyleSheet(theme.primary_button_qss())
+        theme.add_listener(self._restyle_theme)  # re-colour these on theme change
         self.download_btn.clicked.connect(self.start_download_selected)
         self.selall_btn = QPushButton(self.tr("sel_all"))
         self.selall_btn.clicked.connect(lambda: self.song_model.set_all(True))
@@ -404,6 +404,17 @@ class MainWindow(QMainWindow):
         self.lang_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.lang_combo.currentIndexChanged.connect(self.change_lang)
         st.addWidget(self.lang_combo)
+        st.addSpacing(20)
+        st.addWidget(QLabel("🎨 " + self.tr("th_label")))
+        self.theme_combo = QComboBox()
+        self.theme_combo.setToolTip(self.tr("th_tip"))
+        for label_key, code in (("th_auto", "auto"), ("th_light", "light"),
+                                ("th_dark", "dark")):
+            self.theme_combo.addItem(self.tr(label_key), code)
+        idx = self.theme_combo.findData(self.theme_pref)
+        self.theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.theme_combo.currentIndexChanged.connect(self.change_theme)
+        st.addWidget(self.theme_combo)
         root.addLayout(st)
 
         # connect selection count
@@ -946,6 +957,21 @@ class MainWindow(QMainWindow):
             return
         self._restart()
 
+    def change_theme(self, *_):
+        mode = self.theme_combo.currentData() or "auto"
+        if mode == self.theme_pref:
+            return
+        self.theme_pref = mode
+        theme.apply_theme(QApplication.instance(), mode)  # applies immediately
+        self.save_config()
+
+    def _restyle_theme(self, dark):
+        try:
+            self.download_btn.setStyleSheet(theme.primary_button_qss(dark))
+            self.empty_hint.setStyleSheet(theme.hint_qss(dark))
+        except RuntimeError:  # widgets already deleted by Qt
+            pass
+
     def _restart(self):
         """重新啟動程式以完整套用語言（frozen exe 與原始碼執行皆支援）。"""
         self.save_config()
@@ -1032,6 +1058,7 @@ def main():
     app.setStyle(QStyleFactory.create("Fusion"))
     set_app_icon(app)
     w = MainWindow()
+    theme.apply_theme(app, w.theme_pref)  # display.theme from config.toml
     w.show()
     rc = app.exec()
     if any(t.isRunning() for t in w._threads):

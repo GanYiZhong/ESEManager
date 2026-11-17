@@ -399,3 +399,26 @@ TR["ja"].update({
     "mw_status_db": "データベース版：{v}",
     "mw_status_songs": "楽曲数：{n}",
 })
+
+# --- theme
+TR["zh_TW"].update({
+    "th_label": "主題",
+    "th_auto": "跟隨系統",
+    "th_light": "淺色",
+    "th_dark": "深色",
+    "th_tip": "外觀：淺色／深色；跟隨系統會依作業系統設定自動切換",
+})
+TR["en"].update({
+    "th_label": "Theme",
+    "th_auto": "Auto (system)",
+    "th_light": "Light",
+    "th_dark": "Dark",
+    "th_tip": "Appearance: light or dark; Auto follows the OS setting and switches with it",
+})
+TR["ja"].update({
+    "th_label": "テーマ",
+    "th_auto": "自動（システム）",
+    "th_light": "ライト",
+    "th_dark": "ダーク",
+    "th_tip": "外観：ライト／ダーク。自動は OS の設定に合わせて切り替わります",
+})
