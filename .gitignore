@@ -7,6 +7,11 @@ portablegit/
 ALL_ESE_TJA_*.zip
 version.txt
 config.toml
+*.part
+
+# GitHub Pages database build output (scripts/build_pages_db.py)
+site/
+pages_work/
 
 # Python
 __pycache__/

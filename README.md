@@ -65,10 +65,28 @@ python src/ese_scraper_git_v2.py --keep     # song list  -> ese_songs.db
 python src/build_local_db.py --remote        # JP titles  -> ese_local.db
 ```
 
+## Prebuilt databases (GitHub Pages)
+
+`.github/workflows/pages-db.yml` rebuilds `ese_songs.db` and `ese_local.db` from ESE every
+6 hours (skipped when ESE's master commit has not changed) and publishes them to
+<https://ganyizhong.github.io/ESEManager/> together with `version.txt` and `manifest.json`
+(sizes + SHA-256). On startup the app compares `version.txt` with its local copy and offers
+to download the new databases. Run the workflow manually with **force** to rebuild anyway.
+
+One-time setup: **Settings → Pages → Source: GitHub Actions**.
+
+Build the same site locally:
+
+```
+python scripts/build_pages_db.py --out site
+```
+
 ## Project layout
 
 ```
 src/         GUI app, downloader, scrapers
+scripts/     GitHub Pages database builder
+.github/     CI workflow that publishes the databases
 packaging/   PyInstaller spec
 ```
 

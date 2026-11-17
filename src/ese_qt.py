@@ -2649,6 +2649,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "資料庫更新", msg)
 
 
+# 預先建好的資料庫（由 .github/workflows/pages-db.yml 定時重建並發佈到 GitHub Pages）。
+# 舊 host taikozhong.me/tjamanager/ 已失效（回傳 HTML 轉址頁）。
+DB_RELEASE_URL = "https://ganyizhong.github.io/ESEManager/"
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _looks_like_version(text):
+    """version.txt 應是一行短字串；擋掉錯誤頁/轉址頁的 HTML 被當成版本號。"""
+    return bool(text) and len(text) <= 64 and "\n" not in text and "<" not in text
+
+
 class VersionThread(QThread):
     result = Signal(str, str)  # remote, local
 
@@ -2656,10 +2667,14 @@ class VersionThread(QThread):
         remote = ""
         local = ""
         try:
-            r = requests.get("https://taikozhong.me/tjamanager/version.txt",
-                             timeout=10, verify=False)
+            r = requests.get(DB_RELEASE_URL + "version.txt", timeout=10,
+                             headers={"User-Agent": "ESEManager"})
             r.raise_for_status()
-            remote = r.text.strip()
+            text = r.text.strip()
+            if _looks_like_version(text):
+                remote = text
+            else:
+                print("version: unexpected response, ignored")
         except Exception as e:
             print("version:", e)
         if os.path.exists("version.txt"):
@@ -2680,20 +2695,46 @@ class DBUpdateThread(QThread):
         self.version = version
 
     def run(self):
-        base = "https://taikozhong.me/tjamanager/"
+        names = ("ese_songs.db", "ese_local.db")
+        parts = []
         try:
-            for name in ("ese_songs.db", "ese_local.db"):
+            sess = requests.Session()
+            sess.headers["User-Agent"] = "ESEManager"
+            # manifest.json 有每個檔的 sha256；拿不到就只做 SQLite 檔頭檢查
+            try:
+                files = sess.get(DB_RELEASE_URL + "manifest.json", timeout=15).json()["files"]
+            except Exception:
+                files = {}
+            # 先全部下載到 .part 並驗證，兩個都成功才替換，避免下載一半留下壞掉的資料庫
+            for name in names:
                 self.log.emit(f"下載資料庫 {name} …")
-                r = requests.get(base + name, stream=True, timeout=120, verify=False)
-                r.raise_for_status()
-                with open(name, "wb") as f:
-                    for chunk in r.iter_content(8192):
-                        if chunk:
-                            f.write(chunk)
+                part = name + ".part"
+                parts.append(part)
+                h = hashlib.sha256()
+                with sess.get(DB_RELEASE_URL + name, stream=True, timeout=120) as r:
+                    r.raise_for_status()
+                    with open(part, "wb") as f:
+                        for chunk in r.iter_content(1 << 16):
+                            if chunk:
+                                f.write(chunk)
+                                h.update(chunk)
+                with open(part, "rb") as f:
+                    if f.read(16) != _SQLITE_MAGIC:
+                        raise ValueError(f"{name} 不是有效的 SQLite 資料庫")
+                want = files.get(name, {}).get("sha256")
+                if want and want != h.hexdigest():
+                    raise ValueError(f"{name} 校驗碼不符，請稍後再試")
+            for name in names:
+                os.replace(name + ".part", name)
             with open("version.txt", "w", encoding="utf-8") as f:
                 f.write(self.version)
             self.done.emit(True, "ok")
         except Exception as e:
+            for part in parts:
+                try:
+                    os.remove(part)
+                except OSError:
+                    pass
             self.done.emit(False, str(e))
 
 

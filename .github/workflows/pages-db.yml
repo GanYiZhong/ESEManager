@@ -1,0 +1,77 @@
+# Rebuild the ESEManager databases from ESE and publish them on GitHub Pages.
+# The app downloads ese_songs.db / ese_local.db / version.txt from the Pages site.
+#
+# One-time setup: Settings → Pages → Build and deployment → Source: "GitHub Actions".
+
+name: Database (GitHub Pages)
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"   # every 6 hours; skipped quickly when ESE has not changed
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if ESE has not changed"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pages-db.yml"
+      - "scripts/build_pages_db.py"
+      - "src/ese_scraper_git_v2.py"
+      - "src/build_local_db.py"
+      - "src/tja_parser.py"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-db
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      changed: ${{ steps.build.outputs.changed }}
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Build databases
+        id: build
+        env:
+          PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          # A code change (push) or a manual "force" always republishes.
+          FORCE: ${{ github.event_name == 'push' || inputs.force == true }}
+        run: |
+          args="--out site"
+          if [ "$FORCE" = "true" ]; then args="$args --force"; fi
+          python scripts/build_pages_db.py $args
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.build.outputs.changed == 'true'
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
