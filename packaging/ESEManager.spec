@@ -7,6 +7,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('../src/download_songs.py', '.'),
+        ('../assets', 'assets'),
     ],
     hiddenimports=[
         'requests',
@@ -26,6 +27,7 @@ a = Analysis(
         'workers',
         'boxdef',
         'dialogs',
+        'notify',
         'lxml',
         'lxml.html',
         'lxml.etree',
@@ -67,7 +69,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='../assets/icon.ico',
 )
 
 coll = COLLECT(
