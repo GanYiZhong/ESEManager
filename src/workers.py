@@ -9,16 +9,15 @@ import time
 import sqlite3
 import threading
 import hashlib
-import contextlib
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from PySide6.QtCore import QThread, Signal
 
-from appconfig import (DB_PATH, LOCAL_DB_PATH, VERSION_FILE, CLONE_DIR, ESE_RAW_BASE,
+from appconfig import (DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
-                       UnsafePathError)
+                       UnsafePathError, APP_VERSION, LATEST_RELEASE_API, is_newer)
 from download_songs import SongDownloader
 from tja_parser import decode_tja_bytes
 
@@ -60,6 +59,14 @@ def get_with_retry(sess, url, attempts=3, stop=None, **kw):
             delay *= 2
 
 
+def connect_ro(path):
+    """Open a SQLite database read-only. Unlike sqlite3.connect(path) this never
+    creates an empty file when the database is missing (it raises instead)."""
+    import pathlib
+    return sqlite3.connect(pathlib.Path(os.path.abspath(path)).as_uri() + "?mode=ro",
+                           uri=True)
+
+
 def write_atomic(path, data):
     part = path + ".part"
     with open(part, "wb") as f:
@@ -76,7 +83,7 @@ def load_jp_map(local_db=None):
     if not os.path.exists(local_db):
         return m
     try:
-        conn = sqlite3.connect(local_db)
+        conn = connect_ro(local_db)
         try:
             rows = conn.execute(
                 "SELECT title, file_name, title_ja FROM local_songs "
@@ -102,7 +109,7 @@ def load_meta_map(local_db=None):
     if not os.path.exists(local_db):
         return m
     try:
-        conn = sqlite3.connect(local_db)
+        conn = connect_ro(local_db)
         try:
             cols = {r[1] for r in conn.execute("PRAGMA table_info(local_songs)")}
             lvl_cols = [c for c in ("level_easy", "level_normal", "level_hard",
@@ -164,7 +171,7 @@ class SearchThread(QThread):
                 # and add them with one OR query.
                 if self.keyword and self.has_local and any(
                         '぀' <= c <= 'ヿ' or '一' <= c <= '鿿' for c in self.keyword):
-                    conn = sqlite3.connect(LOCAL_DB_PATH)
+                    conn = connect_ro(LOCAL_DB_PATH)
                     try:
                         titles = [r[0] for r in conn.execute(
                             "SELECT title FROM local_songs WHERE title_ja LIKE ?",
@@ -228,7 +235,7 @@ def cached_blob_sha(path):
 
 
 def load_sha_map(db_path=None):
-    conn = sqlite3.connect(db_path or DB_PATH)
+    conn = connect_ro(db_path or DB_PATH)
     try:
         return {fp: sha for fp, sha in conn.execute(
             "SELECT file_path, blob_sha FROM song_files "
@@ -471,7 +478,7 @@ class DownloadThread(QThread):
     def _fetch_boxdefs(self, sess):
         """Create box.def for each category folder touched by this download."""
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = connect_ro(DB_PATH)
             try:
                 boxmap = {fp.split("/")[0]: fp for (fp,) in conn.execute(
                     "SELECT file_path FROM song_files WHERE lower(filename)='box.def'")}
@@ -516,73 +523,6 @@ class BoxDefFetchThread(QThread):
             self.done.emit(False, str(e), self.ese_path)
         finally:
             sess.close()
-
-
-# ---------------------------------------------------------------- database build
-class _EmitStream:
-    """File-like object that forwards written lines to a Qt signal (captures the
-    scraper's print output into the GUI log)."""
-    def __init__(self, sig):
-        self._sig = sig
-        self._buf = ""
-
-    def write(self, text):
-        self._buf += text
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
-            if line.strip():
-                self._sig.emit(line.rstrip())
-
-    def flush(self):
-        if self._buf.strip():
-            self._sig.emit(self._buf.rstrip())
-        self._buf = ""
-
-
-class DBBuildThread(QThread):
-    """Rebuild ese_songs.db from a blobless ESE clone, then parse each .tja for
-    Japanese titles into ese_local.db."""
-    log = Signal(str)
-    done = Signal(bool, str)   # ok, "ok" / "NOGIT" / error message
-
-    def __init__(self, git_exe, download_git=False):
-        super().__init__()
-        self.git_exe = git_exe
-        self.download_git = download_git
-
-    def run(self):
-        stream = _EmitStream(self.log)
-        try:
-            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-                from ese_scraper_git_v2 import ESEScraperGitV2, download_portable_git
-                import build_local_db
-
-                git_exe = self.git_exe
-                if not git_exe and self.download_git:
-                    git_exe = download_portable_git()
-                if not git_exe:
-                    stream.flush()
-                    self.done.emit(False, "NOGIT")
-                    return
-
-                print("=== 1/2: song list (blobless clone) ===")
-                s = ESEScraperGitV2(db_path=DB_PATH, clone_dir=CLONE_DIR, git_exe=git_exe)
-                try:
-                    s.scrape(keep_clone=True)        # raises on clone/ls-tree failure
-                finally:
-                    s.close()
-
-                print("\n=== 2/2: Japanese titles (TITLEJA) ===")
-                build_local_db.build_from_remote(song_db=DB_PATH, local_db=LOCAL_DB_PATH,
-                                                 workers=12)
-                stream.flush()
-            self.done.emit(True, "ok")
-        except Exception as e:
-            try:
-                stream.flush()
-            except Exception:
-                pass
-            self.done.emit(False, str(e))
 
 
 # ---------------------------------------------------------------- prebuilt DB update
@@ -693,3 +633,28 @@ class DBUpdateThread(QThread):
                     os.remove(part)
                 except OSError:
                     pass
+
+
+# ---------------------------------------------------------------- app update check
+class AppUpdateThread(QThread):
+    """Ask GitHub for the latest release; emit (tag, page_url) when it is newer
+    than the running build. Silent on any error (offline, rate limit)."""
+    found = Signal(str, str)
+
+    def __init__(self, current=None):
+        super().__init__()
+        self.current = current or APP_VERSION
+
+    def run(self):
+        try:
+            r = requests.get(LATEST_RELEASE_API, timeout=10,
+                             headers={"User-Agent": USER_AGENT,
+                                      "Accept": "application/vnd.github+json"})
+            r.raise_for_status()
+            data = r.json()
+            tag = data.get("tag_name") or ""
+            url = data.get("html_url") or ""
+            if is_newer(tag, self.current) and url.startswith("https://github.com/"):
+                self.found.emit(tag, url)
+        except Exception as e:
+            print("app update check:", e)

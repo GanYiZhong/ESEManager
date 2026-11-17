@@ -37,6 +37,33 @@ ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
 # Prebuilt databases, rebuilt by .github/workflows/pages-db.yml.
 DB_RELEASE_URL = "https://ganyizhong.github.io/ESEManager/"
 USER_AGENT = "ESEManager"
+GITHUB_REPO = "GanYiZhong/ESEManager"
+RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
+LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+
+# Release builds write src/app_version.py (see .github/workflows/release.yml);
+# running from source has no such file and reports "dev".
+try:
+    from app_version import VERSION as APP_VERSION
+except ImportError:
+    APP_VERSION = "dev"
+
+
+def parse_version(tag):
+    """'v2026.11.18.2' / 'v1.2.1' -> tuple of ints for comparison; None if the
+    string is not a plain dotted number (e.g. 'dev' or 'ci-abc1234')."""
+    t = (tag or "").strip().lstrip("vV")
+    parts = t.split(".")
+    if not parts or not all(p.isdigit() for p in parts):
+        return None
+    return tuple(int(p) for p in parts)
+
+
+def is_newer(latest, current):
+    """True when release tag `latest` is newer than the running version.
+    Development builds (unparseable current version) never prompt."""
+    a, b = parse_version(latest), parse_version(current)
+    return a is not None and b is not None and a > b
 
 SQLITE_MAGIC = b"SQLite format 3\x00"
 

@@ -27,7 +27,7 @@ TR = {
     "zh_TW": {
         "title": "🎵 ESEManager", "search": "搜尋", "show_all": "顯示全部",
         "clear": "清除", "ph": "搜尋歌曲名稱 (支援日文)...", "category": "分類",
-        "all_cat": "全部分類", "official": "🌐 盅鼓官方網站", "check_missing": "🔍 檢查缺漏",
+        "all_cat": "全部分類", "official": "✉ 聯絡我們", "check_missing": "🔍 檢查缺漏",
         "download": "⬇ 下載選中的歌曲", "sel_all": "全選", "desel_all": "取消",
         "selected": "已選擇 {n} 首", "dir": "下載目錄", "browse": "瀏覽", "workers": "並行數",
         "lang": "語言", "c_sel": "✓", "c_song": "歌曲名稱", "c_jp": "日文標題",
@@ -40,22 +40,11 @@ TR = {
         "paused_label": "已暫停",
         "done_msg": "下載完成！\n成功 {d}．跳過 {s}．失敗 {f}（共 {t} 檔）",
         "db_update": "🔄 更新資料庫", "db_building": "資料庫更新中…",
-        "db_done": "資料庫已更新（歌曲清單 + 日文標題）！", "db_fail": "資料庫更新失敗：{e}",
-        "db_confirm": "將從 ESE 更新資料庫：\n1. 歌曲清單（blobless，只抓檔名、不下載音檔）\n2. 日文標題（抓各 .tja 解析 TITLEJA，約 10MB）\n\n是否繼續？",
-        "db_no_git_q": "未偵測到 git（更新歌曲清單需要）。\n是否自動下載可攜版 git（約 50MB，免安裝、免管理員）？\n\n選「否」則需自行安裝 git：https://git-scm.com/downloads",
-        "db_no_git_fail": "沒有可用的 git，已取消更新。請安裝 git 後再試。",
+        "db_fail": "資料庫更新失敗：{e}",
+        
         "lang_busy": "工作進行中，語言將於下次啟動時套用。",
-        "boxdef_btn": "📦 box.def", "boxdef_title": "box.def 編輯器",
-        "boxdef_load": "讀取", "boxdef_gen": "自動生成", "boxdef_save": "儲存",
-        "boxdef_batch": "為所有子資料夾生成",
-        "boxdef_saved": "已儲存：{p}", "boxdef_no_dir": "資料夾不存在",
-        "boxdef_no_sub": "此資料夾沒有子資料夾",
-        "boxdef_batch_q": "將為 {n} 個子資料夾建立 box.def（已存在的會略過），是否繼續？",
-        "boxdef_batch_done": "完成：新建 {c} 個、略過 {s} 個（已存在）",
-        "boxdef_pick": "選擇顏色",
-        "boxdef_fetch": "⬇ 取得 ESE 官方", "boxdef_fetch_tip": "從 ESE 倉庫下載此分類的官方 box.def",
-        "boxdef_fetch_none": "ESE 找不到對應此資料夾的 box.def（依名稱/序號比對）",
-        "boxdef_fetch_fail": "取得失敗：{e}", "boxdef_fetch_ok": "已載入 ESE 官方 box.def（{c}）",
+        
+        
         "c_bpm": "BPM", "c_easy": "簡單", "c_normal": "普通", "c_hard": "困難",
         "c_oni": "魔王", "c_ura": "裏",
         "f_filter": "篩選", "f_bpm": "BPM 區間", "f_diff": "難度", "f_level": "等級",
@@ -66,36 +55,17 @@ TR = {
         "upd_none": "✓ 所有已下載的歌曲都是最新的",
         "upd_found": "發現 {n} 首歌有更新（{f} 個檔案），是否重新下載覆蓋？",
         "upd_no_sha": "此資料庫沒有內容雜湊，請先按「🔄 更新資料庫」再檢查更新。",
-        "dan_btn": "🥋 段位工具", "dan_title": "段位工具（Dan）",
-        "dan_tab_gen": "段位生成（Wiki）", "dan_tab_conv": "段位變換（tja）",
-        "dan_gen_url": "太鼓 Wiki 段位頁面 URL", "dan_out": "輸出資料夾",
-        "dan_songs": "Songs 資料夾", "dan_songs_opt": "Songs 資料夾（可省略）",
-        "dan_gen_run": "段位生成", "dan_conv_tja": "要變換的 tja",
-        "dan_conv_run": "變換執行", "dan_browse": "瀏覽",
-        "dan_gen_hint": "輸入太鼓 Wiki 的段位道場頁面網址，依段位名稱與合格條件\n生成 TaikøNauts 等可用的段位檔（dan.def + 各段位 Dan.json）。",
-        "dan_conv_hint": "把 OpenTaiko 等的 tja 段位（以 #NEXTSONG 分隔多曲）\n變換成 TaikøNauts 等可用的段位檔。",
-        "dan_need_url": "請輸入段位頁面 URL", "dan_need_out": "請選擇輸出資料夾",
-        "dan_need_tja": "請選擇要變換的 tja 檔", "dan_running": "處理中…",
-        "dan_done": "完成！", "dan_fail": "失敗：{e}",
-        "ydan_tab": "YataiDON 段位", "ydan_root": "YataiDON Songs 根資料夾",
-        "ydan_src": "曲源 Songs 資料夾", "ydan_run": "生成 YataiDON 段位",
-        "ydan_hint": "輸入太鼓 Wiki 段位道場頁面網址，生成 YataiDON 格式段位\n（各段 dan.json 寫入 <根>/11 Dan Dojo/，並把對應 tja/ogg\n自動複製到對應曲種資料夾）。",
-        "ydan_need_root": "請選擇 YataiDON Songs 根資料夾",
-        "credits_btn": "💗 致謝", "credits_title": "致謝 / Credits",
-        "credits_body": "段位生成（DanGenerator）與段位變換（DanConvertor）功能\n移植自 bluetaiko 的 SongConvertor 專案，特此感謝原作者。\n\n原專案（MIT License）：\nhttps://github.com/bluetaiko/SongConvertor",
-        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成工具",
-        "yatai_folder": "Songs 資料夾", "yatai_scan": "掃描",
-        "yatai_col_folder": "資料夾", "yatai_col_title": "標題",
-        "yatai_col_titleja": "日文標題", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
-        "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
-        "yatai_gen_all": "全部生成 box.def",
-        "yatai_done": "完成：已生成 {c} 個 box.def",
-        "yatai_pick": "選擇顏色",
+        
+        
+        
+        
+        
+        
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
         "clear": "Clear", "ph": "Search songs (Japanese supported)...", "category": "Category",
-        "all_cat": "All Categories", "official": "🌐 Official Site", "check_missing": "🔍 Check Missing",
+        "all_cat": "All Categories", "official": "✉ Contact us", "check_missing": "🔍 Check Missing",
         "download": "⬇ Download Selected", "sel_all": "Select All", "desel_all": "Deselect",
         "selected": "{n} selected", "dir": "Download Dir", "browse": "Browse", "workers": "Workers",
         "lang": "Language", "c_sel": "✓", "c_song": "Song", "c_jp": "Japanese",
@@ -108,23 +78,11 @@ TR = {
         "st_pause": "paused", "pause": "⏸ Pause", "resume": "▶ Resume", "stop": "⏹ Stop",
         "paused_label": "Paused",
         "db_update": "🔄 Update DB", "db_building": "Updating database…",
-        "db_done": "Database updated (song list + Japanese titles)!",
         "db_fail": "Database update failed: {e}",
-        "db_confirm": "Update databases from ESE:\n1. Song list (blobless — file list only, no audio)\n2. Japanese titles (parse TITLEJA from each .tja, ~10MB)\n\nContinue?",
-        "db_no_git_q": "Git not found (needed to fetch the song list).\nDownload a portable Git automatically (~50MB, no install, no admin)?\n\nChoose No to install Git yourself: https://git-scm.com/downloads",
-        "db_no_git_fail": "No Git available; update cancelled. Install Git and try again.",
+        
         "lang_busy": "A task is running; the language will apply on next launch.",
-        "boxdef_btn": "📦 box.def", "boxdef_title": "box.def editor",
-        "boxdef_load": "Load", "boxdef_gen": "Generate", "boxdef_save": "Save",
-        "boxdef_batch": "Generate for all subfolders",
-        "boxdef_saved": "Saved: {p}", "boxdef_no_dir": "Folder does not exist",
-        "boxdef_no_sub": "No subfolders in this folder",
-        "boxdef_batch_q": "Create box.def for {n} subfolders (existing ones are skipped). Continue?",
-        "boxdef_batch_done": "Done: created {c}, skipped {s} (existing)",
-        "boxdef_pick": "Pick color",
-        "boxdef_fetch": "⬇ Fetch from ESE", "boxdef_fetch_tip": "Download the official box.def for this category from the ESE repo",
-        "boxdef_fetch_none": "No matching ESE box.def for this folder (by name/index)",
-        "boxdef_fetch_fail": "Fetch failed: {e}", "boxdef_fetch_ok": "Loaded official ESE box.def ({c})",
+        
+        
         "c_bpm": "BPM", "c_easy": "Easy", "c_normal": "Normal", "c_hard": "Hard",
         "c_oni": "Oni", "c_ura": "Ura",
         "f_filter": "Filter", "f_bpm": "BPM range", "f_diff": "Difficulty", "f_level": "Level",
@@ -135,36 +93,17 @@ TR = {
         "upd_none": "✓ All downloaded songs are up to date",
         "upd_found": "{n} songs have updates ({f} files). Re-download and overwrite?",
         "upd_no_sha": "This database has no content hashes. Click 🔄 Update DB first, then check updates.",
-        "dan_btn": "🥋 Dan Tools", "dan_title": "Dan Tools",
-        "dan_tab_gen": "Generate (Wiki)", "dan_tab_conv": "Convert (tja)",
-        "dan_gen_url": "Taiko Wiki Dan page URL", "dan_out": "Output folder",
-        "dan_songs": "Songs folder", "dan_songs_opt": "Songs folder (optional)",
-        "dan_gen_run": "Generate", "dan_conv_tja": "tja to convert",
-        "dan_conv_run": "Convert", "dan_browse": "Browse",
-        "dan_gen_hint": "Enter a Taiko Wiki Dan-dojo page URL to generate Dan files\nfor TaikøNauts etc. (dan.def + per-rank Dan.json) from the\nrank names and clear conditions.",
-        "dan_conv_hint": "Convert an OpenTaiko-style Dan tja (multiple songs split by\n#NEXTSONG) into TaikøNauts-compatible Dan files.",
-        "dan_need_url": "Please enter the Dan page URL", "dan_need_out": "Please choose an output folder",
-        "dan_need_tja": "Please choose a tja file", "dan_running": "Working…",
-        "dan_done": "Done!", "dan_fail": "Failed: {e}",
-        "ydan_tab": "YataiDON Dan", "ydan_root": "YataiDON Songs root",
-        "ydan_src": "Source Songs folder", "ydan_run": "Generate YataiDON Dan",
-        "ydan_hint": "Enter a Taiko Wiki Dan-dojo page URL to generate YataiDON-format\nDan (dan.json into <root>/11 Dan Dojo/), and auto-copy the matched\ntja/ogg into the matching genre folders.",
-        "ydan_need_root": "Please choose the YataiDON Songs root folder",
-        "credits_btn": "💗 Credits", "credits_title": "Credits",
-        "credits_body": "The Dan Generator and Dan Convertor features are ported from\nbluetaiko's SongConvertor project. Many thanks to the author.\n\nOriginal project (MIT License):\nhttps://github.com/bluetaiko/SongConvertor",
-        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def Generator",
-        "yatai_folder": "Songs folder", "yatai_scan": "Scan",
-        "yatai_col_folder": "Folder", "yatai_col_title": "Title",
-        "yatai_col_titleja": "Title (JA)", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
-        "yatai_col_back": "Back color", "yatai_col_fore": "Fore color",
-        "yatai_gen_all": "Generate All box.def",
-        "yatai_done": "Done: generated {c} box.def files",
-        "yatai_pick": "Pick color",
+        
+        
+        
+        
+        
+        
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
         "clear": "クリア", "ph": "楽曲名を検索（日本語対応）...", "category": "カテゴリー",
-        "all_cat": "すべて", "official": "🌐 公式サイト", "check_missing": "🔍 不足チェック",
+        "all_cat": "すべて", "official": "✉ お問い合わせ", "check_missing": "🔍 不足チェック",
         "download": "⬇ 選択をダウンロード", "sel_all": "全選択", "desel_all": "解除",
         "selected": "{n} 曲選択", "dir": "保存先", "browse": "参照", "workers": "並列数",
         "lang": "言語", "c_sel": "✓", "c_song": "楽曲名", "c_jp": "日本語",
@@ -177,23 +116,11 @@ TR = {
         "st_pause": "一時停止", "pause": "⏸ 一時停止", "resume": "▶ 再開", "stop": "⏹ 停止",
         "paused_label": "一時停止中",
         "db_update": "🔄 データベース更新", "db_building": "データベース更新中…",
-        "db_done": "データベースを更新しました（曲リスト＋日本語タイトル）！",
         "db_fail": "データベース更新に失敗: {e}",
-        "db_confirm": "ESE からデータベースを更新します：\n1. 曲リスト（blobless・一覧のみ／音声なし）\n2. 日本語タイトル（各 .tja の TITLEJA を解析、約10MB）\n\n続行しますか？",
-        "db_no_git_q": "Git が見つかりません（曲リスト取得に必要）。\nポータブル版 Git を自動ダウンロードしますか（約50MB、インストール不要・管理者不要）？\n\n「いいえ」で手動インストール：https://git-scm.com/downloads",
-        "db_no_git_fail": "利用可能な Git がありません。更新を中止しました。",
+        
         "lang_busy": "処理の実行中です。言語は次回起動時に適用されます。",
-        "boxdef_btn": "📦 box.def", "boxdef_title": "box.def エディター",
-        "boxdef_load": "読み込み", "boxdef_gen": "自動生成", "boxdef_save": "保存",
-        "boxdef_batch": "全サブフォルダに生成",
-        "boxdef_saved": "保存しました：{p}", "boxdef_no_dir": "フォルダが存在しません",
-        "boxdef_no_sub": "サブフォルダがありません",
-        "boxdef_batch_q": "{n} 個のサブフォルダに box.def を作成します（既存はスキップ）。続行しますか？",
-        "boxdef_batch_done": "完了：作成 {c}、スキップ {s}（既存）",
-        "boxdef_pick": "色を選択",
-        "boxdef_fetch": "⬇ ESE から取得", "boxdef_fetch_tip": "ESE リポジトリからこの分類の公式 box.def を取得",
-        "boxdef_fetch_none": "このフォルダに対応する ESE の box.def が見つかりません（名前/番号で照合）",
-        "boxdef_fetch_fail": "取得に失敗: {e}", "boxdef_fetch_ok": "ESE 公式 box.def を読み込みました（{c}）",
+        
+        
         "c_bpm": "BPM", "c_easy": "かんたん", "c_normal": "ふつう", "c_hard": "むずかしい",
         "c_oni": "おに", "c_ura": "裏",
         "f_filter": "絞り込み", "f_bpm": "BPM 範囲", "f_diff": "難易度", "f_level": "レベル",
@@ -204,31 +131,12 @@ TR = {
         "upd_none": "✓ ダウンロード済みの曲はすべて最新です",
         "upd_found": "{n} 曲に更新があります（{f} ファイル）。再ダウンロードして上書きしますか？",
         "upd_no_sha": "このデータベースにはハッシュがありません。先に「🔄 データベース更新」を実行してください。",
-        "dan_btn": "🥋 段位ツール", "dan_title": "段位ツール（Dan）",
-        "dan_tab_gen": "段位生成（Wiki）", "dan_tab_conv": "段位変換（tja）",
-        "dan_gen_url": "太鼓 Wiki 段位ページの URL", "dan_out": "出力フォルダ",
-        "dan_songs": "Songs フォルダ", "dan_songs_opt": "Songs フォルダ（省略可）",
-        "dan_gen_run": "段位生成", "dan_conv_tja": "変換する tja",
-        "dan_conv_run": "変換実行", "dan_browse": "参照",
-        "dan_gen_hint": "太鼓 Wiki の段位道場ページの URL を入力し、段位の名前と\n合格条件から TaikøNauts 等で使える段位ファイル（dan.def +\n各段位の Dan.json）を生成します。",
-        "dan_conv_hint": "OpenTaiko 等の tja 段位（#NEXTSONG で複数曲に分割）を\nTaikøNauts 等で使える段位ファイルに変換します。",
-        "dan_need_url": "段位ページの URL を入力してください", "dan_need_out": "出力フォルダを選択してください",
-        "dan_need_tja": "変換する tja を選択してください", "dan_running": "処理中…",
-        "dan_done": "完了！", "dan_fail": "失敗: {e}",
-        "ydan_tab": "YataiDON 段位", "ydan_root": "YataiDON Songs ルート",
-        "ydan_src": "曲ソース Songs フォルダ", "ydan_run": "YataiDON 段位を生成",
-        "ydan_hint": "太鼓 Wiki 段位道場ページの URL を入力し、YataiDON 形式の段位を\n生成します（各段の dan.json を <ルート>/11 Dan Dojo/ に書き出し、\n対応する tja/ogg を曲種フォルダへ自動コピー）。",
-        "ydan_need_root": "YataiDON Songs ルートフォルダを選択してください",
-        "credits_btn": "💗 クレジット", "credits_title": "クレジット / Credits",
-        "credits_body": "段位生成（DanGenerator）と段位変換（DanConvertor）機能は\nbluetaiko 氏の SongConvertor を移植したものです。作者に感謝します。\n\n元プロジェクト（MIT License）:\nhttps://github.com/bluetaiko/SongConvertor",
-        "yatai_btn": "🎮 YataiDON", "yatai_title": "YataiDON box.def 生成ツール",
-        "yatai_folder": "Songs フォルダ", "yatai_scan": "スキャン",
-        "yatai_col_folder": "フォルダ", "yatai_col_title": "タイトル",
-        "yatai_col_titleja": "日本語タイトル", "yatai_col_genre": "GENRE", "yatai_col_collection": "COLLECTION",
-        "yatai_col_back": "背景色", "yatai_col_fore": "文字色",
-        "yatai_gen_all": "すべて box.def を生成",
-        "yatai_done": "完了：{c} 個の box.def を生成しました",
-        "yatai_pick": "色を選択",
+        
+        
+        
+        
+        
+        
     },
 }
 
@@ -261,12 +169,6 @@ TR["zh_TW"].update({
     "log_db_dl": "下載資料庫 {n} …",
     "log_db_bad": "{n} 不是有效的資料庫",
     "log_db_sha": "{n} 校驗碼不符，請稍後再試",
-    "boxdef_fetching": "⏳ 取得中…",
-    "yatai_info": "YataiDON 支援：#TITLE / #TITLEJA / #GENRE / #COLLECTION（DAN DIFFICULTY "
-                  "RECOMMENDED FAVORITE RECENT）/ #BACKCOLOR / #FORECOLOR。"
-                  "#BACKCOLOR＝盒子顏色，#FORECOLOR＝文字外框色。曲種顏色取自 ESE 官方配色；"
-                  "特殊資料夾（COLLECTION）顏色留空＝使用內建圖示。",
-    "official": "🌐 太鼓官方網站",
 })
 
 TR["en"].update({
@@ -299,11 +201,6 @@ TR["en"].update({
     "log_db_dl": "Downloading database {n} …",
     "log_db_bad": "{n} is not a valid database",
     "log_db_sha": "{n} checksum mismatch; please try again later",
-    "boxdef_fetching": "⏳ Fetching…",
-    "yatai_info": "YataiDON supports #TITLE / #TITLEJA / #GENRE / #COLLECTION (DAN DIFFICULTY "
-                  "RECOMMENDED FAVORITE RECENT) / #BACKCOLOR / #FORECOLOR. #BACKCOLOR = box "
-                  "color, #FORECOLOR = title outline. Genre colors come from ESE's official "
-                  "palette; COLLECTION folders are left blank to use built-in art.",
 })
 
 TR["ja"].update({
@@ -336,11 +233,6 @@ TR["ja"].update({
     "log_db_dl": "データベース {n} をダウンロード中 …",
     "log_db_bad": "{n} は有効なデータベースではありません",
     "log_db_sha": "{n} のチェックサムが一致しません。しばらくしてから再試行してください",
-    "boxdef_fetching": "⏳ 取得中…",
-    "yatai_info": "YataiDON 対応：#TITLE / #TITLEJA / #GENRE / #COLLECTION（DAN DIFFICULTY "
-                  "RECOMMENDED FAVORITE RECENT）/ #BACKCOLOR / #FORECOLOR。#BACKCOLOR＝ボックスの色、"
-                  "#FORECOLOR＝タイトルの縁取り色。ジャンル色は ESE 公式の配色です。"
-                  "COLLECTION フォルダは色を空欄にすると内蔵の画像を使います。",
 })
 
 
@@ -371,6 +263,7 @@ def detect_system_lang():
 
 # --- main window layout
 TR["zh_TW"].update({
+    "dir_missing": "資料夾不存在",
     "mw_menu_file": "檔案(&F)",
     "mw_menu_tools": "工具(&T)",
     "mw_menu_help": "說明(&H)",
@@ -381,6 +274,7 @@ TR["zh_TW"].update({
 })
 
 TR["en"].update({
+    "dir_missing": "Folder does not exist",
     "mw_menu_file": "&File",
     "mw_menu_tools": "&Tools",
     "mw_menu_help": "&Help",
@@ -391,6 +285,7 @@ TR["en"].update({
 })
 
 TR["ja"].update({
+    "dir_missing": "フォルダが存在しません",
     "mw_menu_file": "ファイル(&F)",
     "mw_menu_tools": "ツール(&T)",
     "mw_menu_help": "ヘルプ(&H)",
@@ -423,39 +318,6 @@ TR["ja"].update({
     "th_tip": "外観：ライト／ダーク。自動は OS の設定に合わせて切り替わります",
 })
 
-# --- dialogs polish
-TR["zh_TW"].update({
-    "dlg_color_invalid": "色碼無效：請輸入 6 位十六進位數字，例如 RRGGBB 或 #RRGGBB",
-    "dlg_boxdef_unsaved": "有尚未儲存的修改，要捨棄嗎？",
-    "dlg_boxdef_bad_color": "以下顏色格式無效，請修正後再儲存：{fields}",
-    "dlg_yatai_overwrite_q": "已有 {n} 個 box.def 會被覆寫，要繼續嗎？",
-    "dlg_yatai_bad_color": "以下資料夾的顏色格式無效，請先修正：{rows}",
-    "dlg_dan_busy_q": "工作仍在執行中。要等它完成後關閉視窗嗎？",
-    "dlg_dan_closing": "工作完成後將自動關閉視窗。",
-    "dlg_dan_missing": "{name} 不存在：{path}",
-})
-
-TR["en"].update({
-    "dlg_color_invalid": "Invalid colour: use 6 hex digits, e.g. RRGGBB or #RRGGBB",
-    "dlg_boxdef_unsaved": "There are unsaved changes. Discard them?",
-    "dlg_boxdef_bad_color": "Invalid colour value(s), fix them before saving: {fields}",
-    "dlg_yatai_overwrite_q": "{n} existing box.def file(s) will be overwritten. Continue?",
-    "dlg_yatai_bad_color": "Invalid colour value(s) in: {rows}. Fix them first.",
-    "dlg_dan_busy_q": "A task is still running. Close this window after it finishes?",
-    "dlg_dan_closing": "The window will close when the current task finishes.",
-    "dlg_dan_missing": "{name} does not exist: {path}",
-})
-
-TR["ja"].update({
-    "dlg_color_invalid": "色の形式が不正です：16進数6桁で入力してください（例：RRGGBB または #RRGGBB）",
-    "dlg_boxdef_unsaved": "保存していない変更があります。破棄しますか？",
-    "dlg_boxdef_bad_color": "色の形式が不正です。修正してから保存してください：{fields}",
-    "dlg_yatai_overwrite_q": "既存の box.def {n} 件を上書きします。続けますか？",
-    "dlg_yatai_bad_color": "色の形式が不正なフォルダがあります。先に修正してください：{rows}",
-    "dlg_dan_busy_q": "処理が実行中です。完了後にウィンドウを閉じますか？",
-    "dlg_dan_closing": "現在の処理が終わり次第、ウィンドウを閉じます。",
-    "dlg_dan_missing": "{name} が存在しません：{path}",
-})
 
 
 # --- compact layout
@@ -473,4 +335,40 @@ TR["ja"].update({
     "mw_settings": "設定…",
     "mw_settings_title": "設定",
     "mw_close": "閉じる",
+})
+
+
+# --- rolling release: in-app update notice
+TR["zh_TW"].update({
+    "mw_app_update": "🆕 有新版本 {v}，按此下載",
+    "mw_app_update_tip": "目前版本：{cur}\n最新版本：{v}\n開啟 GitHub 下載頁",
+})
+TR["en"].update({
+    "mw_app_update": "🆕 New version {v} available",
+    "mw_app_update_tip": "Current: {cur}\nLatest: {v}\nOpens the GitHub download page",
+})
+TR["ja"].update({
+    "mw_app_update": "🆕 新しいバージョン {v} があります",
+    "mw_app_update_tip": "現在：{cur}\n最新：{v}\nGitHub のダウンロードページを開きます",
+})
+
+
+# --- database update from GitHub Pages
+TR["zh_TW"].update({
+    "db_update_tip": "從 GitHub 下載最新的歌曲資料庫（每 6 小時自動從 ESE 重建）",
+    "db_checking": "檢查資料庫版本…",
+    "db_latest": "資料庫已是最新版本（{v}）。",
+    "db_offline": "無法連線到資料庫伺服器，請檢查網路後再試。",
+})
+TR["en"].update({
+    "db_update_tip": "Download the latest song database from GitHub (rebuilt from ESE every 6 hours)",
+    "db_checking": "Checking database version…",
+    "db_latest": "The database is already up to date ({v}).",
+    "db_offline": "Could not reach the database server. Check your connection and try again.",
+})
+TR["ja"].update({
+    "db_update_tip": "GitHub から最新の曲データベースをダウンロード（ESE から 6 時間ごとに自動再構築）",
+    "db_checking": "データベースのバージョンを確認中…",
+    "db_latest": "データベースは最新です（{v}）。",
+    "db_offline": "データベースサーバーに接続できません。ネットワークを確認して再試行してください。",
 })

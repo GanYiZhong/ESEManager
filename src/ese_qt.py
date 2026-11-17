@@ -6,8 +6,7 @@ ESEManager main window (PySide6).
   and a failed list with one-click retry.
 
 Other pieces live in sibling modules: appconfig (paths/URLs), i18n (strings),
-models (table models), workers (background threads), boxdef (box.def generators)
-and dialogs (box.def editor, YataiDON generator, Dan tools).
+models (table models), workers (background threads) and theme/notify.
 """
 
 import os
@@ -33,16 +32,15 @@ from PySide6.QtWidgets import (
     QDialog, QFormLayout, QMenu, QToolButton, QWidgetAction
 )
 
-import dan_tools  # Dan generator/convertor (ported from bluetaiko/SongConvertor)
-from appconfig import (APP_DIR, CONFIG_FILE, DB_PATH, LOCAL_DB_PATH,
+from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE, DB_PATH, LOCAL_DB_PATH,
                        DEFAULT_DOWNLOAD_DIR, resolve_dir, safe_join, UnsafePathError)
 from i18n import TR, CATEGORY_NAMES, detect_system_lang
 import theme  # light/dark palette and style-sheet helpers
 from models import SongModel, DownloadModel, human_speed, human_eta
-from workers import (SearchThread, CheckUpdatesThread, DownloadThread, DBBuildThread,
-                     VersionThread, DBUpdateThread, MetaLoadThread, load_jp_map,
+from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
+                     VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
+                     load_jp_map,
                      load_meta_map, read_local_version)
-from dialogs import BoxDefDialog, DanToolsDialog, YataiBoxDefDialog
 from notify import Notifier, set_app_icon
 
 
@@ -86,6 +84,7 @@ class MainWindow(QMainWindow):
         self.notifier = Notifier(self)
         self.load_categories()
         QTimer.singleShot(1200, self.check_db_update)
+        QTimer.singleShot(3000, self.check_app_update)
 
     SEARCH_DELAY_MS = 300
     DEFAULT_WINDOW = (1280, 860)
@@ -165,26 +164,25 @@ class MainWindow(QMainWindow):
         self.menu_file.addSeparator()
         self.menu_file.addAction(self.act_quit)
 
-        # Tools: box.def editor, YataiDON generator, Dan tools
-        self.menu_tools = mb.addMenu("")
-        self.act_boxdef = self._action(self.open_boxdef)
-        self.act_yatai = self._action(self.open_yatai_boxdef)
-        self.act_dan = self._action(self.open_dan_tools)
-        for a in (self.act_boxdef, self.act_yatai, self.act_dan):
-            self.menu_tools.addAction(a)
-
-        # Help: official site, credits
+        # Help: contact page
         self.menu_help = mb.addMenu("")
         self.act_official = self._action(lambda: webbrowser.open("https://taiko.ac"))
-        self.act_credits = self._action(self.open_credits)
         self.menu_help.addAction(self.act_official)
-        self.menu_help.addAction(self.act_credits)
 
     def build_status_bar(self):
         sb = self.statusBar()
         self.count_label = QLabel(self.tr("total", n=0))   # current list / progress text
         self.db_ver_label = QLabel()
+        # Shown only when GitHub has a newer release; opens the release page.
+        self.app_update_btn = QPushButton()
+        self.app_update_btn.setFlat(True)
+        self.app_update_btn.setCursor(Qt.PointingHandCursor)
+        self.app_update_btn.setStyleSheet("QPushButton{color:#2E7D32;font-weight:bold;}")
+        self.app_update_btn.hide()
+        self.app_update_btn.clicked.connect(
+            lambda: webbrowser.open(getattr(self, "_app_update_url", RELEASES_URL)))
         sb.addWidget(self.count_label)
+        sb.addPermanentWidget(self.app_update_btn)
         sb.addPermanentWidget(self.db_ver_label)
 
     def build_shortcuts(self):
@@ -208,7 +206,6 @@ class MainWindow(QMainWindow):
     def retranslate_chrome(self):
         """Apply the current language to menus, actions and status bar."""
         self.menu_file.setTitle(self.tr("mw_menu_file"))
-        self.menu_tools.setTitle(self.tr("mw_menu_tools"))
         self.menu_help.setTitle(self.tr("mw_menu_help"))
         self.act_update_db.setText(self.tr("db_update"))
         self.act_missing.setText(self.tr("check_missing"))
@@ -216,11 +213,7 @@ class MainWindow(QMainWindow):
         self.act_open_dir.setText(self.tr("mw_act_open_dir"))
         self.act_settings.setText(self.tr("mw_settings"))
         self.act_quit.setText(self.tr("mw_act_quit"))
-        self.act_boxdef.setText(self.tr("boxdef_btn"))
-        self.act_yatai.setText(self.tr("yatai_btn"))
-        self.act_dan.setText(self.tr("dan_btn"))
         self.act_official.setText(self.tr("official"))
-        self.act_credits.setText(self.tr("credits_btn"))
         self._refresh_status()
 
     # ---- UI
@@ -230,7 +223,7 @@ class MainWindow(QMainWindow):
     # while downloading or when toggled. Rarely-changed settings live in a
     # Settings dialog (File > Settings).
     def build_ui(self):
-        self.setWindowTitle(self.tr("title"))
+        self.setWindowTitle(f"{self.tr('title')} {APP_VERSION}")
         w, h = self.DEFAULT_WINDOW
         disp = self.config.get("display", {})
         self.resize(self._cfg_int(disp, "window_w", w, 640),
@@ -270,7 +263,7 @@ class MainWindow(QMainWindow):
         top.addSpacing(12)
         # Most-used maintenance actions; everything else is in the menu bar.
         self.db_update_btn = QPushButton(self.tr("db_update"))
-        self.db_update_btn.setToolTip(self.tr("db_confirm"))
+        self.db_update_btn.setToolTip(self.tr("db_update_tip"))
         self.db_update_btn.clicked.connect(self.update_database)
         self.missing_btn = QPushButton(self.tr("check_missing"))
         self.missing_btn.clicked.connect(self.check_missing)
@@ -834,7 +827,7 @@ class MainWindow(QMainWindow):
     def check_updates(self):
         ddir = resolve_dir(self.dir_edit.text())
         if not os.path.isdir(ddir):
-            QMessageBox.warning(self, self.tr("check_updates"), self.tr("boxdef_no_dir"))
+            QMessageBox.warning(self, self.tr("check_updates"), self.tr("dir_missing"))
             return
         self.updates_btn.setEnabled(False)
         self.log_view.appendPlainText("▶ " + self.tr("upd_checking"))
@@ -885,81 +878,31 @@ class MainWindow(QMainWindow):
             else:
                 subprocess.Popen(["xdg-open", d])
 
-    def _tool_start_dir(self):
-        d = resolve_dir(self.dir_edit.text())
-        return d if os.path.isdir(d) else APP_DIR
-
-    # ---- box.def 編輯器
-    def open_boxdef(self):
-        BoxDefDialog(self, self._tool_start_dir(), self.tr).exec()
-
-    def open_dan_tools(self):
-        DanToolsDialog(self, self.tr, self._tool_start_dir()).exec()
-
-    def open_yatai_boxdef(self):
-        YataiBoxDefDialog(self, self.tr).exec()
-
-    def open_credits(self):
-        box = QMessageBox(self)
-        box.setWindowTitle(self.tr("credits_title"))
-        box.setText(self.tr("credits_body"))
-        box.setIcon(QMessageBox.Information)
-        box.exec()
-
-    # ---- 一鍵更新資料庫（歌曲清單 + 日文標題；整合自 update_databases.bat）
+    # ---- database update (prebuilt databases from GitHub Pages)
     def _db_busy(self):
-        return any(t.isRunning() for t in (getattr(self, "_db_thread", None),
-                                           getattr(self, "_dbu", None)) if t)
+        t = getattr(self, "_dbu", None)
+        return bool(t and t.isRunning())
 
     def update_database(self):
+        """Manual "Update DB": check the published version and download it if
+        it differs. The databases are rebuilt from ESE every 6 hours by CI."""
         if self._db_busy():
             QMessageBox.warning(self, self.tr("db_update"), self.tr("db_building"))
             return
-        if QMessageBox.question(self, self.tr("db_update"),
-                                self.tr("db_confirm")) != QMessageBox.Yes:
-            return
-
-        # 解析 git；Windows 沒有就詢問是否下載可攜版；其他平台直接提示手動安裝
-        from ese_scraper_git_v2 import find_git
-        git_exe = find_git()
-        download_git = False
-        if not git_exe:
-            if sys.platform == "win32":
-                if QMessageBox.question(self, "Git", self.tr("db_no_git_q")) == QMessageBox.Yes:
-                    download_git = True
-                else:
-                    QMessageBox.information(self, "Git", self.tr("db_no_git_fail"))
-                    return
-            else:
-                QMessageBox.information(self, "Git", self.tr("db_no_git_fail"))
-                return
-
         self.db_update_btn.setEnabled(False)
-        self.show_monitor(1)   # 切到 Log 分頁
-        self.overall_label.setText(self.tr("db_building"))
-        self.log_view.appendPlainText("——— " + self.tr("db_building") + " ———")
-        self._db_thread = self._track(DBBuildThread(git_exe, download_git=download_git))
-        self._db_thread.log.connect(self.log_view.appendPlainText)
-        self._db_thread.done.connect(self.on_db_build_done)
-        self._db_thread.start()
+        self.overall_label.setText(self.tr("db_checking"))
+        t = self._track(VersionThread())
+        t.result.connect(lambda remote, local: self.on_version(remote, local, manual=True))
+        self._ver = t
+        t.start()
 
-    def on_db_build_done(self, ok, info):
-        self.db_update_btn.setEnabled(True)
-        self.overall_label.setText(self.tr("ready"))
-        if ok:
-            text = self.tr("db_done")
-        elif info == "NOGIT":
-            text = self.tr("db_no_git_fail")
-        else:
-            text = self.tr("db_fail", e=info)
-        self.notifier.notify(self.tr("db_update"), text)
-        if not ok:
-            if info == "NOGIT":
-                QMessageBox.critical(self, "Git", self.tr("db_no_git_fail"))
-            else:
-                QMessageBox.critical(self, self.tr("db_update"), self.tr("db_fail", e=info))
-            return
-        self.reload_databases(self.tr("db_done"))
+    def start_db_download(self, remote):
+        self.db_update_btn.setEnabled(False)
+        self.overall_label.setText(self.tr("db_building"))
+        self._dbu = self._track(DBUpdateThread(remote, tr=self.tr))
+        self._dbu.log.connect(self.log_view.appendPlainText)
+        self._dbu.done.connect(self.on_db_updated)
+        self._dbu.start()
 
     def reload_databases(self, done_msg=None):
         """Reload categories and the Japanese-title/level maps after a DB change.
@@ -1036,21 +979,43 @@ class MainWindow(QMainWindow):
         self._ver.result.connect(self.on_version)
         self._ver.start()
 
-    def on_version(self, remote, local):
-        if not remote or remote == local or self._db_busy() or self._closing:
+    def check_app_update(self):
+        """Rolling releases: tell the user when GitHub has a newer build."""
+        t = self._track(AppUpdateThread())
+        t.found.connect(self.on_app_update)
+        self._app_upd = t
+        t.start()
+
+    def on_app_update(self, tag, url):
+        self.app_update_btn.setText(self.tr("mw_app_update", v=tag))
+        self.app_update_btn.setToolTip(self.tr("mw_app_update_tip", cur=APP_VERSION, v=tag))
+        self._app_update_url = url
+        self.app_update_btn.show()
+
+    def on_version(self, remote, local, manual=False):
+        if self._closing:
+            return
+        if manual:
+            self.db_update_btn.setEnabled(True)
+            self.overall_label.setText(self.tr("ready"))
+            if not remote:
+                QMessageBox.warning(self, self.tr("dbv_title"), self.tr("db_offline"))
+                return
+            if remote == local and self.has_song_db():
+                QMessageBox.information(self, self.tr("dbv_title"),
+                                        self.tr("db_latest", v=local))
+                return
+            self.start_db_download(remote)      # the user asked for it: no extra prompt
+            return
+        # Startup check: offer the update.
+        if not remote or remote == local or self._db_busy():
             return
         if not self.has_song_db():
             msg = self.tr("dbv_first", v=remote)
         else:
             msg = self.tr("dbv_found", cur=local or self.tr("dbv_none"), new=remote)
         if QMessageBox.question(self, self.tr("dbv_title"), msg) == QMessageBox.Yes:
-            self.db_update_btn.setEnabled(False)
-            self.overall_label.setText(self.tr("db_building"))
-            self._dbu = self._track(DBUpdateThread(remote, tr=self.tr))
-            self._dbu.log.connect(self.log_view.appendPlainText)
-            self._dbu.done.connect(self.on_db_updated)
-            self.show_monitor(1)
-            self._dbu.start()
+            self.start_db_download(remote)
 
     def on_db_updated(self, ok, msg):
         self.db_update_btn.setEnabled(True)
@@ -1058,6 +1023,8 @@ class MainWindow(QMainWindow):
         self.notifier.notify(self.tr("dbv_title"),
                              self.tr("dbv_ok") if ok else self.tr("db_fail", e=msg))
         if ok:
+            self._db_version = read_local_version()
+            self._refresh_status()
             self.reload_databases(self.tr("dbv_ok"))
         elif not self._closing:
             QMessageBox.critical(self, self.tr("dbv_title"), self.tr("db_fail", e=msg))
@@ -1090,14 +1057,35 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
+def selftest():
+    """Packaged self-test (release workflow): start the real window offscreen,
+    close it, and report. Any startup error exits non-zero instead of leaving
+    an error dialog open."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle(QStyleFactory.create("Fusion"))
+        set_app_icon(app)
+        QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.No)
+        w = MainWindow()
+        theme.apply_theme(app, w.theme_pref)
+        w.show()
+        app.processEvents()
+        w._closing = True
+        w.close()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        print("SELFTEST_FAIL")
+        os._exit(1)
+    print("SELFTEST_OK", APP_VERSION)
+    sys.stdout.flush()
+    os._exit(0)
+
+
 def main():
-    # 打包後自我檢測：確認 lxml/dan_tools 等相依在 frozen exe 內可用（不開視窗）
-    if "--selftest-dan" in sys.argv:
-        from lxml import html as _h
-        doc = _h.fromstring("<table><tr><td>魂ゲージ</td></tr></table>")
-        ok = bool(doc.xpath("//td")) and hasattr(dan_tools, "generate_dan_from_wiki")
-        print("DAN_SELFTEST_OK" if ok else "DAN_SELFTEST_FAIL")
-        sys.exit(0 if ok else 1)
+    if "--selftest" in sys.argv:
+        selftest()
 
     # Relative paths (git clone, portable git, user-entered folders) resolve
     # next to the app no matter where it was launched from.
@@ -1110,9 +1098,10 @@ def main():
     w.show()
     rc = app.exec()
     if any(t.isRunning() for t in w._threads):
-        # A git/DB step that ignored the shutdown wait: exit without running
+        # A worker that ignored the shutdown wait: exit without running
         # QThread destructors (which would abort on a running thread).
-        sys.stdout.flush() if sys.stdout else None
+        if sys.stdout:
+            sys.stdout.flush()
         os._exit(rc)
     sys.exit(rc)
 

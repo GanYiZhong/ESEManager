@@ -6,37 +6,31 @@
 
 ## 功能
 
-- 高速歌曲清單 — 上千首一次顯示、無需分頁
-- 依名稱（支援日文）與分類搜尋
-- **依 BPM 區間與難度等級篩選**（簡單／普通／困難／魔王／裏）— 以欄位顯示，從各譜面解析
-- 批次下載，可**暫停／繼續／停止**
-- 即時監控：整體進度 + 速度／ETA、每檔狀態、Log、失敗一鍵重試
-- 一鍵**更新資料庫**：
-  - 歌曲清單用 *blobless* git clone 抓取（只取檔案清單、不下載音檔）
-  - 日文標題直接解析每個譜面的 `TITLEJA` 欄位（增量更新，已存在的會略過）
-- **段位工具**（🥋）：
-  - **段位生成** — 輸入太鼓 Wiki 段位道場頁面網址，依段位名稱與合格條件，生成 TaikøNauts 等可用的段位檔（`dan.def` + 各段位 `Dan.json`）
-  - **段位變換** — 把 OpenTaiko 等的 tja 段位（以 `#NEXTSONG` 分隔多曲）變換成 TaikøNauts 等可用的段位檔
-- **檢查缺漏**（🔍）與**檢查更新**（🆕）：找出尚未下載的歌，或上游已更新的譜面（以 git blob 雜湊比對）
-- **box.def 工具**：OpenTaiko box.def 編輯器（📦）與 YataiDON box.def 產生器（🎮）
+- 高速歌曲清單：上千首一次顯示、可依欄位排序、無需分頁
+- 即打即搜（支援日文標題），可依分類篩選
+- **依 BPM 區間與難度等級篩選**（簡單／普通／困難／魔王／裏）
+- 批次下載，可**暫停／繼續／停止**，即時進度、失敗一鍵重試
+- **檢查缺漏**與**檢查更新**：找出尚未下載的歌，或上游已更新的譜面（以 git blob 雜湊比對）
+- 歌曲資料庫由 GitHub 每 6 小時從 ESE 自動重建；按「更新資料庫」即下載最新版（約 5 MB），
+  啟動時有新版也會詢問
 - 下載會驗證（TLS、檔案大小、譜面的 git blob 雜湊），並先寫到 `.part` 檔，中斷也不會留下壞檔
-- 未安裝 Git 時可自動下載可攜版 Git（只有手動按「更新資料庫」才需要）
-- 介面語言自動偵測（English／繁體中文／日本語）
+- 淺色／深色主題，介面語言自動偵測（English／繁體中文／日本語）
+- Rolling release：有新版本時狀態列會提示
 
 ## 快速開始
 
-從 [Releases 頁面](https://github.com/GanYiZhong/ESEManager/releases)下載對應平台的壓縮檔，
-解壓後執行 `ESEManager`（Windows 為 `ESEManager.exe`）。第一次啟動時程式會詢問是否下載預先建好的
-歌曲資料庫（約 5 MB），之後即可搜尋與下載。
+從 [Releases 頁面](https://github.com/GanYiZhong/ESEManager/releases/latest)下載對應平台的最新版，
+解壓後執行 `ESEManager`（Windows 為 `ESEManager.exe`）。第一次啟動時程式會詢問是否下載歌曲資料庫，
+之後即可搜尋與下載。
 
-設定檔、資料庫和預設的 `Downloads` 資料夾都放在執行檔旁邊。
+設定檔、資料庫和預設的 `Downloads` 資料夾都放在執行檔旁邊，新版直接解壓覆蓋舊資料夾即可。
 
 Linux 若出現無法載入 Qt `xcb` 外掛的錯誤，請安裝 `libxcb-cursor0`（Debian/Ubuntu）或
 `xcb-util-cursor`（Fedora/Arch）。
 
 ## 從原始碼執行
 
-需要 Python 3.9+（Windows、Linux、macOS 皆可）。只有自行重建資料庫時才需要 Git。
+需要 Python 3.9+（Windows、Linux、macOS 皆可）。
 
 ```
 pip install -r requirements.txt
@@ -62,52 +56,41 @@ python scripts/fetch_release_dbs.py dist/ESEManager   # 選用：一併放入目
 
 輸出：`dist/ESEManager/` 資料夾（onedir），發佈時整個資料夾一起打包。
 
-## 發佈流程
+## 發佈方式（rolling release）
 
-1. 推送到 `main`。**Release builds** workflow（`.github/workflows/release.yml`）會在每次推送和
-   PR 時打包並測試 Windows 與 Linux 版。
-2. 建立並發佈 GitHub release（例如 `gh release create v1.2.0 --generate-notes`）。
-3. 同一個 workflow 會從該 tag 打包兩個平台、放入經 `manifest.json` 驗證的資料庫，並上傳
-   `ESEManager_<tag>_windows-x86_64.7z`、`ESEManager_<tag>_linux-x86_64.tar.gz` 及各自的 `.sha256`。
+每次推送到 `main` 且有改到程式（`src/`、`packaging/`、`assets/`、requirements），
+`.github/workflows/release.yml` 就會自動：
 
-要重新打包既有 release 的檔案，可手動執行該 workflow 並填入 tag。
+1. 跑測試、打包 Windows 與 Linux 版並做冒煙測試；
+2. 以日期為版本號發佈 release：`v2026.11.18`，同一天第二版為 `v2026.11.18.2`（台北時間），
+   release notes 為這次的 commit 清單，附上
+   `ESEManager_<版本>_windows-x86_64.7z`、`ESEManager_<版本>_linux-x86_64.tar.gz` 及各自的 `.sha256`。
+
+只改測試、文件或 workflow 的推送只會打包不發佈。commit 訊息加上 `[skip release]` 可刻意不發佈。
+PR 只會打包與測試。要重新打包既有 release 的檔案，可手動執行該 workflow 並填入 tag。
 
 ## 預先建好的資料庫（GitHub Pages）
 
 `.github/workflows/pages-db.yml` 每 6 小時從 ESE 重建 `ese_songs.db` 與 `ese_local.db`（ESE 沒有新
 commit 時直接略過），發佈到 <https://ganyizhong.github.io/ESEManager/>，並附上 `version.txt` 與含
-SHA-256 的 `manifest.json`。程式啟動時會比對版本並詢問是否更新。
+SHA-256 的 `manifest.json`。手動執行時勾選 **force** 可強制重建。
 
-## 用命令列更新資料庫（選用）
-
-程式內的 **更新資料庫** 按鈕已涵蓋此流程。命令列等效做法：
+在本機建立同樣的資料庫（需要 Git）：
 
 ```
-update_databases.bat
-```
-
-或手動：
-
-```
-python src/ese_scraper_git_v2.py --keep     # 歌曲清單 -> ese_songs.db
-python src/build_local_db.py --remote        # 日文標題 -> ese_local.db
+python scripts/build_pages_db.py --out site
 ```
 
 ## 專案結構
 
 ```
-src/         GUI 程式（ese_qt.py 主視窗；appconfig、i18n、models、workers、boxdef、dialogs 等模組）、
-             下載器、爬蟲、TJA 解析
-scripts/     GitHub Pages 資料庫建置、發佈用資料庫下載
+src/         GUI 程式（ese_qt.py 主視窗；appconfig、i18n、models、workers、theme、notify）、
+             下載器、TJA 解析、資料庫建置（CI 使用）
+scripts/     GitHub Pages 資料庫建置、發佈用資料庫下載、圖示產生
 tests/       pytest 測試
-.github/     workflows：發佈資料庫、打包 release
+.github/     workflows：發佈資料庫、rolling release
 packaging/   PyInstaller spec
 ```
-
-## 致謝
-
-- **段位生成**與**段位變換**功能移植自
-  [bluetaiko/SongConvertor](https://github.com/bluetaiko/SongConvertor)（MIT License），特此感謝原作者。
 
 ## 資料來源
 
