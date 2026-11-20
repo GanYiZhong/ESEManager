@@ -11,7 +11,7 @@
 - **依 BPM 區間與難度等級篩選**（簡單／普通／困難／魔王／裏）
 - 批次下載，可**暫停／繼續／停止**，即時進度、失敗一鍵重試
 - **檢查缺漏**與**檢查更新**：找出尚未下載的歌，或上游已更新的譜面（以 git blob 雜湊比對）
-- 歌曲資料庫由 GitHub 每 6 小時從 ESE 自動重建；按「更新資料庫」即下載最新版（約 5 MB），
+- 歌曲資料庫由 GitHub 每 6 小時從 ESE 自動重建；按「更新資料庫」即下載最新版，
   啟動時有新版也會詢問
 - 下載會驗證（TLS、檔案大小、譜面的 git blob 雜湊），並先寫到 `.part` 檔，中斷也不會留下壞檔
 - 淺色／深色主題，介面語言自動偵測（English／繁體中文／日本語）
@@ -37,7 +37,7 @@ Release 版在主程式旁附有 `ESEManager-cli`（Windows 為 `ESEManager-cli.
 `python src/cli.py`。與 GUI 共用同一份資料庫、設定與下載目錄。
 
 ```
-ESEManager-cli status                      # 版本、資料夾、歌曲數
+ESEManager-cli status [--offline]          # 版本、資料夾、歌曲數
 ESEManager-cli update-db                   # 下載最新歌曲資料庫
 ESEManager-cli search 千本桜               # 也支援日文標題
 ESEManager-cli download Senbonzakura -y    # 下載符合的歌
@@ -47,25 +47,48 @@ ESEManager-cli updates --download -y       # 下載上游更新過的譜面
 ESEManager-cli version-sorting             # 安裝／更新 ESE-Version-Sorting
 ```
 
-選項：`--dir 資料夾`、`--workers 數量`、`--lang zh_TW|en|ja`。結束碼 0＝成功、1＝有失敗、2＝沒事可做或用法錯誤。
+| 選項 | 適用指令 | 說明 |
+|---|---|---|
+| `--dir 資料夾` | 全部 | 下載目錄（預設讀 `config.toml`，否則為程式旁的 `Downloads`） |
+| `--workers N` | download、missing、updates | 並行下載數 1–8（預設讀 `config.toml`，否則 3） |
+| `--lang zh_TW\|en\|ja` | 全部 | 訊息語言 |
+| `--json` | 全部 | stdout 每行輸出一個 JSON 物件，訊息改到 stderr |
+| `-c`, `--category 名稱` | search、download | 分類或分類名稱的一部分（`-c Anime`） |
+| `--limit N` | search、missing、updates | 最多列出幾筆（預設 50，0＝全部） |
+| `--all` | download | 下載全部歌曲 |
+| `--download` | missing、updates | 直接下載找到的項目，而不是只列出 |
+| `-y`, `--yes` | download、missing、updates | 不詢問確認 |
+| `--force` | update-db、version-sorting | 已是最新也重新下載 |
+| `--offline` | status | 不向 GitHub Pages 查詢最新資料庫版本 |
+
+結束碼 0＝成功、1＝有失敗、2＝沒事可做或用法錯誤。沒有終端機時（腳本、排程）確認提示一律視為「否」，
+請加上 `-y`。
+
+```
+ESEManager-cli search Senbonzakura --json | jq -r .song
+```
 
 ## 從原始碼執行
 
-需要 Python 3.9+（Windows、Linux、macOS 皆可）。
+需要 Python 3.9+（Windows、Linux；macOS 理論上可用但未測試）。
 
 ```
 pip install -r requirements.txt
 python src/ese_qt.py
 ```
 
-從原始碼執行時，資料檔放在專案根目錄。
+從原始碼執行時，資料檔放在專案根目錄。`config.toml` 會在第一次執行時建立，可用的設定見
+`config.toml.example`。`update_databases.bat`／`update_databases.sh` 會下載最新的預先建好資料庫
+（等同 `cli.py update-db`）。警告與錯誤會寫進程式旁的 `ESEManager.log`。
 
 ## 測試
 
 ```
-pip install -r requirements.txt pytest
-python -m pytest tests
+pip install -r requirements.txt -r requirements-test.txt
+python -m pytest tests --cov=src
 ```
+
+CI 會在 Windows 與 Linux 上跑測試，並要求最低覆蓋率。
 
 ## 打包成執行檔
 
@@ -87,7 +110,7 @@ python scripts/fetch_release_dbs.py dist/ESEManager   # 選用：一併放入目
    release notes 為這次的 commit 清單，附上
    `ESEManager_<版本>_windows-x86_64.7z`、`ESEManager_<版本>_linux-x86_64.tar.gz` 及各自的 `.sha256`。
 
-只改測試、文件或 workflow 的推送只會打包不發佈。commit 訊息加上 `[skip release]` 可刻意不發佈。
+只改測試、文件或 workflow 的推送只會打包不發佈。commit 第一行加上 `[skip release]` 可刻意不發佈。
 PR 只會打包與測試。要重新打包既有 release 的檔案，可手動執行該 workflow 並填入 tag。
 
 ## 預先建好的資料庫（GitHub Pages）
@@ -112,13 +135,28 @@ python scripts/build_pages_db.py --out site
 ## 專案結構
 
 ```
-src/         GUI 程式（ese_qt.py 主視窗；appconfig、i18n、models、workers、theme、notify）、
-             下載器、TJA 解析、資料庫建置（CI 使用）
+src/
+  ese_qt.py            主視窗與進入點
+  cli.py               命令列模式
+  core.py              搜尋、下載、更新檢查、資料庫與版本分類更新（不依賴 Qt）
+  workers.py           給 GUI 用的 QThread 薄包裝，呼叫 core.py
+  appconfig.py         資料路徑、網址、版本、安全路徑合併
+  i18n.py              介面文字（zh_TW / en / ja）
+  models.py            歌曲清單與下載表格的 model
+  theme.py, notify.py  淺色／深色主題；圖示與完成通知
+  ese_scraper_git_v2.py, build_local_db.py, tja_parser.py   資料庫建置（CI 使用）
 scripts/     GitHub Pages 資料庫建置、發佈用資料庫下載、圖示產生
 tests/       pytest 測試
 .github/     workflows：發佈資料庫、rolling release
 packaging/   PyInstaller spec
 ```
+
+## 參與開發
+
+- 不需要 Qt 的邏輯放在 `core.py`，讓 CLI 與測試都能用；GUI 透過 `workers.py` 呼叫。
+- 所有使用者看得到的文字都放進 `i18n.py`，三種語言都要補。
+- 在 `tests/` 新增或更新測試，送 PR 前先跑 `python -m pytest tests`。
+- 對 ESE 伺服器客氣一點：不要為了中繼資料逐檔發 HTTP 請求，下載並行數保持在低檔。
 
 ## 資料來源
 

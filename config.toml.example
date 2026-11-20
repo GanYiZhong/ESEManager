@@ -4,8 +4,8 @@
 # Download directory (relative or absolute path)
 directory = "Downloads"
 
-# Parallel download threads (1-16)
-workers = 5
+# Parallel downloads (1-8). Keep it low to be gentle with the ESE server.
+workers = 3
 
 [display]
 # Kept for compatibility (not used by the current GUI)
@@ -13,3 +13,6 @@ page_size = 20
 
 # UI language: "auto" (follow system), "zh_TW", "en", "ja"
 ui_language = "auto"
+
+# Theme: "auto" (follow system), "light", "dark"
+theme = "auto"

@@ -1,4 +1,4 @@
-# Exact versions used by the release builds (.github/workflows/release-*.yml).
+# Exact versions used by the release builds (.github/workflows/release.yml).
 # requirements.txt keeps loose lower bounds for running from source; bump these
 # deliberately and check the smoke tests when upgrading.
 requests==2.34.2

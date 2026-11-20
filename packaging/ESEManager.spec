@@ -5,7 +5,6 @@ _common = dict(
     pathex=['../src'],
     binaries=[],
     datas=[
-        ('../src/download_songs.py', '.'),
         ('../assets', 'assets'),
     ],
     hiddenimports=[
@@ -15,11 +14,9 @@ _common = dict(
         'tomli',
         'tomli_w',
         'concurrent.futures',
-        'download_songs',
-        'ese_scraper_git_v2',
-        'build_local_db',
-        'tja_parser',
         'appconfig',
+        'core',
+        'theme',
         'app_version',
         'i18n',
         'models',

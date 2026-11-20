@@ -26,9 +26,9 @@ CATEGORY_COLORS = {
 TR = {
     "zh_TW": {
         "title": "🎵 ESEManager", "search": "搜尋", "show_all": "顯示全部",
-        "clear": "清除", "ph": "搜尋歌曲名稱 (支援日文)...", "category": "分類",
+        "clear": "清除", "ph": "搜尋歌曲名稱，支援日文（Ctrl+F）", "category": "分類",
         "all_cat": "全部分類", "official": "✉ 聯絡我們", "check_missing": "🔍 檢查缺漏",
-        "download": "⬇ 下載選中的歌曲", "sel_all": "全選", "desel_all": "取消",
+        "download": "⬇ 下載選中的歌曲", "sel_all": "全選", "desel_all": "全不選",
         "selected": "已選擇 {n} 首", "dir": "下載目錄", "browse": "瀏覽", "workers": "並行數",
         "lang": "語言", "c_sel": "✓", "c_song": "歌曲名稱", "c_jp": "日文標題",
         "c_cat": "分類", "c_files": "檔案數", "monitor": "下載監控", "tab_prog": "進度",
@@ -64,9 +64,9 @@ TR = {
     },
     "en": {
         "title": "🎵 ESEManager", "search": "Search", "show_all": "Show All",
-        "clear": "Clear", "ph": "Search songs (Japanese supported)...", "category": "Category",
+        "clear": "Clear", "ph": "Search songs, Japanese supported (Ctrl+F)", "category": "Category",
         "all_cat": "All Categories", "official": "✉ Contact us", "check_missing": "🔍 Check Missing",
-        "download": "⬇ Download Selected", "sel_all": "Select All", "desel_all": "Deselect",
+        "download": "⬇ Download Selected", "sel_all": "Select All", "desel_all": "Select None",
         "selected": "{n} selected", "dir": "Download Dir", "browse": "Browse", "workers": "Workers",
         "lang": "Language", "c_sel": "✓", "c_song": "Song", "c_jp": "Japanese",
         "c_cat": "Category", "c_files": "Files", "monitor": "Download Monitor", "tab_prog": "Progress",
@@ -102,9 +102,9 @@ TR = {
     },
     "ja": {
         "title": "🎵 ESEManager", "search": "検索", "show_all": "すべて表示",
-        "clear": "クリア", "ph": "楽曲名を検索（日本語対応）...", "category": "カテゴリー",
+        "clear": "クリア", "ph": "楽曲名を検索・日本語対応（Ctrl+F）", "category": "カテゴリー",
         "all_cat": "すべて", "official": "✉ お問い合わせ", "check_missing": "🔍 不足チェック",
-        "download": "⬇ 選択をダウンロード", "sel_all": "全選択", "desel_all": "解除",
+        "download": "⬇ 選択をダウンロード", "sel_all": "全選択", "desel_all": "選択解除",
         "selected": "{n} 曲選択", "dir": "保存先", "browse": "参照", "workers": "並列数",
         "lang": "言語", "c_sel": "✓", "c_song": "楽曲名", "c_jp": "日本語",
         "c_cat": "カテゴリー", "c_files": "ファイル", "monitor": "ダウンロード状況", "tab_prog": "進捗",
@@ -144,7 +144,7 @@ TR = {
 # Strings for first-run guidance, download/DB status and worker logs.
 TR["zh_TW"].update({
     "empty_hint": "尚未下載歌曲資料庫。程式啟動時會詢問是否下載預先建好的資料庫；"
-                  "也可以按上方「🔄 更新資料庫」自行從 ESE 建立。",
+                  "也可以隨時按上方「🔄 更新資料庫」下載。",
     "no_selection": "請先勾選要下載的歌曲。",
     "dl_busy": "下載進行中，請等目前的下載完成或先停止。",
     "dl_confirm_many": "即將下載 {n} 首歌曲（{f} 個檔案），可能需要很長時間與大量磁碟空間。\n是否繼續？",
@@ -158,7 +158,7 @@ TR["zh_TW"].update({
     "db_reloading": "正在載入資料庫…",
     "dbv_title": "資料庫更新",
     "dbv_found": "發現新版本資料庫\n目前：{cur}\n最新：{new}\n是否更新？",
-    "dbv_first": "尚未有歌曲資料庫。\n要下載最新的預先建好資料庫（{v}，約 5 MB）嗎？",
+    "dbv_first": "尚未有歌曲資料庫。\n要下載最新的預先建好資料庫（{v}）嗎？",
     "dbv_none": "無",
     "dbv_ok": "✓ 資料庫更新成功",
     "quit_busy": "下載或資料庫更新仍在進行中。\n確定要結束嗎？未完成的檔案不會被保留。",
@@ -173,7 +173,7 @@ TR["zh_TW"].update({
 
 TR["en"].update({
     "empty_hint": "No song database yet. At startup the app offers to download the prebuilt "
-                  "database; you can also build it from ESE with \"🔄 Update DB\" above.",
+                  "database; you can also download it any time with \"🔄 Update DB\" above.",
     "no_selection": "Select the songs to download first.",
     "dl_busy": "A download is already running. Wait for it to finish or stop it first.",
     "dl_confirm_many": "About to download {n} songs ({f} files). This can take a long time "
@@ -189,7 +189,7 @@ TR["en"].update({
     "dbv_title": "Database update",
     "dbv_found": "A newer database is available.\nCurrent: {cur}\nLatest: {new}\nUpdate now?",
     "dbv_first": "There is no song database yet.\nDownload the latest prebuilt database "
-                 "({v}, about 5 MB)?",
+                 "({v})?",
     "dbv_none": "none",
     "dbv_ok": "✓ Database updated",
     "quit_busy": "A download or database update is still running.\nQuit anyway? "
@@ -205,7 +205,7 @@ TR["en"].update({
 
 TR["ja"].update({
     "empty_hint": "曲データベースがまだありません。起動時にビルド済みデータベースのダウンロードを"
-                  "確認します。上の「🔄 データベース更新」で ESE から作成することもできます。",
+                  "確認します。上の「🔄 データベース更新」からいつでもダウンロードできます。",
     "no_selection": "先にダウンロードする曲を選択してください。",
     "dl_busy": "ダウンロード中です。完了するか停止してから実行してください。",
     "dl_confirm_many": "{n} 曲（{f} ファイル）をダウンロードします。時間とディスク容量が"
@@ -220,7 +220,7 @@ TR["ja"].update({
     "db_reloading": "データベースを読み込み中…",
     "dbv_title": "データベース更新",
     "dbv_found": "新しいデータベースがあります。\n現在：{cur}\n最新：{new}\n更新しますか？",
-    "dbv_first": "曲データベースがまだありません。\n最新のビルド済みデータベース（{v}、約 5 MB）を"
+    "dbv_first": "曲データベースがまだありません。\n最新のビルド済みデータベース（{v}）を"
                  "ダウンロードしますか？",
     "dbv_none": "なし",
     "dbv_ok": "✓ データベースを更新しました",
@@ -263,7 +263,7 @@ def detect_system_lang():
 
 # --- main window layout
 TR["zh_TW"].update({
-    "dir_missing": "資料夾不存在",
+    "dir_missing": "下載資料夾不存在：\n{d}\n\n請到「檔案 → 設定」選擇資料夾。",
     "mw_menu_file": "檔案(&F)",
     "mw_menu_tools": "工具(&T)",
     "mw_menu_help": "說明(&H)",
@@ -274,7 +274,7 @@ TR["zh_TW"].update({
 })
 
 TR["en"].update({
-    "dir_missing": "Folder does not exist",
+    "dir_missing": "The download folder does not exist:\n{d}\n\nChoose one in File → Settings.",
     "mw_menu_file": "&File",
     "mw_menu_tools": "&Tools",
     "mw_menu_help": "&Help",
@@ -285,7 +285,7 @@ TR["en"].update({
 })
 
 TR["ja"].update({
-    "dir_missing": "フォルダが存在しません",
+    "dir_missing": "ダウンロードフォルダーが存在しません：\n{d}\n\n「ファイル → 設定」で選択してください。",
     "mw_menu_file": "ファイル(&F)",
     "mw_menu_tools": "ツール(&T)",
     "mw_menu_help": "ヘルプ(&H)",
@@ -431,4 +431,47 @@ TR["ja"].update({
     "cli_db_remote": "最新のデータベース",
     "cli_download_what": "キーワード、--category、またはすべてなら --all を指定してください。",
     "cli_continue": "続行しますか？",
+})
+
+
+# --- usability: shortcuts, result views, language restart, damaged database
+TR["zh_TW"].update({
+    "download_tip": "下載勾選的歌曲（Ctrl+D）",
+    "shortcuts": "⌨ 快捷鍵",
+    "shortcuts_text": "Ctrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\n"
+                      "Ctrl+,　設定\n雙擊列　勾選／取消勾選",
+    "view_missing": "目前只顯示缺漏的 {n} 首歌曲。",
+    "view_updates": "目前只顯示有更新的 {n} 首歌曲。",
+    "view_back": "顯示全部",
+    "missing_checking": "正在檢查缺漏…",
+    "lang_restart": "需要重新啟動程式才能套用新語言。\n現在重新啟動嗎？（選「否」則下次啟動時套用）",
+    "db_corrupt": "歌曲資料庫無法讀取，可能已損毀。\n請按「🔄 更新資料庫」重新下載。\n\n{e}",
+})
+TR["en"].update({
+    "download_tip": "Download the checked songs (Ctrl+D)",
+    "shortcuts": "⌨ Keyboard Shortcuts",
+    "shortcuts_text": "Ctrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\n"
+                      "Ctrl+,  Settings\nDouble-click a row  Check / uncheck",
+    "view_missing": "Showing only the {n} songs with missing files.",
+    "view_updates": "Showing only the {n} songs with upstream changes.",
+    "view_back": "Show All",
+    "missing_checking": "Checking for missing files…",
+    "lang_restart": "The app must restart to use the new language.\nRestart now? "
+                    "(No = apply on next launch)",
+    "db_corrupt": "The song database cannot be read and may be damaged.\n"
+                  "Click \"🔄 Update DB\" to download it again.\n\n{e}",
+})
+TR["ja"].update({
+    "download_tip": "チェックした曲をダウンロード（Ctrl+D）",
+    "shortcuts": "⌨ キーボードショートカット",
+    "shortcuts_text": "Ctrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\n"
+                      "Ctrl+,　設定\n行をダブルクリック　チェックの切り替え",
+    "view_missing": "不足している {n} 曲のみ表示しています。",
+    "view_updates": "更新のある {n} 曲のみ表示しています。",
+    "view_back": "すべて表示",
+    "missing_checking": "不足ファイルを確認中…",
+    "lang_restart": "新しい言語を適用するには再起動が必要です。\n今すぐ再起動しますか？"
+                    "（「いいえ」で次回起動時に適用）",
+    "db_corrupt": "曲データベースを読み込めません。破損している可能性があります。\n"
+                  "「🔄 データベース更新」で再ダウンロードしてください。\n\n{e}",
 })

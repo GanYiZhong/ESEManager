@@ -60,3 +60,23 @@ def test_search_missing_and_download_guard(app):
         (tmp / "Downloads" / "01 Pop" / "Song" / name).write_bytes(b"x")
     rc, out = run("missing")
     assert rc == 0 and "Nothing missing" in out
+
+
+def test_json_output_and_offline_status(app):
+    import json
+    tmp, run = app
+    make_db(tmp / "ese_songs.db")
+    env = dict(os.environ, PYTHONUTF8="1")
+    r = subprocess.run([sys.executable, str(tmp / "src" / "cli.py"), "search", "Song",
+                        "--json", "--lang", "en"], capture_output=True, text=True,
+                       encoding="utf-8", env=env, timeout=120)
+    assert r.returncode == 0
+    rows = [json.loads(line) for line in r.stdout.splitlines()]
+    assert rows == [{"song": "Song", "title_ja": None, "category": "01 Pop",
+                     "files": ["01 Pop/Song/Song.ogg", "01 Pop/Song/Song.tja"]}]
+    assert "1 songs" in r.stderr                       # messages stay off stdout
+    r = subprocess.run([sys.executable, str(tmp / "src" / "cli.py"), "status", "--offline",
+                        "--json"], capture_output=True, text=True, encoding="utf-8",
+                       env=env, timeout=120)
+    st = json.loads(r.stdout)
+    assert r.returncode == 0 and st["songs"] == 1 and st["db_latest"] is None

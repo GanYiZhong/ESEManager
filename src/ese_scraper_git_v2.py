@@ -6,99 +6,13 @@ V2: 支援智能去重和歌曲檔案關聯
 
 import sqlite3
 import os
-import sys
 import subprocess
 import shutil
 import threading
 import urllib.parse
 from pathlib import Path
-from typing import Optional
 
-from appconfig import ESE_RAW_BASE as DOWNLOAD_BASE, PORTABLE_GIT_DIR, ESE_GIT
-
-
-def find_git() -> Optional[str]:
-    """回傳可用的 git 執行檔路徑：先找系統 PATH，再找本機可攜版；都沒有回 None。"""
-    # Pass PATH explicitly: on Windows, shutil.which() without it also searches
-    # the current directory, which could run a planted git.exe.
-    sys_git = shutil.which("git", path=os.environ.get("PATH", ""))
-    if sys_git:
-        return sys_git
-    for sub in ("cmd/git.exe", "bin/git.exe", "mingw64/bin/git.exe"):
-        cand = os.path.join(PORTABLE_GIT_DIR, sub)
-        if os.path.exists(cand):
-            return cand
-    return None
-
-
-def download_portable_git(dest_dir: str = PORTABLE_GIT_DIR) -> Optional[str]:
-    """
-    下載 git-for-windows 的可攜版 MinGit 並解壓到 dest_dir，回傳 git.exe 路徑。
-    透過 GitHub API 找最新版的 MinGit-*-64-bit.zip（不需安裝、不需管理員）。
-    """
-    import requests
-    import zipfile
-    import io
-    import hashlib
-
-    if sys.platform != "win32":
-        print("✗ 自動下載可攜版 git 僅支援 Windows，請手動安裝 git")
-        return None
-
-    print("正在查詢最新版可攜版 git (MinGit)...")
-    api = "https://api.github.com/repos/git-for-windows/git/releases/latest"
-    r = requests.get(api, timeout=30, headers={"User-Agent": "ESEManager"})
-    r.raise_for_status()
-    asset = None
-    for a in r.json().get("assets", []):
-        n = a.get("name", "")
-        if n.startswith("MinGit-") and n.endswith("-64-bit.zip") and "busybox" not in n:
-            asset = a
-            break
-    if not asset:
-        print("✗ 找不到 MinGit 下載連結，請手動安裝 git: https://git-scm.com/downloads")
-        return None
-
-    url = asset["browser_download_url"]
-    size_mb = asset.get("size", 0) / 1024 / 1024
-    print(f"下載 {asset['name']} ({size_mb:.0f} MB)...")
-    dl = requests.get(url, timeout=300, stream=True, headers={"User-Agent": "ESEManager"})
-    dl.raise_for_status()
-    buf = io.BytesIO()
-    got = 0
-    h = hashlib.sha256()
-    for chunk in dl.iter_content(1 << 16):
-        if chunk:
-            buf.write(chunk)
-            h.update(chunk)
-            got += len(chunk)
-            if got % (4 << 20) < (1 << 16):
-                print(f"  已下載 {got/1024/1024:.0f} MB...")
-
-    # GitHub publishes a sha256 digest for each release asset; refuse a mismatch.
-    digest = (asset.get("digest") or "").lower()
-    if digest.startswith("sha256:"):
-        if h.hexdigest() != digest.split(":", 1)[1]:
-            print("✗ MinGit checksum mismatch; aborted")
-            return None
-        print("✓ sha256 OK")
-    elif asset.get("size") and got != asset["size"]:
-        print("✗ MinGit download incomplete; aborted")
-        return None
-
-    print("解壓中...")
-    if os.path.exists(dest_dir):
-        shutil.rmtree(dest_dir, ignore_errors=True)
-    os.makedirs(dest_dir, exist_ok=True)
-    with zipfile.ZipFile(buf) as z:
-        z.extractall(dest_dir)
-
-    git_exe = find_git()
-    if git_exe:
-        print(f"✓ 可攜版 git 就緒: {git_exe}")
-    else:
-        print("✗ 解壓後仍找不到 git.exe")
-    return git_exe
+from appconfig import ESE_RAW_BASE as DOWNLOAD_BASE, ESE_GIT
 
 
 def _force_rmtree(path):

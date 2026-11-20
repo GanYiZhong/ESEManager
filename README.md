@@ -14,7 +14,7 @@ from the **ESE (Every Song Ever)** project.
 - **Check missing** and **check updates**: find songs you have not downloaded yet, or
   downloaded charts that changed upstream (compared by git blob hash)
 - Song databases are rebuilt from ESE every 6 hours on GitHub; **Update DB** downloads the
-  latest one (about 5 MB), and the app offers it on startup when a newer one exists
+  latest one, and the app offers it on startup when a newer one exists
 - Downloads are verified (TLS, size and git blob hash for charts) and written to a `.part` file
   first, so an interrupted download never leaves a broken file behind
 - Light / dark theme and UI language auto-detect (English / 繁體中文 / 日本語)
@@ -42,7 +42,7 @@ Release builds include `ESEManager-cli` (`ESEManager-cli.exe` on Windows) next t
 source run `python src/cli.py`. It uses the same databases, settings and download folder.
 
 ```
-ESEManager-cli status                      # versions, folders, song count
+ESEManager-cli status [--offline]          # versions, folders, song count
 ESEManager-cli update-db                   # download the latest song database
 ESEManager-cli search 千本桜               # Japanese titles work too
 ESEManager-cli download Senbonzakura -y    # download matching songs
@@ -52,26 +52,49 @@ ESEManager-cli updates --download -y       # charts changed upstream
 ESEManager-cli version-sorting             # install/refresh ESE-Version-Sorting
 ```
 
-Options: `--dir DIR`, `--workers N`, `--lang zh_TW|en|ja`. Exit code 0 = success,
-1 = something failed, 2 = nothing to do / bad usage.
+| Option | Commands | Meaning |
+|---|---|---|
+| `--dir DIR` | all | download folder (default: `config.toml`, else `Downloads` next to the app) |
+| `--workers N` | download, missing, updates | parallel downloads, 1–8 (default: `config.toml`, else 3) |
+| `--lang zh_TW\|en\|ja` | all | message language |
+| `--json` | all | one JSON object per line on stdout; messages go to stderr |
+| `-c`, `--category NAME` | search, download | category, or part of its name (`-c Anime`) |
+| `--limit N` | search, missing, updates | rows to print (default 50, 0 = all) |
+| `--all` | download | download every song |
+| `--download` | missing, updates | download what was found instead of listing it |
+| `-y`, `--yes` | download, missing, updates | do not ask for confirmation |
+| `--force` | update-db, version-sorting | download even if already up to date |
+| `--offline` | status | do not ask GitHub Pages for the latest database version |
+
+Exit code 0 = success, 1 = something failed, 2 = nothing to do / bad usage. Without a
+terminal (scripts, cron) confirmation prompts answer "no", so pass `-y` there.
+
+```
+ESEManager-cli search Senbonzakura --json | jq -r .song
+```
 
 ## Run from source
 
-Requires Python 3.9+.
+Requires Python 3.9+ (Windows or Linux; macOS should work but is not tested).
 
 ```
 pip install -r requirements.txt
 python src/ese_qt.py
 ```
 
-Data files are kept in the repository root when running from source.
+Data files are kept in the repository root when running from source. `config.toml` is created
+on first run; see `config.toml.example` for the settings. `update_databases.bat` /
+`update_databases.sh` download the latest prebuilt databases (same as `cli.py update-db`).
+Warnings and errors are written to `ESEManager.log` next to the app.
 
 ## Tests
 
 ```
-pip install -r requirements.txt pytest
-python -m pytest tests
+pip install -r requirements.txt -r requirements-test.txt
+python -m pytest tests --cov=src
 ```
+
+CI runs the tests on Windows and Linux with a minimum coverage.
 
 ## Build the executable
 
@@ -95,7 +118,7 @@ released automatically by `.github/workflows/release.yml`:
    `.sha256` for each.
 
 Pushes that only touch tests, docs or the workflow build without publishing. Add
-`[skip release]` to a commit message to skip publishing on purpose. Pull requests are built and
+`[skip release]` to a commit's first line to skip publishing on purpose. Pull requests are built and
 tested only. To rebuild an existing release's files, run the workflow manually with its tag.
 
 ## Prebuilt databases (GitHub Pages)
@@ -127,19 +150,28 @@ python scripts/build_pages_db.py --out site
 ```
 src/
   ese_qt.py            main window and entry point
+  cli.py               command-line mode
+  core.py              search, downloads, update checks, DB / version-sorting updates (no Qt)
+  workers.py           thin QThread wrappers around core.py for the GUI
   appconfig.py         data paths, URLs, version, safe path joining
   i18n.py              UI strings (zh_TW / en / ja)
   models.py            song list and download table models
-  workers.py           background threads (search, download, update checks, DB download)
   theme.py, notify.py  light/dark theme; icon and completion notifications
-  tja_parser.py        TJA parsing and the shared text decoder
-  download_songs.py    song search (also a CLI downloader)
-  ese_scraper_git_v2.py, build_local_db.py   database builders (used by CI)
+  ese_scraper_git_v2.py, build_local_db.py, tja_parser.py   database builders (used by CI)
 scripts/     GitHub Pages database builder, release database fetcher, icon generator
 tests/       pytest suite
 .github/     workflows: database publishing and rolling releases
 packaging/   PyInstaller spec
 ```
+
+## Contributing
+
+- Keep logic that does not need Qt in `core.py`, so the CLI and tests can use it; the GUI calls
+  it through `workers.py`.
+- Every user-visible string goes into `i18n.py` in all three languages.
+- Add or update tests in `tests/` and run `python -m pytest tests` before opening a pull request.
+- Be gentle with the ESE server: no per-file HTTP loops for metadata, keep download
+  parallelism low.
 
 ## Data source
 

@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 import requests  # noqa: E402
 
 from appconfig import DB_RELEASE_URL, SQLITE_MAGIC  # noqa: E402
+from core import get_with_retry  # noqa: E402
 
 DB_FILES = ("ese_songs.db", "ese_local.db")
 
@@ -36,14 +37,13 @@ def main():
 
     sess = requests.Session()
     sess.headers["User-Agent"] = "ESEManager-release-builder"
-    r = sess.get(base + "manifest.json", timeout=30)
-    r.raise_for_status()
+    # A brief GitHub Pages hiccup should not fail the release build.
+    r = get_with_retry(sess, base + "manifest.json", attempts=5, timeout=30)
     manifest = r.json()
 
     for name in DB_FILES:
         want = manifest["files"][name]["sha256"]
-        r = sess.get(base + name, timeout=300)
-        r.raise_for_status()
+        r = get_with_retry(sess, base + name, attempts=5, timeout=300)
         data = r.content
         if not data.startswith(SQLITE_MAGIC):
             raise SystemExit(f"{name}: not a SQLite file")

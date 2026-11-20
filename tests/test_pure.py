@@ -6,7 +6,7 @@ import pytest
 
 from appconfig import UnsafePathError, live_url, resolve_dir, safe_join, APP_DIR
 from tja_parser import TJAParser, decode_tja_bytes
-from models import human_eta, human_speed
+from core import human_eta, human_speed
 
 
 # ---------------------------------------------------------------- safe_join

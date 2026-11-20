@@ -37,8 +37,9 @@ on:
         required: false
         default: ""
 
+# Read-only by default; only the publish job may write (create the release).
 permissions:
-  contents: write
+  contents: read
 
 # One release run at a time on main, so two pushes never pick the same version.
 concurrency:
@@ -47,7 +48,14 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,15 +63,17 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-build.txt
-      - name: Install dependencies
+      - name: Install system libraries (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libegl1 libxkbcommon0
-          pip install -r requirements-build.txt pytest
+      - name: Install dependencies
+        run: pip install -r requirements-build.txt -r requirements-test.txt
       - name: Unit tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q tests
+        run: python -m pytest -q tests --cov=src --cov-report=term --cov-fail-under=55
 
   version:
     needs: test
@@ -115,8 +125,21 @@ jobs:
           subject="${MESSAGE%%$'\n'*}"
           case "$subject" in *"[skip release]"*) publish=false ;; esac
           base="v$(TZ=Asia/Taipei date +%Y.%m.%d)"
-          n=$(git tag -l "$base" "$base.*" | wc -l)
-          if [ "$n" -eq 0 ]; then version="$base"; else version="$base.$((n + 1))"; fi
+          # Next free suffix after the highest one used today (robust to deleted tags).
+          if ! git rev-parse -q --verify "refs/tags/$base" > /dev/null; then
+            version="$base"
+          else
+            max=1
+            for t in $(git tag -l "$base.*"); do
+              n="${t#"$base."}"
+              case "$n" in ''|*[!0-9]*) continue ;; esac
+              if [ "$n" -gt "$max" ]; then max="$n"; fi
+            done
+            version="$base.$((max + 1))"
+          fi
+          if git rev-parse -q --verify "refs/tags/$version" > /dev/null; then
+            echo "::error::tag $version already exists"; exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "Version $version (publish=$publish)"
@@ -184,10 +207,11 @@ jobs:
           cd "$RUNNER_TEMP/smoke"
           # Builds the real main window offscreen; any startup error exits non-zero.
           QT_QPA_PLATFORM=offscreen ./${{ matrix.exe }} --selftest
-          # Command-line mode: a real (small) request to GitHub Pages.
+          # Command-line mode, without network access (bundled databases only).
           if [ "$RUNNER_OS" = "Windows" ]; then cli=./ESEManager-cli.exe; else cli=./ESEManager-cli; fi
           "$cli" --version
-          "$cli" status --lang en
+          "$cli" status --offline --lang en
+          "$cli" search --json --limit 1 a > /dev/null
           # Start the GUI headless; it should still be running after 20s (timeout -> 124).
           set +e
           QT_QPA_PLATFORM=offscreen timeout 20 ./${{ matrix.exe }}
@@ -219,6 +243,8 @@ jobs:
     needs: [version, build]
     if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
       MODE: ${{ needs.version.outputs.mode }}

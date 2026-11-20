@@ -7,6 +7,7 @@ import pytest
 from PySide6.QtWidgets import QMessageBox
 
 import appconfig
+import core
 import workers
 from appconfig import is_newer, parse_version
 
@@ -34,7 +35,7 @@ def test_is_newer():
 
 
 def run_app_update(monkeypatch, base, current):
-    monkeypatch.setattr(workers, "LATEST_RELEASE_API", base + "latest.json")
+    monkeypatch.setattr(core, "LATEST_RELEASE_API", base + "latest.json")
     t = workers.AppUpdateThread(current)
     out = []
     t.found.connect(lambda tag, url: out.append((tag, url)))
@@ -64,7 +65,7 @@ def test_app_update_ignores_bad_data(http_dir, monkeypatch, qapp):
 @pytest.fixture
 def window(qapp, tmp_path, monkeypatch):
     import ese_qt
-    for mod in (appconfig, ese_qt, workers):
+    for mod in (appconfig, ese_qt, workers, core):
         for name, val in (("DB_PATH", tmp_path / "ese_songs.db"),
                           ("LOCAL_DB_PATH", tmp_path / "ese_local.db"),
                           ("CONFIG_FILE", tmp_path / "config.toml"),

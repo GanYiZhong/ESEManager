@@ -1,7 +1,7 @@
 """
 Shared paths, URLs and small helpers for ESEManager.
 
-Data files (databases, config.toml, version.txt, Downloads, ESE_clone, portablegit)
+Data files (databases, config.toml, version.txt, Downloads)
 live next to the executable when frozen, or in the repository root when running
 from source. Using absolute paths means launching from a shortcut or another
 working directory still finds the same data.
@@ -26,7 +26,6 @@ DB_PATH = app_path("ese_songs.db")
 LOCAL_DB_PATH = app_path("ese_local.db")
 VERSION_FILE = app_path("version.txt")
 CLONE_DIR = app_path("ESE_clone")
-PORTABLE_GIT_DIR = app_path("portablegit")
 DEFAULT_DOWNLOAD_DIR = "Downloads"
 
 # ---------------------------------------------------------------- remote hosts

@@ -12,7 +12,6 @@ models (table models), workers (background threads) and theme/notify.
 import os
 import re
 import sys
-import sqlite3
 import subprocess
 import webbrowser
 
@@ -32,16 +31,16 @@ from PySide6.QtWidgets import (
     QDialog, QFormLayout, QMenu, QToolButton, QWidgetAction
 )
 
-from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE, DB_PATH, LOCAL_DB_PATH,
-                       DEFAULT_DOWNLOAD_DIR, resolve_dir, safe_join, UnsafePathError)
+from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
+                       DEFAULT_DOWNLOAD_DIR, resolve_dir)
 from i18n import TR, CATEGORY_NAMES, detect_system_lang
 import theme  # light/dark palette and style-sheet helpers
-from models import SongModel, DownloadModel, human_speed, human_eta
+import core
+from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
+from models import SongModel, DownloadModel
 from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
-                     VersionSortingThread,
-                     load_jp_map,
-                     load_meta_map, read_local_version)
+                     VersionSortingThread)
 from notify import Notifier, set_app_icon
 
 
@@ -57,7 +56,6 @@ class MainWindow(QMainWindow):
         self.lang = detect_system_lang() if self.lang_pref == "auto" else self.lang_pref
         # display.theme: "auto" (follow OS) | "light" | "dark"
         self.theme_pref = self.config.get("display", {}).get("theme", "auto")
-        self.has_local = os.path.exists(LOCAL_DB_PATH)
         self.jp_map = load_jp_map()
         self.meta_map = load_meta_map()
         self.all_songs = []          # 最近一次搜尋的完整結果（篩選前）
@@ -102,7 +100,7 @@ class MainWindow(QMainWindow):
                     return tomllib.load(f)
             except Exception:
                 pass
-        return {"download": {"directory": DEFAULT_DOWNLOAD_DIR, "workers": 5},
+        return {"download": {"directory": DEFAULT_DOWNLOAD_DIR, "workers": 3},
                 "display": {"page_size": 20, "ui_language": "auto", "theme": "auto"}}
 
     @staticmethod
@@ -137,8 +135,8 @@ class MainWindow(QMainWindow):
         try:
             with open(CONFIG_FILE, "wb") as f:
                 tomli_w.dump(cfg, f)
-        except Exception as e:
-            print("save_config:", e)
+        except Exception:
+            core.log.warning("save_config failed", exc_info=True)
 
     # ---- menus, status bar, shortcuts (created once; texts via retranslate_chrome)
     def _action(self, slot):
@@ -168,6 +166,10 @@ class MainWindow(QMainWindow):
 
         # Help: contact page
         self.menu_help = mb.addMenu("")
+        self.act_shortcuts = self._action(
+            lambda: QMessageBox.information(self, self.tr("shortcuts"),
+                                            self.tr("shortcuts_text")))
+        self.menu_help.addAction(self.act_shortcuts)
         self.act_official = self._action(lambda: webbrowser.open("https://taiko.ac"))
         self.menu_help.addAction(self.act_official)
 
@@ -179,7 +181,7 @@ class MainWindow(QMainWindow):
         self.app_update_btn = QPushButton()
         self.app_update_btn.setFlat(True)
         self.app_update_btn.setCursor(Qt.PointingHandCursor)
-        self.app_update_btn.setStyleSheet("QPushButton{color:#2E7D32;font-weight:bold;}")
+        self.app_update_btn.setStyleSheet(theme.success_text_qss())
         self.app_update_btn.hide()
         self.app_update_btn.clicked.connect(
             lambda: webbrowser.open(getattr(self, "_app_update_url", RELEASES_URL)))
@@ -218,6 +220,7 @@ class MainWindow(QMainWindow):
         self.act_settings.setText(self.tr("mw_settings"))
         self.act_quit.setText(self.tr("mw_act_quit"))
         self.act_official.setText(self.tr("official"))
+        self.act_shortcuts.setText(self.tr("shortcuts"))
         self._refresh_status()
 
     # ---- UI
@@ -230,8 +233,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{self.tr('title')} {APP_VERSION}")
         w, h = self.DEFAULT_WINDOW
         disp = self.config.get("display", {})
-        self.resize(self._cfg_int(disp, "window_w", w, 640),
-                    self._cfg_int(disp, "window_h", h, 480))
+        self.resize(*self._fit_to_screen(self._cfg_int(disp, "window_w", w, 640),
+                                         self._cfg_int(disp, "window_h", h, 480)))
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
@@ -251,7 +254,7 @@ class MainWindow(QMainWindow):
         esc.setContext(Qt.WidgetShortcut)
         esc.activated.connect(self.search_edit.clear)
         self.cat_combo = QComboBox()
-        self.cat_combo.setMinimumWidth(180)
+        self.cat_combo.setMinimumWidth(140)
         self.cat_combo.currentIndexChanged.connect(lambda _: self.do_search())
         self.filter_btn = QToolButton()
         self.filter_btn.setPopupMode(QToolButton.InstantPopup)
@@ -283,6 +286,19 @@ class MainWindow(QMainWindow):
         self.empty_hint.setStyleSheet(theme.hint_qss())
         root.addWidget(self.empty_hint)
         self.refresh_empty_hint()
+
+        # Shown while the table holds a check result instead of a search.
+        self.view_bar = QWidget()
+        vb = QHBoxLayout(self.view_bar)
+        vb.setContentsMargins(0, 0, 0, 0)
+        self.view_label = QLabel()
+        self.view_label.setStyleSheet(theme.hint_qss())
+        self.view_back_btn = QPushButton(self.tr("view_back"))
+        self.view_back_btn.clicked.connect(self.show_all)
+        vb.addWidget(self.view_label, 1)
+        vb.addWidget(self.view_back_btn)
+        self.view_bar.hide()
+        root.addWidget(self.view_bar)
 
         # ---- splitter: song table (top) + download monitor (bottom, collapsible)
         splitter = self.splitter = QSplitter(Qt.Vertical)
@@ -321,6 +337,7 @@ class MainWindow(QMainWindow):
         self.download_btn.setStyleSheet(theme.primary_button_qss(padding="6px 14px"))
         self.table.setStyleSheet(theme.check_indicator_qss())
         theme.add_listener(self._restyle_theme)  # re-colour these on theme change
+        self.download_btn.setToolTip(self.tr("download_tip"))
         self.download_btn.clicked.connect(self.start_download_selected)
         self.selall_btn = QPushButton(self.tr("sel_all"))
         self.selall_btn.clicked.connect(lambda: self.song_model.set_all(True))
@@ -359,6 +376,17 @@ class MainWindow(QMainWindow):
         # connect selection count
         self.song_model.dataChanged.connect(self.update_sel_count)
         self.retranslate_chrome()
+
+    @staticmethod
+    def _fit_to_screen(w, h):
+        """Clamp a window size to the primary screen's work area (small laptops,
+        high display scaling), leaving a margin for the title bar."""
+        scr = QApplication.primaryScreen()
+        if scr is None:
+            return w, h
+        area = scr.availableGeometry()
+        return (max(640, min(w, area.width() - 40)),
+                max(480, min(h, area.height() - 60)))
 
     def build_filter_panel(self):
         """BPM range + difficulty/level filter, shown in the filter button's popup."""
@@ -436,8 +464,8 @@ class MainWindow(QMainWindow):
         dir_row.setMinimumWidth(560)
         form.addRow(self.tr("dir"), dir_row)
         self.workers_spin = QSpinBox()
-        self.workers_spin.setRange(1, 16)
-        self.workers_spin.setValue(self.config.get("download", {}).get("workers", 5))
+        self.workers_spin.setRange(1, 8)       # be gentle with the ESE server
+        self.workers_spin.setValue(self._cfg_int(self.config.get("download", {}), "workers", 3, 1))
         self.workers_spin.valueChanged.connect(lambda _: self.save_config())
         form.addRow(self.tr("workers"), self.workers_spin)
         self.lang_combo = QComboBox()
@@ -522,21 +550,16 @@ class MainWindow(QMainWindow):
         self.cat_combo.blockSignals(True)
         self.cat_combo.clear()
         self.cat_combo.addItem(self.tr("all_cat"), None)
-        if os.path.exists(DB_PATH):      # connect() would create an empty file
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                try:
-                    for (name,) in conn.execute(
-                            "SELECT DISTINCT name FROM categories ORDER BY name"):
-                        self.cat_combo.addItem(CATEGORY_NAMES.get(name, name), name)
-                finally:
-                    conn.close()
-            except Exception as e:
-                print("load_categories:", e)
+        try:
+            for name in core.list_categories():
+                self.cat_combo.addItem(CATEGORY_NAMES.get(name, name), name)
+        except Exception:
+            core.log.warning("load_categories failed", exc_info=True)
         self.cat_combo.blockSignals(False)
 
-    def has_song_db(self):
-        return os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0
+    @staticmethod
+    def has_song_db():
+        return core.has_song_db()
 
     def refresh_empty_hint(self):
         self.empty_hint.setVisible(not self.has_song_db())
@@ -579,7 +602,18 @@ class MainWindow(QMainWindow):
         self.count_label.setText(self.tr("total", n=0))
         self.update_sel_count()
 
+    def _show_view(self, key, songs):
+        """Replace the table with a check result and say so above it."""
+        self._search_seq += 1          # a late search must not overwrite the result
+        self.song_model.set_songs(songs)
+        self.song_model.set_all(True)
+        self.count_label.setText(self.tr("total", n=len(songs)))
+        self.view_label.setText(self.tr(key, n=len(songs)))
+        self.view_bar.show()
+        self.update_sel_count()
+
     def _run_search(self, kw, cat):
+        self.view_bar.hide()
         if not self.has_song_db():
             self.refresh_empty_hint()
             self.count_label.setText(self.tr("total", n=0))
@@ -590,7 +624,7 @@ class MainWindow(QMainWindow):
         if not kw and cat is None:
             self._unfiltered_seq = self._search_seq   # full list: its size is the song total
         self.count_label.setText("🔍 ...")
-        t = self._track(SearchThread(kw, cat, self.has_local, seq=self._search_seq))
+        t = self._track(SearchThread(kw, cat, seq=self._search_seq))
         t.done.connect(self.on_search_done)
         t.fail.connect(self.on_search_fail)
         self._search = t
@@ -606,9 +640,17 @@ class MainWindow(QMainWindow):
             self._refresh_status()
         self.apply_filters()
 
+    DB_DAMAGED = ("malformed", "not a database", "no such table", "unable to open")
+
     def on_search_fail(self, seq, err):
-        if seq == self._search_seq:
-            self.count_label.setText("✗ " + err)
+        if seq != self._search_seq:
+            return
+        self.count_label.setText("✗ " + err)
+        if any(m in err for m in self.DB_DAMAGED) and not self._db_warned:
+            self._db_warned = True     # once per session
+            QMessageBox.warning(self, self.tr("dbv_title"), self.tr("db_corrupt", e=err))
+
+    _db_warned = False
 
     @staticmethod
     def _bpm_val(s):
@@ -684,18 +726,18 @@ class MainWindow(QMainWindow):
     def start_download_selected(self):
         songs = self.song_model.selected_songs()
         if not songs:
-            QMessageBox.warning(self, self.tr("monitor"), self.tr("no_selection"))
+            QMessageBox.warning(self, self.tr("download"), self.tr("no_selection"))
             return
         files = [(s, f) for s in songs for f in s["files"]]
         if len(files) > self.LARGE_DOWNLOAD and QMessageBox.question(
-                self, self.tr("monitor"),
+                self, self.tr("download"),
                 self.tr("dl_confirm_many", n=len(songs), f=len(files))) != QMessageBox.Yes:
             return
         self.start_download(files)
 
     def start_download(self, files, overwrite=False):
         if self.dl_thread and self.dl_thread.isRunning():
-            QMessageBox.warning(self, self.tr("monitor"), self.tr("dl_busy"))
+            QMessageBox.warning(self, self.tr("download"), self.tr("dl_busy"))
             return
         if not files:
             return
@@ -704,7 +746,7 @@ class MainWindow(QMainWindow):
         self.fail_list.clear()
         self.retry_btn.setEnabled(False)
         self.dl_model.load(files)
-        self.overall_bar.setMaximum(len(files))
+        self.overall_bar.setRange(0, len(files))
         self.overall_bar.setValue(0)
         self.show_monitor(0)
         self.pause_btn.setText(self.tr("pause"))
@@ -725,6 +767,20 @@ class MainWindow(QMainWindow):
             self.dl_timer.setInterval(200)
             self.dl_timer.timeout.connect(self.refresh_progress)
         self.dl_timer.start()
+
+    def _set_busy(self, on):
+        """Indeterminate bottom bar while a check or DB update runs (not while
+        downloading: the bar then shows file progress)."""
+        self._busy = max(0, self._busy + (1 if on else -1))
+        if self.dl_thread and self.dl_thread.isRunning():
+            return
+        if self._busy:
+            self.overall_bar.setRange(0, 0)
+        else:
+            self.overall_bar.setRange(0, 1)
+            self.overall_bar.setValue(0)
+
+    _busy = 0
 
     def refresh_progress(self):
         if not self.dl_thread:
@@ -781,7 +837,7 @@ class MainWindow(QMainWindow):
         key = "stopped_msg" if stopped else "done_msg"
         text = self.tr(key, d=dl, s=skip, f=fail, t=total)
         self.notifier.notify(self.tr("title"), text)
-        QMessageBox.information(self, self.tr("monitor"), text)
+        QMessageBox.information(self, self.tr("download"), text)
 
     def retry_failed(self):
         files = [self.fail_list.item(i).data(Qt.UserRole)
@@ -795,26 +851,25 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.tr("check_missing"), self.tr("empty_hint"))
             return
         self.missing_btn.setEnabled(False)
-        t = self._track(SearchThread("", None, self.has_local))
+        self.overall_label.setText(self.tr("missing_checking"))
+        self._set_busy(True)
+        t = self._track(SearchThread("", None))
         t.done.connect(lambda _seq, songs: self.on_missing_loaded(songs))
-        t.fail.connect(lambda _seq, e: (QMessageBox.critical(self, self.tr("check_missing"), e),
-                                        self.missing_btn.setEnabled(True)))
+        t.fail.connect(self._on_missing_fail)
         self._miss = t
         t.start()
 
+    def _on_missing_fail(self, _seq, e):
+        self.missing_btn.setEnabled(True)
+        self._set_busy(False)
+        self.overall_label.setText(self.tr("ready"))
+        QMessageBox.critical(self, self.tr("check_missing"), e)
+
     def on_missing_loaded(self, songs):
         self.missing_btn.setEnabled(True)
-        ddir = resolve_dir(self.dir_edit.text())
-        missing = []
-        for s in songs:
-            for f in s["files"]:
-                try:
-                    path = safe_join(ddir, f["file_path"])
-                except UnsafePathError:
-                    continue
-                if not os.path.exists(path):
-                    missing.append(s)
-                    break
+        self._set_busy(False)
+        self.overall_label.setText(self.tr("ready"))
+        missing = core.find_missing(songs, resolve_dir(self.dir_edit.text()))
         if not missing:
             QMessageBox.information(self, self.tr("check_missing"), self.tr("missing_none"))
             return
@@ -822,18 +877,17 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(
                 self, self.tr("check_missing"),
                 self.tr("missing_found", n=len(missing), f=len(files))) == QMessageBox.Yes:
-            self.song_model.set_songs(missing)
-            self.song_model.set_all(True)
-            self.count_label.setText(self.tr("total", n=len(missing)))
+            self._show_view("view_missing", missing)
             self.start_download(files)
 
     # ---- check updates（比對 git blob sha，找出上游已更新的已下載檔案）
     def check_updates(self):
         ddir = resolve_dir(self.dir_edit.text())
         if not os.path.isdir(ddir):
-            QMessageBox.warning(self, self.tr("check_updates"), self.tr("dir_missing"))
+            QMessageBox.warning(self, self.tr("check_updates"), self.tr("dir_missing", d=ddir))
             return
         self.updates_btn.setEnabled(False)
+        self._set_busy(True)
         self.log_view.appendPlainText("▶ " + self.tr("upd_checking"))
         t = self._track(CheckUpdatesThread(ddir, None))
         t.progress.connect(
@@ -845,6 +899,7 @@ class MainWindow(QMainWindow):
 
     def _on_updates_fail(self, e):
         self.updates_btn.setEnabled(True)
+        self._set_busy(False)
         if e == "__NO_SHA__":
             QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_no_sha"))
         else:
@@ -852,6 +907,8 @@ class MainWindow(QMainWindow):
 
     def on_updates_loaded(self, songs):
         self.updates_btn.setEnabled(True)
+        self._set_busy(False)
+        self.count_label.setText(self.tr("total", n=self.song_model.rowCount()))
         if not songs:
             QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_none"))
             return
@@ -859,9 +916,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(
                 self, self.tr("check_updates"),
                 self.tr("upd_found", n=len(songs), f=len(files))) == QMessageBox.Yes:
-            self.song_model.set_songs(songs)
-            self.song_model.set_all(True)
-            self.count_label.setText(self.tr("total", n=len(songs)))
+            self._show_view("view_updates", songs)
             self.start_download(files, overwrite=True)   # 覆寫既有檔案
 
     # ---- misc
@@ -921,6 +976,7 @@ class MainWindow(QMainWindow):
             return
         self.db_update_btn.setEnabled(False)
         self.overall_label.setText(self.tr("db_checking"))
+        self._set_busy(True)
         t = self._track(VersionThread())
         t.result.connect(lambda remote, local: self.on_version(remote, local, manual=True))
         self._ver = t
@@ -929,6 +985,7 @@ class MainWindow(QMainWindow):
     def start_db_download(self, remote):
         self.db_update_btn.setEnabled(False)
         self.overall_label.setText(self.tr("db_building"))
+        self._set_busy(True)
         self._dbu = self._track(DBUpdateThread(remote, tr=self.tr))
         self._dbu.log.connect(self.log_view.appendPlainText)
         self._dbu.done.connect(self.on_db_updated)
@@ -939,7 +996,6 @@ class MainWindow(QMainWindow):
         The maps load on a worker thread so the window stays responsive."""
         self.load_categories()
         self.refresh_empty_hint()
-        self.has_local = os.path.exists(LOCAL_DB_PATH)
         self._db_version = read_local_version()
         self._refresh_status()
         self.count_label.setText(self.tr("db_reloading"))
@@ -975,7 +1031,8 @@ class MainWindow(QMainWindow):
         if busy:
             QMessageBox.information(self, "", self.tr("lang_busy"))
             return
-        self._restart()
+        if QMessageBox.question(self, self.tr("lang"), self.tr("lang_restart")) == QMessageBox.Yes:
+            self._restart()
 
     def change_theme(self, *_):
         mode = self.theme_combo.currentData() or "auto"
@@ -989,7 +1046,10 @@ class MainWindow(QMainWindow):
         try:
             self.download_btn.setStyleSheet(theme.primary_button_qss(dark))
             self.empty_hint.setStyleSheet(theme.hint_qss(dark))
+            self.view_label.setStyleSheet(theme.hint_qss(dark))
             self.table.setStyleSheet(theme.check_indicator_qss(dark))
+            self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
+            self.song_model.layoutChanged.emit()          # category colours
         except RuntimeError:  # widgets already deleted by Qt
             pass
 
@@ -1028,6 +1088,7 @@ class MainWindow(QMainWindow):
         if manual:
             self.db_update_btn.setEnabled(True)
             self.overall_label.setText(self.tr("ready"))
+            self._set_busy(False)
             if not remote:
                 QMessageBox.warning(self, self.tr("dbv_title"), self.tr("db_offline"))
                 return
@@ -1050,6 +1111,8 @@ class MainWindow(QMainWindow):
     def on_db_updated(self, ok, msg):
         self.db_update_btn.setEnabled(True)
         self.overall_label.setText(self.tr("ready"))
+        self._set_busy(False)
+        self._db_warned = False
         self.notifier.notify(self.tr("dbv_title"),
                              self.tr("dbv_ok") if ok else self.tr("db_fail", e=msg))
         if ok:
@@ -1083,7 +1146,8 @@ class MainWindow(QMainWindow):
                 # Downloads stop within one chunk; a git/DB build cannot be
                 # interrupted mid-step, so give it a bounded wait, then leave it.
                 if not t.wait(8000):
-                    print(f"closeEvent: {type(t).__name__} still running; exiting anyway")
+                    core.log.warning("closeEvent: %s still running; exiting anyway",
+                                     type(t).__name__)
         event.accept()
 
 
@@ -1120,6 +1184,7 @@ def main():
     # Relative paths (git clone, portable git, user-entered folders) resolve
     # next to the app no matter where it was launched from.
     os.chdir(APP_DIR)
+    core.setup_logging()
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
     set_app_icon(app)

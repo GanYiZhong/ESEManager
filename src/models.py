@@ -6,27 +6,8 @@ from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PySide6.QtGui import QColor
 
 from i18n import CATEGORY_NAMES, CATEGORY_COLORS
-
-
-def human_speed(mbps):
-    if mbps <= 0:
-        return "—"
-    if mbps < 1:
-        return f"{mbps*1024:.0f} KB/s"
-    return f"{mbps:.2f} MB/s"
-
-
-def human_eta(sec):
-    if sec is None or sec <= 0 or sec == float("inf"):
-        return "—"
-    sec = int(sec)
-    if sec < 60:
-        return f"{sec}s"
-    m, s = divmod(sec, 60)
-    if m < 60:
-        return f"{m}m{s:02d}s"
-    h, m = divmod(m, 60)
-    return f"{h}h{m:02d}m"
+import theme
+from core import human_speed
 
 
 # ---------------------------------------------------------------- 歌曲清單 model
@@ -117,7 +98,7 @@ class SongModel(QAbstractTableModel):
         if role == Qt.ForegroundRole and col == 3:
             c = CATEGORY_COLORS.get(song["category"])
             if c:
-                return QColor(c)
+                return theme.category_colour(c)
         if role == Qt.TextAlignmentRole and (col == 4 or col in self.LEVEL_COLS or col == 10):
             return int(Qt.AlignCenter)
         return None

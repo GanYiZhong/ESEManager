@@ -69,3 +69,7 @@ screenshot*.png
 # Reference material (not part of the project)
 .ref_songconvertor/
 src/app_version.py
+
+# Runtime log and coverage data
+ESEManager.log*
+.coverage

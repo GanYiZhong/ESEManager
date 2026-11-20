@@ -34,7 +34,7 @@ _TOKENS = {
         "accent": "#2E7D32", "accent_hover": "#1B5E20", "accent_text": "#FFFFFF",
         "disabled_bg": "#BDBDBD", "disabled_fg": "#616161",
         "hint_bg": "#FFF3CD", "hint_fg": "#5C4400", "hint_border": "#E0C36C",
-        "muted": "#6B6B6B",
+        "muted": "#6B6B6B", "success": "#2E7D32",
     },
     True: {  # dark
         "window": "#2B2B2B", "window_text": "#E8E8E8",
@@ -50,7 +50,7 @@ _TOKENS = {
         "accent": "#2E7D32", "accent_hover": "#388E3C", "accent_text": "#FFFFFF",
         "disabled_bg": "#4A4A4A", "disabled_fg": "#9A9A9A",
         "hint_bg": "#3D3314", "hint_fg": "#FFE08A", "hint_border": "#7A6320",
-        "muted": "#9E9E9E",
+        "muted": "#9E9E9E", "success": "#81C784",
     },
 }
 
@@ -184,6 +184,20 @@ def hint_qss(dark=None):
     t = colours(dark)
     return (f"QLabel{{background:{t['hint_bg']};color:{t['hint_fg']};"
             f"border:1px solid {t['hint_border']};border-radius:6px;padding:8px;}}")
+
+
+def success_text_qss(dark=None):
+    """Bold "good news" text (e.g. the app-update notice in the status bar)."""
+    return f"QPushButton{{color:{colours(dark)['success']};font-weight:bold;}}"
+
+
+def category_colour(hex_colour, dark=None):
+    """Category colours are mid-tones; darken them on light backgrounds and
+    lighten them on dark ones so the text stays readable."""
+    from PySide6.QtGui import QColor
+    c = QColor(hex_colour)
+    dark = is_dark() if dark is None else dark
+    return c.lighter(125) if dark else c.darker(135)
 
 
 def muted_label_qss(dark=None, font_px=None):

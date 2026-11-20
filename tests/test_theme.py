@@ -130,10 +130,11 @@ def test_listeners_receive_mode_and_are_weak(qapp):
 def test_theme_combo_applies_immediately_and_saves(qapp, tmp_path, monkeypatch):
     import appconfig
     import ese_qt
+    import core
     import workers
 
     cfg = tmp_path / "config.toml"
-    for mod in (appconfig, ese_qt, workers):
+    for mod in (appconfig, ese_qt, workers, core):
         for name, val in (("DB_PATH", tmp_path / "ese_songs.db"),
                           ("LOCAL_DB_PATH", tmp_path / "ese_local.db"),
                           ("CONFIG_FILE", cfg)):

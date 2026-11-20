@@ -1,17 +1,18 @@
 """Offscreen smoke tests for the main window."""
 
 import pytest
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 import appconfig
 import ese_qt
+import core
 import workers
 
 
 @pytest.fixture
 def window(qapp, tmp_path, monkeypatch):
     # Point every data path at an empty temp folder (no databases yet).
-    for mod in (appconfig, ese_qt, workers):
+    for mod in (appconfig, ese_qt, workers, core):
         for name, val in (("DB_PATH", tmp_path / "ese_songs.db"),
                           ("LOCAL_DB_PATH", tmp_path / "ese_local.db"),
                           ("CONFIG_FILE", tmp_path / "config.toml"),
@@ -79,3 +80,49 @@ def test_close_stops_running_download(window, qapp, monkeypatch):
     window.close()
     assert window._closing
     assert t.wait(3000) and not t.isRunning()
+
+
+def test_check_result_banner_and_show_all(window):
+    songs = [{"song_name": "A", "category": "01 Pop", "files": [{"filename": "A.tja",
+              "file_path": "01 Pop/A/A.tja", "download_url": ""}]}]
+    window._show_view("view_missing", songs)
+    assert not window.view_bar.isHidden()
+    assert "1" in window.view_label.text()
+    assert window.song_model.rowCount() == 1 and len(window.song_model.checked) == 1
+    window.show_all()                  # no database: the search returns at once
+    assert window.view_bar.isHidden()
+
+
+def test_language_change_asks_before_restart(window, monkeypatch):
+    restarted = []
+    monkeypatch.setattr(window, "_restart", lambda: restarted.append(1))
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: asked.append(a[2]) or QMessageBox.No)
+    window.lang_combo.setCurrentIndex(window.lang_combo.findData("ja"))
+    assert asked and not restarted
+    assert window.lang_pref == "ja"    # saved for the next launch
+
+
+def test_window_fits_small_screen(window):
+    area = QApplication.primaryScreen().availableGeometry()
+    w, h = window._fit_to_screen(5000, 5000)
+    assert w <= max(640, area.width()) and h <= max(480, area.height())
+
+
+def test_busy_bar_is_balanced(window):
+    window._set_busy(True)
+    assert window.overall_bar.maximum() == 0          # indeterminate
+    window._set_busy(False)
+    assert window.overall_bar.maximum() == 1
+    window._set_busy(False)                           # never below zero
+    assert window._busy == 0
+
+
+def test_damaged_database_warns_once(window, monkeypatch):
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: seen.append(a[2]))
+    window._search_seq = 3
+    window.on_search_fail(3, "database disk image is malformed")
+    window.on_search_fail(3, "database disk image is malformed")
+    assert len(seen) == 1 and "malformed" in seen[0]

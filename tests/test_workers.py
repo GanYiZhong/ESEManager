@@ -8,6 +8,7 @@ import sqlite3
 
 import pytest
 
+import core
 import workers
 from appconfig import SQLITE_MAGIC
 from ese_scraper_git_v2 import ESEScraperGitV2
@@ -45,11 +46,11 @@ def song_files(fps):
 @pytest.fixture
 def env(tmp_path, http_dir, monkeypatch, qapp):
     www, base = http_dir
-    monkeypatch.setattr(workers, "ESE_RAW_BASE", base)
-    monkeypatch.setattr(workers, "DB_RELEASE_URL", base)
-    monkeypatch.setattr(workers, "DB_PATH", str(tmp_path / "ese_songs.db"))
-    monkeypatch.setattr(workers, "LOCAL_DB_PATH", str(tmp_path / "ese_local.db"))
-    monkeypatch.setattr(workers, "VERSION_FILE", str(tmp_path / "version.txt"))
+    monkeypatch.setattr(core, "ESE_RAW_BASE", base)
+    monkeypatch.setattr(core, "DB_RELEASE_URL", base)
+    monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "ese_songs.db"))
+    monkeypatch.setattr(core, "LOCAL_DB_PATH", str(tmp_path / "ese_local.db"))
+    monkeypatch.setattr(core, "VERSION_FILE", str(tmp_path / "version.txt"))
     dl = tmp_path / "Downloads"
     dl.mkdir()
     return www, tmp_path, dl
@@ -77,7 +78,7 @@ def test_download_verifies_and_writes_atomically(env):
     put(www, "01 Pop/Song/Song.tja", tja)
     put(www, "01 Pop/Song/Song.ogg", ogg)
     # The .ogg sha is the LFS pointer's, so it must not be compared.
-    make_song_db(workers.DB_PATH, [("01 Pop/Song/Song.tja", blob_sha(tja)),
+    make_song_db(core.DB_PATH, [("01 Pop/Song/Song.tja", blob_sha(tja)),
                                    ("01 Pop/Song/Song.ogg", "0" * 40)])
     t, res = run_download(song_files(["01 Pop/Song/Song.tja", "01 Pop/Song/Song.ogg"]), dl)
     assert res == {"d": 2, "s": 0, "f": 0, "n": 2}
@@ -89,7 +90,7 @@ def test_download_verifies_and_writes_atomically(env):
 def test_download_rejects_checksum_mismatch_and_keeps_old_file(env):
     www, tmp, dl = env
     put(www, "01 Pop/Song/Song.tja", b"tampered")
-    make_song_db(workers.DB_PATH, [("01 Pop/Song/Song.tja", blob_sha(b"expected"))])
+    make_song_db(core.DB_PATH, [("01 Pop/Song/Song.tja", blob_sha(b"expected"))])
     target = dl / "01 Pop/Song/Song.tja"
     target.parent.mkdir(parents=True)
     target.write_bytes(b"old good copy")
@@ -102,7 +103,7 @@ def test_download_rejects_checksum_mismatch_and_keeps_old_file(env):
 def test_download_refuses_path_traversal(env):
     www, tmp, dl = env
     put(www, "x.tja", b"x")
-    make_song_db(workers.DB_PATH, [])
+    make_song_db(core.DB_PATH, [])
     t, res = run_download(song_files(["../escape.tja"]), dl)
     assert res["f"] == 1
     assert not (tmp / "escape.tja").exists()
@@ -110,7 +111,7 @@ def test_download_refuses_path_traversal(env):
 
 def test_download_skips_existing_and_reports_404(env):
     www, tmp, dl = env
-    make_song_db(workers.DB_PATH, [])
+    make_song_db(core.DB_PATH, [])
     (dl / "01 Pop/Song").mkdir(parents=True)
     (dl / "01 Pop/Song/Have.tja").write_bytes(b"x")
     t, res = run_download(song_files(["01 Pop/Song/Have.tja", "01 Pop/Song/Missing.tja"]), dl)
@@ -121,7 +122,7 @@ def test_download_skips_existing_and_reports_404(env):
 def test_stop_before_start_downloads_nothing(env):
     www, tmp, dl = env
     put(www, "01 Pop/Song/Song.tja", b"x")
-    make_song_db(workers.DB_PATH, [])
+    make_song_db(core.DB_PATH, [])
     t = workers.DownloadThread(song_files(["01 Pop/Song/Song.tja"]), str(dl), 1)
     t.stop()
     t.run()
@@ -132,7 +133,7 @@ def test_stop_before_start_downloads_nothing(env):
 def test_check_updates_ignores_lfs_audio(env):
     www, tmp, dl = env
     tja_old, tja_new = b"old chart", b"new chart"
-    make_song_db(workers.DB_PATH, [("01 Pop/Song/Song.tja", blob_sha(tja_new)),
+    make_song_db(core.DB_PATH, [("01 Pop/Song/Song.tja", blob_sha(tja_new)),
                                    ("01 Pop/Song/Song.ogg", "f" * 40)])
     (dl / "01 Pop/Song").mkdir(parents=True)
     (dl / "01 Pop/Song/Song.tja").write_bytes(tja_old)
@@ -168,7 +169,7 @@ def publish(www, tmp, version="v2", corrupt=None):
     """Publish both DBs + manifest; `corrupt` serves damaged bytes for that file
     while the manifest keeps the good checksum."""
     files = {}
-    for name in workers.DB_NAMES:
+    for name in core.DB_NAMES:
         good = make_sqlite(tmp / f"src_{version}_{name}", f"{name}-{version}")
         served = good[:-10] + b"x" * 10 if corrupt == name else good
         put(www, name, served)
@@ -218,7 +219,7 @@ def test_db_update_rejects_bad_checksum_and_keeps_old(env):
 
 def test_db_update_requires_manifest(env):
     www, tmp, dl = env
-    for name in workers.DB_NAMES:
+    for name in core.DB_NAMES:
         put(www, name, SQLITE_MAGIC + b"\0" * 100)
     out = run_update("v9")
     assert out["ok"] is False
@@ -249,8 +250,8 @@ def test_load_maps(tmp_path):
                     "title": "A title", "titleja": "エー", "bpm": "120", "level_oni": 8})
     db.conn.commit()
     db.close()
-    jp = workers.load_jp_map(str(tmp_path / "l.db"))
-    meta = workers.load_meta_map(str(tmp_path / "l.db"))
+    jp = core.load_jp_map(str(tmp_path / "l.db"))
+    meta = core.load_meta_map(str(tmp_path / "l.db"))
     assert jp["A"] == "エー" and jp["A title"] == "エー"
     assert meta["A"]["bpm"] == "120" and meta["A"]["level_oni"] == 8
-    assert workers.load_jp_map(str(tmp_path / "missing.db")) == {}
+    assert core.load_jp_map(str(tmp_path / "missing.db")) == {}
