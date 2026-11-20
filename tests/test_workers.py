@@ -150,6 +150,9 @@ def test_check_updates_ignores_lfs_audio(env):
 
     # Up-to-date chart: nothing to update, even though the .ogg "sha" differs.
     (dl / "01 Pop/Song/Song.tja").write_bytes(tja_new)
+    # Same size, and Windows may give the same mtime: simulate the app having
+    # replaced the file (the downloader drops the cached hash).
+    core.forget_blob_sha(str(dl / "01 Pop/Song/Song.tja"))
     out.clear()
     t.run()
     assert out["songs"] == []

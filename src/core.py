@@ -356,6 +356,14 @@ def cached_blob_sha(path):
     return sha
 
 
+def forget_blob_sha(path):
+    """Drop a cached hash, e.g. after replacing the file. The cache key is
+    (mtime, size), which a same-size rewrite within the file system's time
+    resolution would not change."""
+    with _sha_cache_lock:
+        _sha_cache.pop(path, None)
+
+
 def load_sha_map(db_path=None):
     conn = connect_ro(db_path or DB_PATH)
     try:
@@ -566,6 +574,7 @@ class Downloader:
                     raise IOError(self.tr("log_sha_mismatch"))
             os.replace(part, save_path)
             part = None
+            forget_blob_sha(save_path)
             self._count("dl")
             self._mark(fp, "done", 100.0, 0.0)
             self.log(f"✓ {disp} ({got/1024/1024:.2f} MB)")
