@@ -40,7 +40,7 @@ from core import load_jp_map, load_meta_map, read_local_version, human_speed, hu
 from models import SongModel, DownloadModel
 from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
-                     VersionSortingThread)
+                     VersionSortingThread, AppSelfUpdateThread)
 from notify import Notifier, set_app_icon
 
 
@@ -84,6 +84,7 @@ class MainWindow(QMainWindow):
         self.load_categories()
         QTimer.singleShot(1200, self.check_db_update)
         QTimer.singleShot(3000, self.check_app_update)
+        QTimer.singleShot(500, self._report_failed_update)
 
     SEARCH_DELAY_MS = 300
     DEFAULT_WINDOW = (1280, 860)
@@ -183,8 +184,7 @@ class MainWindow(QMainWindow):
         self.app_update_btn.setCursor(Qt.PointingHandCursor)
         self.app_update_btn.setStyleSheet(theme.success_text_qss())
         self.app_update_btn.hide()
-        self.app_update_btn.clicked.connect(
-            lambda: webbrowser.open(getattr(self, "_app_update_url", RELEASES_URL)))
+        self.app_update_btn.clicked.connect(self.install_app_update)
         sb.addWidget(self.count_label)
         sb.addPermanentWidget(self.app_update_btn)
         sb.addPermanentWidget(self.db_ver_label)
@@ -1076,11 +1076,71 @@ class MainWindow(QMainWindow):
         self._app_upd = t
         t.start()
 
+    def _report_failed_update(self):
+        err = core.update_failed()
+        if err and not self._closing:
+            core.discard_update_work()
+            QMessageBox.warning(self, self.tr("upd_app_title"),
+                                self.tr("upd_app_failed_restart", e=err))
+
     def on_app_update(self, tag, url):
         self.app_update_btn.setText(self.tr("mw_app_update", v=tag))
-        self.app_update_btn.setToolTip(self.tr("mw_app_update_tip", cur=APP_VERSION, v=tag))
+        tip = "mw_app_update_tip2" if core.can_self_update() else "mw_app_update_tip"
+        self.app_update_btn.setToolTip(self.tr(tip, cur=APP_VERSION, v=tag))
         self._app_update_url = url
+        self._app_update_tag = tag
         self.app_update_btn.show()
+
+    def install_app_update(self):
+        """Download the new release over this folder and restart (release
+        builds); from source, just open the release page."""
+        url = getattr(self, "_app_update_url", RELEASES_URL)
+        if not core.can_self_update():
+            webbrowser.open(url)
+            return
+        t = getattr(self, "_selfupd", None)
+        if t and t.isRunning():
+            return
+        if (self.dl_thread and self.dl_thread.isRunning()) or self._db_busy():
+            QMessageBox.information(self, self.tr("upd_app_title"), self.tr("upd_app_busy"))
+            return
+        tag = getattr(self, "_app_update_tag", "")
+        if QMessageBox.question(self, self.tr("upd_app_title"),
+                                self.tr("upd_app_confirm", cur=APP_VERSION, v=tag)) \
+                != QMessageBox.Yes:
+            return
+        self.app_update_btn.setEnabled(False)
+        self.overall_label.setText(self.tr("upd_app_downloading", p=0))
+        self._set_busy(True)
+        t = self._selfupd = self._track(AppSelfUpdateThread())
+        t.restart_exe = sys.executable          # the frozen ESEManager executable
+        t.progress.connect(self._on_self_update_progress)
+        t.done.connect(self._on_self_update_done)
+        t.start()
+
+    def _on_self_update_progress(self, got, total):
+        if total:
+            self.overall_label.setText(
+                self.tr("upd_app_downloading", p=int(got * 100 / total)))
+
+    def _on_self_update_done(self, ok, info):
+        self._set_busy(False)
+        self.app_update_btn.setEnabled(True)
+        self.overall_label.setText(self.tr("ready"))
+        if self._closing:
+            return
+        if not ok:
+            if QMessageBox.question(self, self.tr("upd_app_title"),
+                                    self.tr("upd_app_fail", e=info)) == QMessageBox.Yes:
+                webbrowser.open(getattr(self, "_app_update_url", RELEASES_URL))
+            return
+        how, _, tag = info.partition(":")
+        QMessageBox.information(self, self.tr("upd_app_title"),
+                                self.tr("upd_app_done", v=tag))
+        if how == "applied":
+            self._restart()
+        else:                  # Windows helper waits for us to exit, then restarts
+            self.close()
 
     def on_version(self, remote, local, manual=False):
         if self._closing:
@@ -1185,6 +1245,10 @@ def main():
     # next to the app no matter where it was launched from.
     os.chdir(APP_DIR)
     core.setup_logging()
+    try:
+        core.cleanup_app_update()      # .old files left by the last self-update
+    except Exception:
+        core.log.warning("update cleanup failed", exc_info=True)
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
     set_app_icon(app)

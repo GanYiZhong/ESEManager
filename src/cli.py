@@ -8,6 +8,7 @@ ESEManager command-line mode.
     ESEManager-cli missing [--download] [-y] [--limit N]
     ESEManager-cli updates [--download] [-y] [--limit N]
     ESEManager-cli version-sorting [--force]
+    ESEManager-cli self-update [--check] [-y]
 
 Common options: --dir DIR (download folder; default from config.toml or
 ./Downloads next to the app), --workers N (parallel downloads, 1-8, default 3
@@ -286,6 +287,45 @@ def cmd_version_sorting(args, tr):
     return 0
 
 
+def cmd_self_update(args, tr):
+    try:
+        release = core.fetch_latest_release()
+    except Exception as e:
+        out.msg(tr("upd_app_fail_cli", e=e))
+        return 1
+    tag = release.get("tag_name") or ""
+    # A source checkout ("dev") has no version to compare: always offer the latest.
+    newer = core.is_newer(tag, APP_VERSION) or core.parse_version(APP_VERSION) is None
+    out.data({"current": APP_VERSION, "latest": tag, "newer": newer,
+              "can_self_update": core.can_self_update()})
+    if not newer:
+        out.msg(tr("upd_app_latest", v=APP_VERSION))
+        return 0
+    out.msg(tr("upd_app_available", cur=APP_VERSION, v=tag))
+    if args.check:
+        return 0
+    if not core.can_self_update():
+        out.msg(tr("upd_app_manual", url=release.get("html_url") or ""))
+        return 2
+    if not confirm(tr("cli_continue"), args.yes):
+        return 2
+    try:
+        last = [-1]
+
+        def progress(got, total):
+            pct = int(got * 100 / total) if total else 0
+            if pct >= last[0] + 10:
+                last[0] = pct
+                out.msg(tr("upd_app_downloading", p=pct))
+        root = core.download_app_update(release, log=out.msg, progress=progress)
+        how = core.install_app_update(root)
+    except Exception as e:
+        out.msg(tr("upd_app_fail_cli", e=e))
+        return 1
+    out.msg(tr("upd_app_scheduled_cli" if how == "scheduled" else "upd_app_done_cli", v=tag))
+    return 0
+
+
 # ---------------------------------------------------------------- entry point
 def build_parser():
     common = argparse.ArgumentParser(add_help=False)
@@ -337,6 +377,12 @@ def build_parser():
                         help=f"download {VSORT_FOLDER} into the download folder")
     sp.add_argument("--force", action="store_true", help="download even if up to date")
     sp.set_defaults(func=cmd_version_sorting)
+
+    sp = sub.add_parser("self-update", parents=[common],
+                        help="download the latest ESEManager release over this folder")
+    sp.add_argument("--check", action="store_true", help="only report whether one is available")
+    sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    sp.set_defaults(func=cmd_self_update)
     return p
 
 
@@ -349,6 +395,10 @@ def main(argv=None):
                 pass
     os.chdir(APP_DIR)
     core.setup_logging()
+    try:
+        core.cleanup_app_update()
+    except Exception:
+        pass
     args = build_parser().parse_args(argv)
     out.json = args.json
     cfg = load_config()

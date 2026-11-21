@@ -18,7 +18,8 @@
 - 一鍵下載 [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)（YataiDON 版本分類資料夾）
   到下載目錄：**檔案 → 下載版本分類**
 - 命令列模式（`ESEManager-cli`），方便寫腳本或在伺服器上使用
-- Rolling release：有新版本時狀態列會提示
+- Rolling release，**一鍵自動更新**：有新版本時按狀態列的提示，程式會下載新版、驗證 SHA-256、
+  直接覆蓋自己並重新啟動（設定、資料庫和下載的歌曲都保留）
 
 ## 快速開始
 
@@ -26,7 +27,7 @@
 解壓後執行 `ESEManager`（Windows 為 `ESEManager.exe`）。第一次啟動時程式會詢問是否下載歌曲資料庫，
 之後即可搜尋與下載。
 
-設定檔、資料庫和預設的 `Downloads` 資料夾都放在執行檔旁邊，新版直接解壓覆蓋舊資料夾即可。
+設定檔、資料庫和預設的 `Downloads` 資料夾都放在執行檔旁邊，更新時按狀態列的更新提示、執行 `ESEManager-cli self-update`，或手動把新版解壓覆蓋舊資料夾都可以。
 
 Linux 若出現無法載入 Qt `xcb` 外掛的錯誤，請安裝 `libxcb-cursor0`（Debian/Ubuntu）或
 `xcb-util-cursor`（Fedora/Arch）。
@@ -45,6 +46,7 @@ ESEManager-cli download --all -y           # 全部下載
 ESEManager-cli missing --download -y       # 下載缺少的歌
 ESEManager-cli updates --download -y       # 下載上游更新過的譜面
 ESEManager-cli version-sorting             # 安裝／更新 ESE-Version-Sorting
+ESEManager-cli self-update                 # 下載最新版 ESEManager 並覆蓋安裝
 ```
 
 | 選項 | 適用指令 | 說明 |
@@ -57,9 +59,10 @@ ESEManager-cli version-sorting             # 安裝／更新 ESE-Version-Sorting
 | `--limit N` | search、missing、updates | 最多列出幾筆（預設 50，0＝全部） |
 | `--all` | download | 下載全部歌曲 |
 | `--download` | missing、updates | 直接下載找到的項目，而不是只列出 |
-| `-y`, `--yes` | download、missing、updates | 不詢問確認 |
+| `-y`, `--yes` | download、missing、updates、self-update | 不詢問確認 |
 | `--force` | update-db、version-sorting | 已是最新也重新下載 |
 | `--offline` | status | 不向 GitHub Pages 查詢最新資料庫版本 |
+| `--check` | self-update | 只檢查有沒有新版本 |
 
 結束碼 0＝成功、1＝有失敗、2＝沒事可做或用法錯誤。沒有終端機時（腳本、排程）確認提示一律視為「否」，
 請加上 `-y`。
@@ -108,7 +111,7 @@ python scripts/fetch_release_dbs.py dist/ESEManager   # 選用：一併放入目
 1. 跑測試、打包 Windows 與 Linux 版並做冒煙測試；
 2. 以日期為版本號發佈 release：`v2026.11.18`，同一天第二版為 `v2026.11.18.2`（台北時間），
    release notes 為這次的 commit 清單，附上
-   `ESEManager_<版本>_windows-x86_64.7z`、`ESEManager_<版本>_linux-x86_64.tar.gz` 及各自的 `.sha256`。
+   `ESEManager_<版本>_windows-x86_64.zip`、`ESEManager_<版本>_linux-x86_64.tar.gz` 及各自的 `.sha256`。
 
 只改測試、文件或 workflow 的推送只會打包不發佈。commit 第一行加上 `[skip release]` 可刻意不發佈。
 PR 只會打包與測試。要重新打包既有 release 的檔案，可手動執行該 workflow 並填入 tag。

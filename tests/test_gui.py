@@ -126,3 +126,12 @@ def test_damaged_database_warns_once(window, monkeypatch):
     window.on_search_fail(3, "database disk image is malformed")
     window.on_search_fail(3, "database disk image is malformed")
     assert len(seen) == 1 and "malformed" in seen[0]
+
+
+def test_update_button_from_source_opens_release_page(window, monkeypatch):
+    opened = []
+    monkeypatch.setattr(ese_qt.webbrowser, "open", opened.append)
+    window.on_app_update("v2099.1.1", "https://github.com/x/y/releases/tag/v2099.1.1")
+    assert not window.app_update_btn.isHidden()
+    window.app_update_btn.click()
+    assert opened == ["https://github.com/x/y/releases/tag/v2099.1.1"]

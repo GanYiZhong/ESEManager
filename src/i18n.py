@@ -475,3 +475,71 @@ TR["ja"].update({
     "db_corrupt": "曲データベースを読み込めません。破損している可能性があります。\n"
                   "「🔄 データベース更新」で再ダウンロードしてください。\n\n{e}",
 })
+
+
+# --- in-app update (download and overwrite)
+TR["zh_TW"].update({
+    "mw_app_update_tip2": "目前版本：{cur}\n最新版本：{v}\n按此自動下載並更新",
+    "upd_app_title": "更新 ESEManager",
+    "upd_app_confirm": "要從 {cur} 更新到 {v} 嗎？\n\n會從 GitHub 下載新版並直接覆蓋程式，完成後自動重新啟動。"
+                       "\n設定、資料庫和下載的歌曲都會保留。",
+    "upd_app_downloading": "下載更新中… {p}%",
+    "upd_app_busy": "請先等目前的下載或資料庫更新完成。",
+    "upd_app_done": "已更新到 {v}，程式即將重新啟動。",
+    "upd_app_fail": "自動更新失敗，程式沒有被更改：\n{e}\n\n要開啟下載頁手動更新嗎？",
+})
+TR["en"].update({
+    "mw_app_update_tip2": "Current: {cur}\nLatest: {v}\nClick to download and install it",
+    "upd_app_title": "Update ESEManager",
+    "upd_app_confirm": "Update from {cur} to {v}?\n\nThe new version is downloaded from GitHub and "
+                       "installed over this one, then the app restarts.\nSettings, databases and "
+                       "downloaded songs are kept.",
+    "upd_app_downloading": "Downloading update… {p}%",
+    "upd_app_busy": "Wait for the current download or database update to finish first.",
+    "upd_app_done": "Updated to {v}. The app will now restart.",
+    "upd_app_fail": "The update failed and nothing was changed:\n{e}\n\n"
+                    "Open the download page to update manually?",
+})
+TR["ja"].update({
+    "mw_app_update_tip2": "現在：{cur}\n最新：{v}\nクリックで自動ダウンロード・更新",
+    "upd_app_title": "ESEManager の更新",
+    "upd_app_confirm": "{cur} から {v} に更新しますか？\n\nGitHub から新しいバージョンをダウンロードして"
+                       "上書きし、完了後に再起動します。\n設定・データベース・ダウンロードした曲はそのまま残ります。",
+    "upd_app_downloading": "更新をダウンロード中… {p}%",
+    "upd_app_busy": "現在のダウンロードまたはデータベース更新が終わるまでお待ちください。",
+    "upd_app_done": "{v} に更新しました。アプリを再起動します。",
+    "upd_app_fail": "更新に失敗しました。アプリは変更されていません：\n{e}\n\n"
+                    "ダウンロードページを開いて手動で更新しますか？",
+})
+TR["zh_TW"]["mw_app_update"] = "🆕 有新版本 {v}，按此更新"
+TR["en"]["mw_app_update"] = "🆕 New version {v}: click to update"
+TR["ja"]["mw_app_update"] = "🆕 新しいバージョン {v}：クリックで更新"
+TR["zh_TW"].update({
+    "upd_app_latest": "已是最新版本（{v}）",
+    "upd_app_available": "有新版本：{cur} → {v}",
+    "upd_app_manual": "從原始碼執行時無法自動更新，請到 {url} 下載。",
+    "upd_app_fail_cli": "更新失敗，程式沒有被更改：{e}",
+    "upd_app_done_cli": "已更新到 {v}，請重新啟動 ESEManager。",
+    "upd_app_scheduled_cli": "已下載 {v}；這個指令結束後幾秒內會自動換上新版。",
+    "upd_app_failed_restart": "上次的自動更新沒有完成，目前仍是舊版：\n{e}\n\n可以再按一次更新，或到 GitHub 手動下載。",
+})
+TR["en"].update({
+    "upd_app_latest": "Already up to date ({v})",
+    "upd_app_available": "New version: {cur} → {v}",
+    "upd_app_manual": "Running from source cannot update itself; download it from {url}",
+    "upd_app_fail_cli": "Update failed; nothing was changed: {e}",
+    "upd_app_done_cli": "Updated to {v}. Restart ESEManager.",
+    "upd_app_scheduled_cli": "Downloaded {v}; it is installed a few seconds after this command exits.",
+    "upd_app_failed_restart": "The last update did not finish; this is still the old version:\n{e}\n\n"
+                              "Try the update again, or download it from GitHub.",
+})
+TR["ja"].update({
+    "upd_app_latest": "最新バージョンです（{v}）",
+    "upd_app_available": "新しいバージョン：{cur} → {v}",
+    "upd_app_manual": "ソースから実行している場合は自動更新できません。{url} からダウンロードしてください。",
+    "upd_app_fail_cli": "更新に失敗しました。変更はありません：{e}",
+    "upd_app_done_cli": "{v} に更新しました。ESEManager を再起動してください。",
+    "upd_app_scheduled_cli": "{v} をダウンロードしました。このコマンドの終了後、数秒で新しいバージョンに置き換わります。",
+    "upd_app_failed_restart": "前回の更新が完了しませんでした。現在も古いバージョンです：\n{e}\n\n"
+                              "もう一度更新するか、GitHub から手動でダウンロードしてください。",
+})

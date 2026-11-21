@@ -138,3 +138,31 @@ class VersionSortingThread(QThread):
         except Exception as e:
             core.log.warning("version sorting download failed", exc_info=True)
             self.done.emit(False, str(e), "")
+
+
+class AppSelfUpdateThread(QThread):
+    """Download, verify and install the latest release over the app folder.
+    done(True, "applied:<tag>") -> restart now; done(True, "scheduled:<tag>")
+    -> quit now, a helper copies the files and starts the new version."""
+    progress = Signal(int, int)      # bytes so far, total
+    done = Signal(bool, str)
+
+    restart_exe = None               # program the Windows helper starts afterwards
+
+    def __init__(self):
+        super().__init__()
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+
+    def run(self):
+        try:
+            release = core.fetch_latest_release()
+            root = core.download_app_update(release, progress=self.progress.emit,
+                                            log=core.log.info, stop=lambda: self._stop)
+            how = core.install_app_update(root, restart_exe=self.restart_exe)
+            self.done.emit(True, f"{how}:{release.get('tag_name') or ''}")
+        except Exception as e:
+            core.log.warning("self-update failed", exc_info=True)
+            self.done.emit(False, str(e))

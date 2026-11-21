@@ -223,8 +223,10 @@ jobs:
       - name: Package
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            name="ESEManager_${VERSION}_${{ matrix.platform }}.7z"
-            (cd dist && 7z a -t7z -mx=9 "../$name" ESEManager > /dev/null)
+            # .zip: Explorer opens it without extra tools, and the app's
+            # self-update extracts it with Python's zipfile.
+            name="ESEManager_${VERSION}_${{ matrix.platform }}.zip"
+            (cd dist && 7z a -tzip -mx=9 "../$name" ESEManager > /dev/null)
           else
             name="ESEManager_${VERSION}_${{ matrix.platform }}.tar.gz"
             tar -C dist -czf "$name" ESEManager
@@ -280,14 +282,15 @@ jobs:
             echo
             echo "| Platform | File |"
             echo "|---|---|"
-            echo "| Windows 10/11 x64 | \`ESEManager_${VERSION}_windows-x86_64.7z\` |"
+            echo "| Windows 10/11 x64 | \`ESEManager_${VERSION}_windows-x86_64.zip\` |"
             echo "| Linux x86_64 (glibc 2.35+) | \`ESEManager_${VERSION}_linux-x86_64.tar.gz\` |"
             echo
             echo "Command-line mode: \`ESEManager-cli --help\` (same folder)."
             echo
-            echo "Each file has a \`.sha256\`. Extract over your existing folder to keep settings,"
-            echo "databases and downloads. The app tells you in its status bar when a newer"
-            echo "release is available."
+            echo "Each file has a \`.sha256\`. Already installed? Click the update notice in the"
+            echo "status bar (or run \`ESEManager-cli self-update\`): the app downloads this release"
+            echo "and installs it over itself, keeping settings, databases and downloads. To update"
+            echo "by hand, extract over your existing folder."
             if [ -n "$prev" ]; then
               echo
               echo "**Full changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$prev...$VERSION"

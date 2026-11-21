@@ -21,7 +21,9 @@ from the **ESE (Every Song Ever)** project.
 - One-click download of [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)
   (YataiDON version folders) into the download folder: **File → Download version sorting**
 - Command-line mode (`ESEManager-cli`) for scripts and servers
-- Rolling releases: the status bar tells you when a newer version is available
+- Rolling releases with **one-click self-update**: when a newer version exists, click the notice
+  in the status bar; the app downloads it, checks its SHA-256, installs it over itself and
+  restarts (settings, databases and downloads are kept)
 
 ## Quick start
 
@@ -31,7 +33,8 @@ Download the latest release for your platform from the
 database; after that, search and download.
 
 Settings, databases and the default `Downloads` folder live next to the executable, so you can
-extract a new version over the old folder.
+update in place: click the update notice in the status bar, run `ESEManager-cli self-update`, or
+extract a new version over the old folder by hand.
 
 On Linux, if Qt reports it cannot load the `xcb` platform plugin, install `libxcb-cursor0`
 (Debian/Ubuntu) or `xcb-util-cursor` (Fedora/Arch).
@@ -50,6 +53,7 @@ ESEManager-cli download --all -y           # everything
 ESEManager-cli missing --download -y       # songs you don't have yet
 ESEManager-cli updates --download -y       # charts changed upstream
 ESEManager-cli version-sorting             # install/refresh ESE-Version-Sorting
+ESEManager-cli self-update                 # install the latest ESEManager over this one
 ```
 
 | Option | Commands | Meaning |
@@ -62,9 +66,10 @@ ESEManager-cli version-sorting             # install/refresh ESE-Version-Sorting
 | `--limit N` | search, missing, updates | rows to print (default 50, 0 = all) |
 | `--all` | download | download every song |
 | `--download` | missing, updates | download what was found instead of listing it |
-| `-y`, `--yes` | download, missing, updates | do not ask for confirmation |
+| `-y`, `--yes` | download, missing, updates, self-update | do not ask for confirmation |
 | `--force` | update-db, version-sorting | download even if already up to date |
 | `--offline` | status | do not ask GitHub Pages for the latest database version |
+| `--check` | self-update | only report whether a newer version exists |
 
 Exit code 0 = success, 1 = something failed, 2 = nothing to do / bad usage. Without a
 terminal (scripts, cron) confirmation prompts answer "no", so pass `-y` there.
@@ -114,7 +119,7 @@ released automatically by `.github/workflows/release.yml`:
 1. run the tests, build Windows and Linux, and smoke-test both;
 2. publish a release named by date — `v2026.11.18`, then `v2026.11.18.2` for a second release
    the same day (Asia/Taipei date) — with the commit list as release notes and
-   `ESEManager_<version>_windows-x86_64.7z`, `ESEManager_<version>_linux-x86_64.tar.gz` and a
+   `ESEManager_<version>_windows-x86_64.zip`, `ESEManager_<version>_linux-x86_64.tar.gz` and a
    `.sha256` for each.
 
 Pushes that only touch tests, docs or the workflow build without publishing. Add

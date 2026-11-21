@@ -13,6 +13,7 @@ import os
 import pathlib
 import shutil
 import sqlite3
+import sys
 import tempfile
 import threading
 import time
@@ -25,6 +26,7 @@ import requests
 from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
                        UnsafePathError, LATEST_RELEASE_API, is_newer,
+                       APP_VERSION, parse_version,
                        VSORT_REPO, VSORT_FOLDER, VSORT_SKIP, VSORT_BRANCH_API,
                        VSORT_ARCHIVE_URL)
 
@@ -721,16 +723,20 @@ def update_databases(version="", log=print, tr=None):
                 pass
 
 
-# ---------------------------------------------------------------- app update check
+# ---------------------------------------------------------------- app update
+def fetch_latest_release(sess=None):
+    """GitHub's JSON for the latest release (raises on network errors)."""
+    sess = sess or new_session()
+    r = get_with_retry(sess, LATEST_RELEASE_API, timeout=15,
+                       headers={"Accept": "application/vnd.github+json"})
+    return r.json()
+
+
 def latest_app_release(current):
     """(tag, page_url) of the latest GitHub release when it is newer than
     `current`; None otherwise or on any error (offline, rate limit)."""
     try:
-        r = requests.get(LATEST_RELEASE_API, timeout=10,
-                         headers={"User-Agent": USER_AGENT,
-                                  "Accept": "application/vnd.github+json"})
-        r.raise_for_status()
-        data = r.json()
+        data = fetch_latest_release()
         tag = data.get("tag_name") or ""
         url = data.get("html_url") or ""
         if is_newer(tag, current) and url.startswith("https://github.com/"):
@@ -738,6 +744,295 @@ def latest_app_release(current):
     except Exception as e:
         log.info("app update check: %s", e)
     return None
+
+
+def update_platform():
+    """(platform name in release file names, archive extension) for this OS,
+    or (None, None) where no build is published."""
+    if sys.platform == "win32":
+        return "windows-x86_64", ".zip"
+    if sys.platform.startswith("linux"):
+        return "linux-x86_64", ".tar.gz"
+    return None, None
+
+
+def can_self_update():
+    """Only a release build (frozen, with a real version) replaces itself;
+    running from source never does."""
+    return bool(getattr(sys, "frozen", False) and parse_version(APP_VERSION)
+                and update_platform()[0])
+
+
+# Files and folders in the app folder that an update never touches: the
+# user's settings, databases (the release bundles older copies) and downloads.
+UPDATE_KEEP_FILES = {"config.toml", "version.txt", "manifest.json",
+                     "ese_songs.db", "ese_local.db"}
+UPDATE_KEEP_DIRS = {"downloads", ".update"}
+UPDATE_WORK = ".update"
+UPDATE_OLD_LIST = ".update_old.txt"
+
+
+def pick_update_asset(release):
+    """(archive asset, .sha256 asset) for this platform from a release JSON."""
+    plat, ext = update_platform()
+    if not plat:
+        raise RuntimeError(f"no release build for {sys.platform}")
+    tag = release.get("tag_name") or ""
+    name = f"ESEManager_{tag}_{plat}{ext}"
+    assets = {a.get("name"): a for a in release.get("assets", [])}
+    if name not in assets or name + ".sha256" not in assets:
+        raise RuntimeError(f"{name} not found in release {tag}")
+    return assets[name], assets[name + ".sha256"]
+
+
+def _github_url(url):
+    if not (url or "").startswith("https://github.com/"):
+        raise RuntimeError(f"unexpected download URL: {url!r}")
+    return url
+
+
+def download_app_update(release=None, app_dir=None, log=print, progress=None,
+                        sess=None, stop=None):
+    """Download this platform's archive from a release, check its SHA-256
+    (from the .sha256 file and GitHub's own digest when present) and extract
+    it into <app_dir>/.update/new. Returns the folder holding the new files.
+    Nothing in the app folder is changed yet."""
+    app_dir = app_dir or APP_DIR
+    progress = progress or (lambda got, total: None)
+    own = sess is None
+    sess = sess or new_session()
+    try:
+        release = release or fetch_latest_release(sess)
+        asset, sha_asset = pick_update_asset(release)
+        url = asset["browser_download_url"]
+        sha_url = sha_asset["browser_download_url"]
+        if not url.startswith("http://127.0.0.1"):       # tests use a local server
+            _github_url(url)
+            _github_url(sha_url)
+        want = get_with_retry(sess, sha_url, timeout=30).text.split()[0].lower()
+        digest = (asset.get("digest") or "").lower()
+        if digest.startswith("sha256:") and digest[7:] != want:
+            raise RuntimeError("release checksums disagree")
+
+        work = os.path.join(app_dir, UPDATE_WORK)
+        shutil.rmtree(work, ignore_errors=True)
+        os.makedirs(work)
+        archive = os.path.join(work, asset["name"])
+        log(f"⬇ {asset['name']}")
+        h = hashlib.sha256()
+        total = int(asset.get("size") or 0)
+        got = 0
+        with get_with_retry(sess, url, stream=True, timeout=120, stop=stop) as r:
+            total = int(r.headers.get("content-length") or 0) or total
+            with open(archive, "wb") as f:
+                for chunk in r.iter_content(1 << 16):
+                    if stop and stop():
+                        raise InterruptedError("cancelled")
+                    if chunk:
+                        f.write(chunk)
+                        h.update(chunk)
+                        got += len(chunk)
+                        progress(got, total)
+        if h.hexdigest() != want:
+            raise RuntimeError("SHA-256 mismatch; the download is damaged")
+
+        new = os.path.join(work, "new")
+        os.makedirs(new)
+        if archive.endswith(".zip"):
+            with zipfile.ZipFile(archive) as z:
+                for info in z.infolist():
+                    if info.is_dir() or (info.external_attr >> 16) & 0o170000 == 0o120000:
+                        continue
+                    dest = safe_join(new, info.filename)
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with z.open(info) as src, open(dest, "wb") as out:
+                        shutil.copyfileobj(src, out)
+        else:
+            import tarfile
+            with tarfile.open(archive) as t:
+                for m in t.getmembers():
+                    safe_join(new, m.name)          # rejects ../ and absolute paths
+                    if m.issym() or m.islnk() or m.isdev():
+                        raise RuntimeError(f"unexpected entry in archive: {m.name}")
+                if hasattr(tarfile, "data_filter"):
+                    t.extractall(new, filter="data")
+                else:                               # Python < 3.12
+                    t.extractall(new)
+        os.remove(archive)
+        # The archive holds one top folder (ESEManager/).
+        entries = os.listdir(new)
+        root = os.path.join(new, entries[0]) if len(entries) == 1 else new
+        if not os.path.isdir(root):
+            raise RuntimeError("archive is empty")
+        return root
+    finally:
+        if own:
+            sess.close()
+
+
+def _skip_on_update(rel, app_dir):
+    parts = rel.replace("\\", "/").split("/")
+    if parts[0].lower() in UPDATE_KEEP_DIRS:
+        return True
+    # Keep the user's copy; install a bundled file only if there is none yet.
+    return (len(parts) == 1 and parts[0].lower() in UPDATE_KEEP_FILES
+            and os.path.exists(os.path.join(app_dir, parts[0])))
+
+
+def apply_app_update(new_root, app_dir=None):
+    """Overwrite the app folder with the files in new_root.
+
+    A running program cannot be overwritten on Windows but it can be renamed,
+    so every existing file is first renamed to <name>.old and the new file is
+    moved into its place. The .old files are deleted on the next start
+    (cleanup_app_update). Any error rolls back to the old files.
+    Returns the number of files installed."""
+    app_dir = app_dir or APP_DIR
+    moved = []       # (old_name, target)
+    created = []     # targets that did not exist before
+    try:
+        for dirpath, _dirs, files in os.walk(new_root):
+            for fn in files:
+                src = os.path.join(dirpath, fn)
+                rel = os.path.relpath(src, new_root)
+                if _skip_on_update(rel, app_dir):
+                    continue
+                target = safe_join(app_dir, rel.replace(os.sep, "/"))
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                if os.path.exists(target):
+                    old = target + ".old"
+                    if os.path.exists(old):
+                        try:
+                            os.remove(old)
+                        except OSError:          # still in use: pick another name
+                            old = f"{target}.{int(time.time() * 1000)}.old"
+                    os.replace(target, old)
+                    moved.append((old, target))
+                else:
+                    created.append(target)
+                os.replace(src, target)
+    except Exception:
+        for target in created:
+            try:
+                os.remove(target)
+            except OSError:
+                pass
+        for old, target in reversed(moved):
+            try:
+                os.replace(old, target)
+            except OSError:
+                log.error("update rollback failed for %s", target)
+        raise
+    with open(os.path.join(app_dir, UPDATE_OLD_LIST), "a", encoding="utf-8") as f:
+        for old, _ in moved:
+            f.write(old + "\n")
+    shutil.rmtree(os.path.join(app_dir, UPDATE_WORK), ignore_errors=True)
+    return len(moved) + len(created)
+
+
+def cleanup_app_update(app_dir=None):
+    """Delete the .old files left by the last update (they were in use until
+    the program restarted). Files still locked are kept for the next start."""
+    app_dir = app_dir or APP_DIR
+    path = os.path.join(app_dir, UPDATE_OLD_LIST)
+    if not update_failed(app_dir):
+        discard_update_work(app_dir)          # an update that was never applied
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            olds = [line.strip() for line in f if line.strip()]
+    except OSError:
+        return 0
+    left = []
+    for old in olds:
+        try:
+            if old.endswith(".old") and os.path.exists(old):
+                os.remove(old)
+        except OSError:
+            left.append(old)
+    try:
+        if left:
+            write_atomic(path, ("\n".join(left) + "\n").encode("utf-8"))
+        else:
+            os.remove(path)
+    except OSError:
+        pass
+    return len(olds) - len(left)
+
+
+UPDATE_FAILED = "FAILED"
+
+
+def update_failed(app_dir=None):
+    """Error text when the last scheduled (Windows) update could not copy its
+    files, else "". The old files then stay in use; see .update/robocopy.log."""
+    path = os.path.join(app_dir or APP_DIR, UPDATE_WORK, UPDATE_FAILED)
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read().strip() or "robocopy failed"
+    except OSError:
+        return ""
+
+
+def discard_update_work(app_dir=None):
+    shutil.rmtree(os.path.join(app_dir or APP_DIR, UPDATE_WORK), ignore_errors=True)
+
+
+def _cmd_quote(path):
+    # cmd expands %VAR% even inside quotes; refuse such paths (the caller then
+    # falls back to the release page).
+    if any(c in path for c in '"%\r\n'):
+        raise RuntimeError(f"unsupported character in path: {path!r}")
+    return f'"{path}"'
+
+
+def schedule_app_update(new_root, app_dir=None, pid=None, restart=None):
+    """Windows: a running program's files cannot all be replaced (some stay
+    open), so write a small script that waits for this process to exit, moves
+    the new files into place with robocopy (keeping the user's settings,
+    databases and Downloads), then starts `restart` (an exe path) if given.
+    The script runs hidden and deletes itself. The caller must exit soon."""
+    import subprocess
+    app_dir = os.path.abspath(app_dir or APP_DIR)
+    new_root = os.path.abspath(new_root)
+    pid = int(pid or os.getpid())
+    work = os.path.join(app_dir, UPDATE_WORK)
+    log_path = os.path.join(work, "robocopy.log")
+    failed = os.path.join(work, UPDATE_FAILED)
+    keep_files = " ".join(sorted(UPDATE_KEEP_FILES))
+    lines = [
+        "@echo off",
+        "chcp 65001 >nul",
+        ":wait",
+        f'tasklist /FI "PID eq {pid}" /NH 2>nul | find " {pid} " >nul && '
+        f'(ping -n 2 127.0.0.1 >nul & goto wait)',
+        f"robocopy {_cmd_quote(new_root)} {_cmd_quote(app_dir)} /E /MOVE /R:30 /W:1 "
+        f"/NP /NJH /XF {keep_files} /XD Downloads > {_cmd_quote(log_path)} 2>&1",
+        f"if errorlevel 8 (echo robocopy exit %errorlevel% > {_cmd_quote(failed)}) "
+        f"else (rmdir /s /q {_cmd_quote(work)})",
+    ]
+    if restart:
+        lines.append(f"start \"\" /D {_cmd_quote(app_dir)} {_cmd_quote(restart)}")
+    lines.append('(goto) 2>nul & del "%~f0"')
+    script = os.path.join(tempfile.gettempdir(), f"ESEManager-update-{pid}.cmd")
+    with open(script, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write("\n".join(lines) + "\n")
+    flags = 0x08000000 | 0x00000200          # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen(["cmd.exe", "/d", "/c", script], creationflags=flags,
+                     close_fds=True, cwd=tempfile.gettempdir())
+    return script
+
+
+def install_app_update(new_root, restart_exe=None, app_dir=None):
+    """Install downloaded files: "applied" when done now (Linux; restart the
+    program to use them), "scheduled" when a helper finishes after this
+    process exits (Windows; exit now)."""
+    if sys.platform == "win32":
+        schedule_app_update(new_root, app_dir, restart=restart_exe)
+        return "scheduled"
+    apply_app_update(new_root, app_dir)
+    return "applied"
 
 
 # ---------------------------------------------------------------- ESE-Version-Sorting
