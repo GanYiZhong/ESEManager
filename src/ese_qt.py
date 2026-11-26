@@ -1134,7 +1134,7 @@ class MainWindow(QMainWindow):
         self.dir_row = dir_row
         self._settings_row(form, self.tr("dir"), dir_row, "dir_help")
         self.workers_spin = QSpinBox()
-        self.workers_spin.setRange(1, 8)       # be gentle with the ESE server
+        self.workers_spin.setRange(1, settings_store.MAX_WORKERS)  # ESE capped in core
         self.workers_spin.setFixedWidth(90)
         self.workers_spin.setValue(self._cfg_int(self.config.get("download", {}), "workers", 3, 1))
         self.workers_spin.valueChanged.connect(lambda _: self.save_config())

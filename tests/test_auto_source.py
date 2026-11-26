@@ -160,5 +160,35 @@ def test_auto_is_default_source():
     assert core._download_source == "auto"
     assert core.source_bases()[0] == core.ESE_RAW_BASE
     core.set_download_source("ese")
-    assert core.Downloader([], "x", 1).router is None
+    job = core.Downloader([], "x", 1)          # fixed source: preferred, not measured
+    assert not job.auto and job.router.prefer == core.ESE_RAW_BASE
     core.set_download_source(None)
+
+
+@pytest.mark.parametrize("source", ["ese", "taiko.ac"])
+def test_fixed_source_uses_both_hosts_with_ese_cap(servers, tmp_path, monkeypatch, source):
+    """16 workers with a fixed source: the chosen host comes first and ESE never
+    gets more than ESE_MAX_CONN connections, so with ESE chosen the extra
+    workers download from the mirror at the same time."""
+    ese = servers(0.02)
+    mirror = servers(0.02)
+    monkeypatch.setattr(core, "ESE_RAW_BASE", ese["base"])
+    monkeypatch.setattr(core, "ESE_MIRROR_BASE", mirror["base"])
+    monkeypatch.setattr(core, "_download_source", source)
+    job = core.Downloader(files(40), str(tmp_path / "dl"), 16)
+    assert job.router is not None and job.router.prefer == (
+        ese["base"] if source == "ese" else mirror["base"])
+    assert job.run() == (40, 0, 0, 40)
+    assert ese["peak"] <= core.ESE_MAX_CONN
+    if source == "ese":                      # ESE full at 3: the rest go to the mirror
+        assert len(ese["hits"]) >= 3 and mirror["hits"]
+    else:                                    # the mirror has no cap: it takes them all
+        assert mirror["hits"] and not ese["hits"]
+
+
+def test_preferred_host_yields_when_it_keeps_failing():
+    r = core.HostRouter(["a/", "b/"], prefer="a/")
+    for i in range(6):
+        h = r.pick(f"f{i}")
+        r.report(h, f"f{i}", False if h == "a/" else True, 100, 0.1)
+    assert r._ranked()[0] == "b/"

@@ -4,7 +4,7 @@
 # Download directory (relative or absolute path)
 directory = "Downloads"
 
-# Parallel downloads (1-8). Keep it low to be gentle with the ESE server.
+# Parallel downloads (1-16). ESE gets at most 3 connections; the rest use the mirror.
 workers = 3
 
 # Where song files come from: "ese" (ese.tjadataba.se), "taiko.ac" (git.taiko.ac mirror)

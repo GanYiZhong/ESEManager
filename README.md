@@ -69,7 +69,7 @@ ESEManager-cli self-update                 # install the latest ESEManager over 
 | Option | Commands | Meaning |
 |---|---|---|
 | `--dir DIR` | all | download folder (default: `config.toml`, else `Downloads` next to the app) |
-| `--workers N` | download, missing, updates | parallel downloads, 1–8 (default: `config.toml`, else 3) |
+| `--workers N` | download, missing, updates | parallel downloads, 1–16; ESE gets at most 3, the rest use the mirror (default: `config.toml`, else 3) |
 | `--source S` | download, updates | download host: `ese`, `taiko.ac` or a base URL (default: `config.toml`, else `ese`; the other is the fallback) |
 | `--lang zh_TW\|en\|ja` | all | message language |
 | `--json` | all | one JSON object per line on stdout; messages go to stderr |

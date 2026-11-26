@@ -61,7 +61,7 @@ ESEManager-cli self-update                 # 下載最新版 ESEManager 並覆�
 | 選項 | 適用指令 | 說明 |
 |---|---|---|
 | `--dir 資料夾` | 全部 | 下載目錄（預設讀 `config.toml`，否則為程式旁的 `Downloads`） |
-| `--workers N` | download、missing、updates | 並行下載數 1–8（預設讀 `config.toml`，否則 3） |
+| `--workers N` | download、missing、updates | 並行下載數 1–16，ESE 最多 3 條、其餘走鏡像（預設讀 `config.toml`，否則 3） |
 | `--source S` | download、updates | 下載來源：`ese`、`taiko.ac` 或自訂網址（預設讀 `config.toml`，否則 `ese`；另一個自動當備援） |
 | `--lang zh_TW\|en\|ja` | 全部 | 訊息語言 |
 | `--json` | 全部 | stdout 每行輸出一個 JSON 物件，訊息改到 stderr |

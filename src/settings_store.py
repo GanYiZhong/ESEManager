@@ -25,7 +25,7 @@ THEMES = ("auto", "light", "dark", "high_contrast")
 FONT_SCALES = (90, 100, 115, 130)
 DENSITIES = ("comfortable", "compact")
 SOURCES = ("auto", "ese", "taiko.ac")
-MAX_WORKERS = 8
+MAX_WORKERS = 16
 BUNDLE_FORMAT = "ese-settings"
 MAX_BUNDLE_BYTES = 5 * 1024 * 1024
 

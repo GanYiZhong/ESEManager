@@ -2039,9 +2039,14 @@ class HostRouter:
 
     ALPHA = 0.3
 
-    def __init__(self, bases, limits=None, probe_every=20, path=None, on_switch=None):
+    def __init__(self, bases, limits=None, probe_every=20, path=None, on_switch=None,
+                 prefer=None):
         self.bases = list(bases)
         self.limits = dict(limits or {})
+        # prefer: a fixed download source (settings "ese"/"taiko.ac"/URL). It is
+        # always tried first; the others only take what it cannot (its
+        # connection limit is full, or it keeps failing).
+        self.prefer = prefer if prefer in self.bases else None
         self.probe_every = max(2, probe_every)
         self.path = path
         self.on_switch = on_switch
@@ -2102,7 +2107,11 @@ class HostRouter:
         return spd * (1.0 - st["fail"]) ** 2
 
     def _ranked(self):
-        return sorted(self.bases, key=lambda b: -self._score(b))
+        ranked = sorted(self.bases, key=lambda b: -self._score(b))
+        if self.prefer and self._st[self.prefer]["fail"] <= 0.5:
+            ranked.remove(self.prefer)
+            ranked.insert(0, self.prefer)
+        return ranked
 
     def speeds(self):
         with self._lock:
@@ -2122,7 +2131,7 @@ class HostRouter:
                     if self._st[b]["active"] < self.limits.get(b, 1 << 30)]
             pool = free or ranked[:1]
             choice = pool[0]
-            if not tried:
+            if not tried and not self.prefer:
                 self._n += 1
                 if self._n % self.probe_every == 0:
                     others = [b for b in pool[1:] if b not in prior]
@@ -2199,6 +2208,13 @@ class Downloader:
                 self.bases, limits={ESE_RAW_BASE: ESE_MAX_CONN}, path=rank_path,
                 on_switch=self._announce)
             self.bases = list(self.router.initial)
+        elif not bases and len(self.bases) > 1:
+            # A fixed source from the settings: it comes first, but ESE never
+            # gets more than ESE_MAX_CONN connections; extra workers download
+            # from the other host at the same time.
+            self.router = HostRouter(
+                self.bases, limits={ESE_RAW_BASE: ESE_MAX_CONN},
+                on_switch=self._announce, prefer=self.bases[0])
         self.download_dir = download_dir
         self.workers = max(1, workers)
         self.overwrite = overwrite     # True = replace existing files (update mode)

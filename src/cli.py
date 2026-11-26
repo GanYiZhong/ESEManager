@@ -16,7 +16,7 @@ ESEManager command-line mode.
     ESEManager-cli self-update [--check] [-y]
 
 Common options: --dir DIR (download folder; default from config.toml or
-./Downloads next to the app), --workers N (parallel downloads, 1-8, default 3
+./Downloads next to the app), --workers N (parallel downloads, 1-16, default 3
 or config.toml), --lang zh_TW|en|ja, --json (machine-readable output on
 stdout: one JSON object per line; messages go to stderr), --quiet (results
 and errors only). Colour only on a terminal; NO_COLOR turns it off.
@@ -43,7 +43,7 @@ from appconfig import (APP_DIR, APP_VERSION, CONFIG_FILE, DEFAULT_DOWNLOAD_DIR,
                        VSORT_FOLDER, resolve_dir)
 from i18n import TR, CATEGORY_NAMES, detect_system_lang
 
-MAX_WORKERS = 8              # be gentle with the ESE server
+MAX_WORKERS = 16             # ESE itself gets at most core.ESE_MAX_CONN of them
 DEFAULT_WORKERS = 3
 
 
