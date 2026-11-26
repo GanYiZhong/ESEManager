@@ -184,6 +184,7 @@ class MainWindow(QMainWindow):
 
         self.song_model = SongModel(self.tr, self.jp_map, self.meta_map)
         self.song_model.new_marks = core.new_song_marks()
+        self.song_model.set_favourites(core.load_favourites())
         self.dl_model = DownloadModel(self.tr)
 
         self.build_menus()          # created once; texts refreshed in retranslate_chrome
@@ -523,6 +524,7 @@ class MainWindow(QMainWindow):
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)  # no initial sort
         self.table.doubleClicked.connect(self.on_row_double_clicked)
+        self.table.clicked.connect(self.on_cell_clicked)
         # Space toggles the check of the current row (all selected rows if several).
         space = QShortcut(QKeySequence(Qt.Key_Space), self.table)
         space.setContext(Qt.WidgetShortcut)
@@ -552,6 +554,8 @@ class MainWindow(QMainWindow):
         self.detail_panel.download_requested.connect(self._detail_download)
         self.detail_panel.open_folder_requested.connect(self._detail_open_folder)
         self.detail_panel.copy_requested.connect(self._detail_copy)
+        self.detail_panel.favourite_requested.connect(
+            lambda: self.toggle_favourite(self._current_song()))
         hsplit = self.hsplit = QSplitter(Qt.Horizontal)
         hsplit.setChildrenCollapsible(False)
         hsplit.addWidget(self.table)
@@ -595,6 +599,8 @@ class MainWindow(QMainWindow):
             self.tr("sel_cat"), self.select_current_category)
         self.act_sel_visible = self.sel_menu.addAction(
             self.tr("sel_visible_only"), lambda: self.song_model.keep_visible_only())
+        self.act_sel_fav = self.sel_menu.addAction(
+            self.tr("sel_fav"), lambda: self.song_model.check_favourites())
         self.sel_menu_btn.setMenu(self.sel_menu)
         self.sel_label = _ClickLabel(self.tr("selected", n=0))
         self.sel_label.setToolTip(self.tr("sel_label_tip"))
@@ -761,6 +767,8 @@ class MainWindow(QMainWindow):
         for key, mode in (("dl_all", "all"), ("sn_filter_new", "new")):
             self.new_combo.addItem(self.tr(key), mode)
         form.addRow(self.tr("f_new"), self.new_combo)
+        self.fav_only = QCheckBox(self.tr("f_fav_only"))
+        form.addRow(self.fav_only)
         self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
         self.lv_min.setSpecialValueText(self.tr("f_any"))
         self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
@@ -777,6 +785,7 @@ class MainWindow(QMainWindow):
         self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
         self.dl_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
         self.new_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
+        self.fav_only.toggled.connect(lambda _=None: self.apply_filters())
         return panel
 
     @staticmethod
@@ -804,6 +813,8 @@ class MainWindow(QMainWindow):
         if self.dl_combo.currentData() != "all":
             n += 1
         if self.new_combo.currentData() != "all":
+            n += 1
+        if self.fav_only.isChecked():
             n += 1
         return n
 
@@ -1124,7 +1135,8 @@ class MainWindow(QMainWindow):
             return
         name = song["song_name"]
         self.detail_panel.set_song(song, self.jp_map.get(name, ""), self.meta_map.get(name),
-                                   bool(self._song_dir(song)))
+                                   bool(self._song_dir(song)),
+                                   self.song_model.is_favourite(song))
 
     def _detail_download(self):
         song = self._current_song()
@@ -1358,6 +1370,9 @@ class MainWindow(QMainWindow):
         self.new_combo.blockSignals(True)
         self.new_combo.setCurrentIndex(0)
         self.new_combo.blockSignals(False)
+        self.fav_only.blockSignals(True)
+        self.fav_only.setChecked(False)
+        self.fav_only.blockSignals(False)
         self.apply_filters()
 
     def apply_filters(self):
@@ -1400,6 +1415,8 @@ class MainWindow(QMainWindow):
                                         self.dl_combo.currentData())
         if self.new_combo.currentData() == "new":
             songs = core.filter_new_songs(songs, self.song_model.new_marks)
+        if self.fav_only.isChecked():
+            songs = core.filter_favourites(songs, self.song_model.favourites)
         self.song_model.set_songs(songs)
         self.count_label.setText(self.tr("total", n=len(songs)))
         self.update_sel_count()
@@ -1474,8 +1491,28 @@ class MainWindow(QMainWindow):
     def _row_song(self, row):
         return self.song_model._view[row] if 0 <= row < self.song_model.rowCount() else None
 
+    # ---- favourites
+    def on_cell_clicked(self, index):
+        if index.column() == SongModel.FAV_COL:
+            self.toggle_favourite(self._row_song(index.row()))
+
+    def toggle_favourite(self, song):
+        """Star/unstar a song, persist, and refresh what depends on it."""
+        if not song:
+            return
+        self.song_model.toggle_favourite(song)
+        try:
+            core.save_favourites(self.song_model.favourites)
+        except OSError:
+            core.log.warning("could not save favourites", exc_info=True)
+        if self.fav_only.isChecked():
+            self.apply_filters()          # an unstarred song leaves the list
+        self.refresh_detail()
+
     def on_row_double_clicked(self, index):
         """Double-click: open the song's folder if it is downloaded, else check/uncheck."""
+        if index.column() == SongModel.FAV_COL:
+            return
         song = self._row_song(index.row())
         d = self._song_dir(song) if song else None
         if d:
@@ -1497,8 +1534,10 @@ class MainWindow(QMainWindow):
     def show_row_menu(self, pos):
         idx = self.table.indexAt(pos)
         song = self._row_song(idx.row()) if idx.isValid() else None
-        if not song:
-            return
+        if song:
+            self.build_row_menu(song).exec(self.table.viewport().mapToGlobal(pos))
+
+    def build_row_menu(self, song):
         menu = QMenu(self.table)
         menu.addAction(self.tr("ctx_toggle"), self.toggle_current_rows)
         menu.addAction(self.tr("ctx_download"), lambda: self.start_download(
@@ -1508,7 +1547,10 @@ class MainWindow(QMainWindow):
         a.setEnabled(bool(d))
         menu.addAction(self.tr("ctx_copy_title"),
                        lambda: QGuiApplication.clipboard().setText(song["song_name"]))
-        menu.exec(self.table.viewport().mapToGlobal(pos))
+        fav = self.song_model.is_favourite(song)
+        self.act_ctx_fav = menu.addAction(self.tr("fav_remove" if fav else "fav_add"),
+                                          lambda: self.toggle_favourite(song))
+        return menu
 
     def toggle_check(self, index):
         if index.column() == 0:

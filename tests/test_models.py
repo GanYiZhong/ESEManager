@@ -286,3 +286,24 @@ def test_download_column_display_and_sort(qapp):
     # a fresh scan result re-sorts an already sorted column
     m.set_download_status({("alpha", "ANIME"): 0, ("Bravo", "POPS"): 2, ("Charlie", "POPS"): 1})
     assert names(m) == ["Bravo", "Charlie", "alpha"]
+
+
+# ---------------------------------------------------------------- favourites
+def test_favourite_column_toggle_and_sort():
+    m = make_model()
+    col = SongModel.FAV_COL
+    assert SongModel.COLS[col] == "c_fav" and col == len(SongModel.COLS) - 1
+    assert m.data(m.index(0, col)) == "☆"
+    assert m.toggle_favourite(SONGS[1]) is True
+    assert m.data(m.index(row_of(m, "alpha"), col)) == "★"
+    m.sort(col, Qt.AscendingOrder)
+    assert names(m)[0] == "alpha"                    # starred first
+    assert m.toggle_favourite(SONGS[1]) is False
+    assert not m.favourites
+
+
+def test_check_favourites_and_key_includes_category():
+    m = make_model()
+    m.set_favourites({("alpha", "ANIME"), ("Bravo", "OTHER")})   # wrong category: ignored
+    assert m.check_favourites()
+    assert m.checked == {("alpha", "ANIME")}

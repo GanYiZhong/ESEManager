@@ -61,7 +61,8 @@ class LazyModule:
 
 requests = LazyModule("requests")
 
-from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, NEW_SONGS_FILE, ESE_RAW_BASE,
+from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, NEW_SONGS_FILE,
+                       FAVOURITES_FILE, ESE_RAW_BASE,
                        ESE_MIRROR_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
                        UnsafePathError, LATEST_RELEASE_API, RELEASE_TAG_API, is_newer,
@@ -875,6 +876,44 @@ def filter_by_download(songs, status, mode):
     if mode == "downloaded":
         return [s for s in songs if status.get(song_key(s)) == DL_COMPLETE]
     return [s for s in songs if status.get(song_key(s)) != DL_COMPLETE]
+
+
+# ---------------------------------------------------------------- favourites
+def fav_id(song_or_key):
+    """JSON key of a song: "category/song_name". Accepts a song dict or a
+    (song_name, category) tuple."""
+    name, cat = (song_key(song_or_key) if isinstance(song_or_key, dict)
+                 else song_or_key)
+    return f"{cat}/{name}"
+
+
+def load_favourites(path=None):
+    """Set of (song_name, category) starred by the user. A missing or damaged
+    file yields an empty set."""
+    try:
+        with open(path or FAVOURITES_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        items = data["songs"] if isinstance(data, dict) else data
+        out = set()
+        for it in items:
+            if isinstance(it, str) and "/" in it:
+                cat, _, name = it.partition("/")
+                if cat and name:
+                    out.add((name, cat))
+        return out
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()
+
+
+def save_favourites(favs, path=None):
+    """Write the favourites atomically (sorted, so the file diffs cleanly)."""
+    data = {"version": 1, "songs": sorted(fav_id(k) for k in favs)}
+    write_atomic(path or FAVOURITES_FILE,
+                 json.dumps(data, ensure_ascii=False, indent=1).encode("utf-8"))
+
+
+def filter_favourites(songs, favs):
+    return [s for s in songs if song_key(s) in favs]
 
 
 # ---------------------------------------------------------------- update check
@@ -1966,7 +2005,8 @@ def can_self_update():
 # Files and folders in the app folder that an update never touches: the
 # user's settings, databases (the release bundles older copies) and downloads.
 UPDATE_KEEP_FILES = {"config.toml", "version.txt", "manifest.json",
-                     "ese_songs.db", "ese_local.db", "new_songs.json"}
+                     "ese_songs.db", "ese_local.db", "new_songs.json",
+                     "favourites.json"}
 UPDATE_KEEP_DIRS = {"downloads", ".update"}
 UPDATE_WORK = ".update"
 UPDATE_OLD_LIST = ".update_old.txt"

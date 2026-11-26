@@ -26,6 +26,7 @@ DB_PATH = app_path("ese_songs.db")
 LOCAL_DB_PATH = app_path("ese_local.db")
 VERSION_FILE = app_path("version.txt")
 NEW_SONGS_FILE = app_path("new_songs.json")
+FAVOURITES_FILE = app_path("favourites.json")
 CLONE_DIR = app_path("ESE_clone")
 DEFAULT_DOWNLOAD_DIR = "Downloads"
 

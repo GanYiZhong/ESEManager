@@ -38,14 +38,15 @@ _CHECK_ROLE = [Qt.CheckStateRole]
 
 class SongModel(QAbstractTableModel):
     COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_bpm",
-            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files", "c_dl", "c_new"]
+            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files", "c_dl", "c_new", "c_fav"]
     LEVEL_COLS = {5: "level_easy", 6: "level_normal", 7: "level_hard",
                   8: "level_oni", 9: "level_ura"}
-    _CENTER_COLS = frozenset([4, 5, 6, 7, 8, 9, 10, 11, 12])
+    _CENTER_COLS = frozenset([4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     DL_COL = 11
     NEW_COL = 12
     _NEW_TEXT = {"new": "sn_badge_new", "updated": "sn_badge_upd"}
     _NEW_TIP = {"new": "sn_tip_new", "updated": "sn_tip_upd"}
+    FAV_COL = 13
     _DL_TEXT = {2: "●", 1: "◐", 0: "○"}
     _DL_TIP = {2: "dl_complete", 1: "dl_partial", 0: "dl_none"}
 
@@ -64,6 +65,7 @@ class SongModel(QAbstractTableModel):
         self._skeys = {}         # column -> {id(song): sort value}
         self.dl_status = {}      # (song_name, category) -> 0 none / 1 partial / 2 complete
         self.new_marks = {}      # (song_name, category) -> "new" / "updated" (last DB update)
+        self.favourites = set()  # {(song_name, category), ...}
 
     # jp/meta maps are replaced wholesale after a DB reload: drop derived caches
     @property
@@ -105,6 +107,32 @@ class SongModel(QAbstractTableModel):
         if self._view:
             self.dataChanged.emit(self.index(0, self.NEW_COL),
                                   self.index(len(self._view) - 1, self.NEW_COL))
+
+    def set_favourites(self, favs):
+        """Install the starred set (sorted column and star cells refresh)."""
+        self.favourites = set(favs)
+        self._skeys.pop(self.FAV_COL, None)
+        if self._sort_col == self.FAV_COL:
+            self.sort(self.FAV_COL, Qt.DescendingOrder if self._sort_desc
+                      else Qt.AscendingOrder)
+        if self._view:
+            self.dataChanged.emit(self.index(0, self.FAV_COL),
+                                  self.index(len(self._view) - 1, self.FAV_COL))
+
+    def is_favourite(self, song):
+        return self._key(song) in self.favourites
+
+    def toggle_favourite(self, song):
+        """Flip the star of one song; returns the new state."""
+        key = self._key(song)
+        new = set(self.favourites)
+        on = key not in new
+        (new.add if on else new.discard)(key)
+        self.set_favourites(new)
+        return on
+
+    def check_favourites(self):
+        return self.check_where(self.is_favourite)
 
     def _invalidate(self):
         self._cells.clear()
@@ -165,6 +193,17 @@ class SongModel(QAbstractTableModel):
             return None
         row, col = index.row(), index.column()
         song = self._view[row]
+        if col == self.FAV_COL:
+            fav = self._key(song) in self.favourites
+            if role == Qt.DisplayRole:
+                return "★" if fav else "☆"
+            if role == Qt.ToolTipRole:
+                return self.tr("fav_remove" if fav else "fav_add")
+            if role == Qt.TextAlignmentRole:
+                return int(Qt.AlignCenter)
+            if role == Qt.ForegroundRole:
+                return theme.status_colour("partial") if fav else theme.status_colour("none")
+            return None
         if col == self.DL_COL:
             st = self.dl_status.get(self._key(song))
             if role == Qt.DisplayRole:
@@ -340,6 +379,8 @@ class SongModel(QAbstractTableModel):
             return self.dl_status.get(self._key(song))            # unscanned last
         if col == self.NEW_COL:
             return {"new": 2, "updated": 1}.get(self.new_marks.get(self._key(song)))
+        if col == self.FAV_COL:
+            return 0 if self._key(song) in self.favourites else 1   # starred first (ascending)
         meta = self.meta_map.get(name) or {}
         if col == 4:
             m = re.search(r"\d+(?:\.\d+)?", str(meta.get("bpm") or ""))

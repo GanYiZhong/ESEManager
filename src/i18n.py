@@ -846,3 +846,18 @@ TR["ja"].update({"sn_summary": "新曲 {new} 件、更新 {upd} 件", "sn_show":
                  "sn_none": "新曲・更新はありません", "c_new": "新着", "f_new": "新着・更新",
                  "sn_filter_new": "新着／更新", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
                  "sn_tip_new": "前回のデータベース更新で追加", "sn_tip_upd": "前回のデータベース更新でファイル変更"})
+
+
+# --- favourites
+TR["zh_TW"].update({
+    "c_fav": "★", "fav_add": "加入最愛", "fav_remove": "移出最愛",
+    "f_fav_only": "只顯示最愛", "sel_fav": "選取最愛的歌曲",
+})
+TR["en"].update({
+    "c_fav": "★", "fav_add": "Add to favourites", "fav_remove": "Remove from favourites",
+    "f_fav_only": "Favourites only", "sel_fav": "Select favourites",
+})
+TR["ja"].update({
+    "c_fav": "★", "fav_add": "お気に入りに追加", "fav_remove": "お気に入りから削除",
+    "f_fav_only": "お気に入りのみ", "sel_fav": "お気に入りを選択",
+})

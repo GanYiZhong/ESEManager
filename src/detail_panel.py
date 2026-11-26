@@ -59,6 +59,7 @@ class DetailPanel(QFrame):
     download_requested = Signal()
     open_folder_requested = Signal()
     copy_requested = Signal()
+    favourite_requested = Signal()
 
     def __init__(self, tr, parent=None):
         super().__init__(parent)
@@ -70,6 +71,7 @@ class DetailPanel(QFrame):
         self._jp = ""
         self._meta = {}
         self._downloaded = False
+        self._fav = False
         self._cat_hex = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 10, 12, 10)
@@ -129,7 +131,9 @@ class DetailPanel(QFrame):
         self.open_btn.clicked.connect(self.open_folder_requested)
         self.copy_btn = QPushButton()
         self.copy_btn.clicked.connect(self.copy_requested)
-        for b in (self.dl_btn, self.open_btn, self.copy_btn):
+        self.fav_btn = QPushButton()
+        self.fav_btn.clicked.connect(self.favourite_requested)
+        for b in (self.dl_btn, self.open_btn, self.copy_btn, self.fav_btn):
             b.setFocusPolicy(Qt.NoFocus)       # never take focus from the song table
             lay.addWidget(b)
         lay.addWidget(self.empty, 1)
@@ -147,6 +151,7 @@ class DetailPanel(QFrame):
         self.dl_btn.setText(t("dp_download"))
         self.open_btn.setText(t("ctx_open_folder"))
         self.copy_btn.setText(t("dp_copy"))
+        self._set_fav_text()
         self.empty.setText(t("dp_empty"))
         for name, (key, _c, _col) in zip(self.level_names, DIFFS):
             name.setText(t(key))
@@ -156,12 +161,18 @@ class DetailPanel(QFrame):
         else:
             self.files_head.setText(t("dp_files"))
 
-    def set_song(self, song, jp="", meta=None, downloaded=False):
+    def _set_fav_text(self):
+        self.fav_btn.setText(self.tr("fav_remove" if self._fav else "fav_add"))
+
+    def set_song(self, song, jp="", meta=None, downloaded=False, favourite=False):
         self._song, self._jp = song, jp or ""
         self._meta, self._downloaded = meta or {}, bool(downloaded)
+        self._fav = bool(favourite)
+        self._set_fav_text()
         has = song is not None
         for w in (self.head, self.title, self.jp, self.cat, self.bpm, self.levels_box,
-                  self.files_head, self.files, self.dl_btn, self.open_btn, self.copy_btn):
+                  self.files_head, self.files, self.dl_btn, self.open_btn, self.copy_btn,
+                  self.fav_btn):
             w.setVisible(has)
         self.empty.setVisible(not has)
         if has:
