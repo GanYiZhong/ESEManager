@@ -32,7 +32,9 @@ def test_apply_each_mode(qapp, mode, monkeypatch):
     monkeypatch.setattr(theme, "os_is_dark", lambda: False)
     dark = theme.apply_theme(qapp, mode)
     assert dark is (mode == "dark")
-    assert qapp.style().name().lower() == "fusion"
+    # With the app style sheet installed style().name() is empty; the theme
+    # module records that Fusion was selected.
+    assert theme._state["fusion"] is True
     assert qapp.palette().color(QPalette.Window).isValid()
 
 
@@ -165,3 +167,27 @@ def test_helpers_differ_per_mode_and_are_readable():
         assert _contrast(t["muted"], t["window"]) >= 4.5
         assert "font-size:11px" in theme.muted_label_qss(dark, font_px=11)
     assert "#43A047" not in theme.primary_button_qss(False)  # old hard-coded green is gone
+
+
+@pytest.mark.parametrize("dark", [False, True])
+def test_category_colours_meet_wcag_aa(dark):
+    from i18n import CATEGORY_COLORS
+    t = theme.colours(dark)
+    for hex_colour in CATEGORY_COLORS.values():
+        c = theme.category_colour(hex_colour, dark)
+        for bg in (t["base"], t["alt_base"]):
+            assert theme.contrast_ratio(c, bg) >= 4.5, (hex_colour, dark, bg)
+
+
+@pytest.mark.parametrize("dark", [False, True])
+def test_app_qss_and_selection_contrast(dark):
+    t = theme.colours(dark)
+    assert "QProgressBar" in theme.app_qss(dark)
+    assert theme.contrast_ratio(t["highlight_text"], t["highlight"]) >= 4.5
+    assert theme.contrast_ratio(t["text"], t["progress_chunk"]) >= 4.5
+    assert theme.contrast_ratio(t["text"], t["progress_track"]) >= 4.5
+
+
+def test_apply_theme_installs_stylesheet(qapp):
+    theme.apply_theme(qapp, "dark")
+    assert "QHeaderView::section" in qapp.styleSheet()

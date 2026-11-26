@@ -35,6 +35,9 @@ _TOKENS = {
         "disabled_bg": "#BDBDBD", "disabled_fg": "#616161",
         "hint_bg": "#FFF3CD", "hint_fg": "#5C4400", "hint_border": "#E0C36C",
         "muted": "#6B6B6B", "success": "#2E7D32",
+        "border": "#C4C4C4", "button_hover": "#DEDEDE", "button_pressed": "#D0D0D0",
+        "header_bg": "#ECEEF1", "progress_track": "#DADDE1", "progress_chunk": "#90CAF9",
+        "scroll_handle": "#B4B4B4",
     },
     True: {  # dark
         "window": "#2B2B2B", "window_text": "#E8E8E8",
@@ -51,6 +54,9 @@ _TOKENS = {
         "disabled_bg": "#4A4A4A", "disabled_fg": "#9A9A9A",
         "hint_bg": "#3D3314", "hint_fg": "#FFE08A", "hint_border": "#7A6320",
         "muted": "#9E9E9E", "success": "#81C784",
+        "border": "#4A4A4A", "button_hover": "#464646", "button_pressed": "#525252",
+        "header_bg": "#323232", "progress_track": "#3A3A3A", "progress_chunk": "#1F6AB5",
+        "scroll_handle": "#5E5E5E",
     },
 }
 
@@ -68,7 +74,8 @@ _ROLES = {
 _DISABLED_ROLES = (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
                    QPalette.HighlightedText)
 
-_state = {"app": None, "mode": "auto", "dark": False, "hooked": False}
+_state = {"app": None, "mode": "auto", "dark": False, "hooked": False,
+          "fusion": False}
 _listeners = []
 
 
@@ -122,9 +129,13 @@ def _set_dark(dark):
     app = _state["app"]
     if app is None:
         return
-    if app.style().name().lower() != "fusion":
-        app.setStyle("Fusion")  # palettes are only honoured reliably in Fusion
+    # Palettes are only honoured reliably in Fusion. Once an application style
+    # sheet is installed style().name() is empty, so remember that we did this.
+    if not _state["fusion"] and app.style().name().lower() != "fusion":
+        app.setStyle("Fusion")
+    _state["fusion"] = True
     app.setPalette(build_palette(dark))
+    app.setStyleSheet(app_qss(dark))
     _state["dark"] = bool(dark)
     for ref in list(_listeners):
         fn = ref()
@@ -148,6 +159,8 @@ def apply_theme(app, mode="auto"):
     """
     if mode not in MODES:
         mode = "auto"
+    if _state["app"] is not app:
+        _state["fusion"] = False
     _state["app"] = app
     _state["mode"] = mode
     if not _state["hooked"]:
@@ -174,9 +187,12 @@ def primary_button_qss(dark=None, padding="8px 16px"):
     """Green call-to-action button (download / convert)."""
     t = colours(dark)
     return (f"QPushButton{{background:{t['accent']};color:{t['accent_text']};"
-            f"font-weight:bold;padding:{padding};border-radius:8px;}}"
-            f"QPushButton:hover{{background:{t['accent_hover']};}}"
-            f"QPushButton:disabled{{background:{t['disabled_bg']};color:{t['disabled_fg']};}}")
+            f"font-weight:bold;padding:{padding};border-radius:8px;"
+            f"border:1px solid {t['accent']};}}"
+            f"QPushButton:hover{{background:{t['accent_hover']};border-color:{t['accent_hover']};}}"
+            f"QPushButton:focus{{border:2px solid {t['highlight']};}}"
+            f"QPushButton:disabled{{background:{t['disabled_bg']};color:{t['disabled_fg']};"
+            f"border-color:{t['disabled_bg']};}}")
 
 
 def hint_qss(dark=None):
@@ -188,16 +204,41 @@ def hint_qss(dark=None):
 
 def success_text_qss(dark=None):
     """Bold "good news" text (e.g. the app-update notice in the status bar)."""
-    return f"QPushButton{{color:{colours(dark)['success']};font-weight:bold;}}"
+    return (f"QPushButton{{color:{colours(dark)['success']};font-weight:bold;"
+            f"background:transparent;border:none;min-height:0;padding:0 6px;}}")
+
+
+def _luminance(c):
+    def ch(v):
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * ch(c.redF()) + 0.7152 * ch(c.greenF()) + 0.0722 * ch(c.blueF())
+
+
+def contrast_ratio(a, b):
+    """WCAG 2.x contrast ratio (1..21) between two colours (QColor or hex)."""
+    la, lb = _luminance(QColor(a)), _luminance(QColor(b))
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def ensure_contrast(fg, backgrounds, target=4.5, dark=None):
+    """Nudge fg (lighter on dark themes, darker on light ones) until it reaches
+    the WCAG contrast `target` against every colour in backgrounds."""
+    c = QColor(fg)
+    dark = is_dark() if dark is None else dark
+    for _ in range(40):
+        if all(contrast_ratio(c, bg) >= target for bg in backgrounds):
+            break
+        c = c.lighter(108) if dark else c.darker(108)
+    return c
 
 
 def category_colour(hex_colour, dark=None):
-    """Category colours are mid-tones; darken them on light backgrounds and
-    lighten them on dark ones so the text stays readable."""
-    from PySide6.QtGui import QColor
-    c = QColor(hex_colour)
+    """Category colours are mid-tones; shift them until they meet WCAG AA (4.5:1)
+    against both row backgrounds of the active theme."""
     dark = is_dark() if dark is None else dark
-    return c.lighter(125) if dark else c.darker(135)
+    t = colours(dark)
+    return ensure_contrast(hex_colour, (t["base"], t["alt_base"]), 4.5, dark)
 
 
 def muted_label_qss(dark=None, font_px=None):
@@ -207,12 +248,118 @@ def muted_label_qss(dark=None, font_px=None):
     return f"color:{t['muted']};{size}"
 
 
+def _icon(name, colour, points, width=3.4):
+    """PNG of a polyline glyph in `colour` (cached in the temp dir); QSS needs a file."""
+    import os
+    import tempfile
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QImage, QPainter, QPen
+    d = os.path.join(tempfile.gettempdir(), "ESEManager-theme")
+    path = os.path.join(d, f"{name}_{colour.lstrip('#')}.png")
+    if not os.path.exists(path):
+        os.makedirs(d, exist_ok=True)
+        img = QImage(28, 28, QImage.Format_ARGB32)
+        img.fill(Qt.transparent)
+        p = QPainter(img)
+        p.setRenderHint(QPainter.Antialiasing)
+        pen = QPen(QColor(colour), width)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        p.drawPolyline([QPointF(x, y) for x, y in points])
+        p.end()
+        img.save(path)
+    return path.replace(chr(92), "/")
+
+
+def _tick_icon(colour):
+    return _icon("tick", colour, [(6.5, 14.5), (11.8, 19.8), (21.5, 8.5)])
+
+
+def _chevron_icon(colour):
+    return _icon("chev", colour, [(7, 10), (14, 17.5), (21, 10)], 3.0)
+
+
 def check_indicator_qss(dark=None):
     """Item-view check boxes. Fusion outlines them with a darker shade of the
-    window colour, which disappears on a dark background; draw them explicitly."""
+    window colour, which disappears on a dark background; draw them explicitly
+    (with a tick, also visible on the selected row)."""
     t = colours(dark)
     border = "#A0A0A0" if t is _TOKENS[True] else "#8A8A8A"
-    return (f"QTableView::indicator{{width:14px;height:14px;border-radius:3px;"
+    tick = _tick_icon(t["highlight_text"])
+    tick_sel = _tick_icon(t["highlight"])
+    return (f"QTableView::indicator{{width:16px;height:16px;border-radius:4px;"
             f"border:1px solid {border};background:{t['base']};}}"
             f"QTableView::indicator:checked{{background:{t['highlight']};"
-            f"border:1px solid {t['highlight']};}}")
+            f"border:1px solid {t['highlight']};image:url({tick});}}"
+            f"QTableView::indicator:checked:selected{{background:{t['highlight_text']};"
+            f"border:1px solid {t['highlight_text']};image:url({tick_sel});}}"
+            f"QTableView::indicator:unchecked:selected{{border:1px solid {t['highlight_text']};}}")
+
+
+def app_qss(dark=None):
+    """Application-wide polish on top of the palette: consistent buttons and
+    inputs, visible focus rings, flat table with a quiet header, slim progress
+    bar, underlined tabs and thin scroll bars."""
+    t = colours(dark)
+    return f"""
+QPushButton, QToolButton {{
+    background:{t['button']}; color:{t['button_text']};
+    border:1px solid {t['border']}; border-radius:6px;
+    padding:4px 12px; min-height:20px;
+}}
+QPushButton:hover, QToolButton:hover {{ background:{t['button_hover']}; }}
+QPushButton:pressed, QToolButton:pressed, QToolButton:checked {{
+    background:{t['button_pressed']};
+}}
+QPushButton:focus, QToolButton:focus {{ border:1px solid {t['highlight']}; }}
+QPushButton:disabled, QToolButton:disabled {{
+    color:{t['disabled_text']}; background:{t['window']};
+}}
+QToolButton::menu-indicator {{ subcontrol-position:right center; right:6px; }}
+QLineEdit, QComboBox {{
+    background:{t['base']}; color:{t['text']};
+    border:1px solid {t['border']}; border-radius:6px;
+    padding:4px 8px; min-height:20px;
+    selection-background-color:{t['highlight']}; selection-color:{t['highlight_text']};
+}}
+QLineEdit:focus, QComboBox:focus, QComboBox:on {{
+    border:1px solid {t['highlight']};
+}}
+QComboBox::drop-down {{ border:none; width:24px; }}
+QComboBox::down-arrow {{ image:url({_chevron_icon(t['muted'])}); width:14px; height:14px; }}
+QComboBox QAbstractItemView {{ background:{t['base']}; border:1px solid {t['border']};
+    selection-background-color:{t['highlight']}; selection-color:{t['highlight_text']}; outline:0; }}
+QLineEdit:disabled, QComboBox:disabled {{ background:{t['window']}; color:{t['disabled_text']}; }}
+QTableView {{
+    background:{t['base']}; alternate-background-color:{t['alt_base']};
+    border:1px solid {t['border']}; border-radius:6px; outline:0;
+    gridline-color:transparent;
+    selection-background-color:{t['highlight']}; selection-color:{t['highlight_text']};
+}}
+QTableView::item {{ padding:0 6px; }}
+QTableView::item:selected {{ background:{t['highlight']}; color:{t['highlight_text']}; }}
+QHeaderView::section {{
+    background:{t['header_bg']}; color:{t['muted']}; font-weight:600;
+    padding:5px 8px; border:none; border-bottom:1px solid {t['border']};
+}}
+QProgressBar {{
+    background:{t['progress_track']}; color:{t['text']}; border:none;
+    border-radius:8px; text-align:center; min-height:16px;
+}}
+QProgressBar::chunk {{ background:{t['progress_chunk']}; border-radius:8px; }}
+QTabBar::tab {{
+    padding:6px 16px; border:none; border-bottom:2px solid transparent; color:{t['muted']};
+}}
+QTabBar::tab:hover {{ color:{t['text']}; }}
+QTabBar::tab:selected {{ color:{t['text']}; border-bottom:2px solid {t['highlight']}; }}
+QStatusBar {{ color:{t['muted']}; }}
+QStatusBar::item {{ border:none; }}
+QScrollBar:vertical {{ background:transparent; width:12px; margin:0; }}
+QScrollBar:horizontal {{ background:transparent; height:12px; margin:0; }}
+QScrollBar::handle:vertical {{ background:{t['scroll_handle']}; border-radius:4px; min-height:28px; margin:2px; }}
+QScrollBar::handle:horizontal {{ background:{t['scroll_handle']}; border-radius:4px; min-width:28px; margin:2px; }}
+QScrollBar::handle:hover {{ background:{t['dark']}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width:0; height:0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background:transparent; }}
+"""
