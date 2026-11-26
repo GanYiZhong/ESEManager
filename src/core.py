@@ -1339,6 +1339,242 @@ def auto_check_updates(download_dir, last_full=0.0, now=None, progress=None):
     return find_updates(download_dir, progress=progress, only=only), full
 
 
+# ---------------------------------------------------------------- cleanup
+# Top-level names of the download folder that are never category folders and
+# never touched, even if a database category happened to share the name.
+CLEANUP_PROTECTED = {"config", "config.toml", "ese_songs.db", "ese_local.db",
+                     VSORT_FOLDER.lower(), ".update"}
+CLEANUP_EXPECTED = {"box.def"}      # written by the app, not in the song file listing
+
+
+def _cleanup_db(db_path=None):
+    """({category folder names}, {db file keys}, {dir keys incl. ancestors}),
+    or None without a database."""
+    path = db_path or DB_PATH
+    if not os.path.exists(path):
+        return None
+    conn = connect_ro(path)
+    try:
+        rows = [r[0] for r in conn.execute("SELECT file_path FROM song_files")]
+        cat_rows = [r[0] for r in conn.execute("SELECT path FROM categories")]
+    finally:
+        conn.close()
+    cats, files, dirs = set(), set(), set()
+    for p in cat_rows:
+        k = _rel_key(p)
+        if k and "/" not in k:
+            cats.add(k)
+    for p in rows:
+        k = _rel_key(p)
+        if not k or "/" not in k:
+            continue
+        files.add(k)
+        parts = k.split("/")
+        cats.add(parts[0])
+        for i in range(2, len(parts)):
+            dirs.add("/".join(parts[:i]))
+    cats -= CLEANUP_PROTECTED
+    return cats, files, dirs
+
+
+def _dir_list(path):
+    """[(name, is_dir, size, mtime, is_link)] of a folder; symlinks count as
+    plain files of size 0 so nothing is ever followed out of the tree."""
+    out = []
+    try:
+        it = os.scandir(path)
+    except OSError:
+        return out
+    with it:
+        for e in it:
+            try:
+                if e.is_symlink():
+                    out.append((e.name, False, 0, 0, True))
+                elif e.is_dir(follow_symlinks=False):
+                    out.append((e.name, True, 0, 0, False))
+                else:
+                    st = e.stat()
+                    out.append((e.name, False, st.st_size, st.st_mtime, False))
+            except OSError:
+                continue
+    return sorted(out)
+
+
+def _tree_size(path):
+    size = n = 0
+    stack = [path]
+    while stack:
+        d = stack.pop()
+        for name, is_dir, fsize, _m, _l in _dir_list(d):
+            if is_dir:
+                stack.append(os.path.join(d, name))
+            else:
+                size += fsize
+                n += 1
+    return size, n
+
+
+def analyze_library(download_dir, db_path=None, now=None):
+    """What has piled up in the download folder: one walk of the category
+    folders plus the database listing. None without a database, otherwise:
+      orphans     song folders no longer in the database
+      strays      files inside known song folders that the database does not list
+      parts       leftover *.part files (with "age" in seconds)
+      empty       empty folders (topmost only)
+      categories  {folder: {"size": bytes, "files": n}}
+    Items: {"kind", "path", "rel", "category", "size", ...}. Only folders of
+    categories known to the database are looked at; config, the databases
+    and ESE-Version-Sorting are skipped; box.def is expected."""
+    known = _cleanup_db(db_path)
+    if known is None:
+        return None
+    cats, db_files, db_dirs = known
+    now = time.time() if now is None else now
+    res = {"orphans": [], "strays": [], "parts": [], "empty": [], "categories": {}}
+    lower = os.name == "nt"
+
+    def key(rel):
+        return rel.lower() if lower else rel
+
+    folders = []
+    try:
+        top = os.scandir(download_dir)
+    except OSError:
+        return res
+    with top:
+        for e in top:
+            try:
+                if e.is_dir(follow_symlinks=False) and not e.is_symlink() \
+                        and key(e.name) in cats:
+                    folders.append(e.name)
+            except OSError:
+                continue
+
+    def walk(path, rel, cat, empties):
+        """(size, file count) of a known folder; collects empty subfolders."""
+        size = files = 0
+        for name, is_dir, fsize, mtime, link in _dir_list(path):
+            r = rel + "/" + name
+            full = os.path.join(path, name)
+            if is_dir:
+                if key(r) in db_dirs:
+                    s, n = walk(full, r, cat, empties)
+                    if n == 0:
+                        empties.append((full, r))
+                else:
+                    s, n = _tree_size(full)
+                    if n == 0:
+                        empties.append((full, r))
+                    else:
+                        res["orphans"].append({"kind": "orphan", "path": full, "rel": r,
+                                               "category": cat, "size": s, "files": n})
+                size += s
+                files += n
+                continue
+            size += fsize
+            files += 1
+            if name.lower().endswith(".part"):
+                res["parts"].append({"kind": "part", "path": full, "rel": r, "category": cat,
+                                     "size": fsize, "age": max(0.0, now - mtime)})
+            elif link or name.lower() in CLEANUP_EXPECTED or key(r) in db_files:
+                continue
+            elif rel.count("/") >= 1:        # inside a song folder, not the category root
+                res["strays"].append({"kind": "stray", "path": full, "rel": r,
+                                      "category": cat, "size": fsize})
+        return size, files
+
+    for cat in sorted(folders):
+        empties = []
+        size, files = walk(os.path.join(download_dir, cat), cat, cat, empties)
+        res["categories"][cat] = {"size": size, "files": files}
+        paths = {p for p, _r in empties}
+        for p, r in empties:
+            if os.path.dirname(p) not in paths:      # topmost empty folders only
+                res["empty"].append({"kind": "empty", "path": p, "rel": r,
+                                     "category": cat, "size": 0, "files": 0})
+    return res
+
+
+def cleanup_default_selection(item):
+    """Only .part files older than a day are pre-selected."""
+    return item["kind"] == "part" and item.get("age", 0) > PART_MAX_AGE
+
+
+def cleanup_safe(download_dir, path, db_path=None):
+    """True if path lies strictly inside a known (and unprotected) category folder."""
+    known = _cleanup_db(db_path)
+    if known is None:
+        return False
+    rel = os.path.relpath(os.path.realpath(path), os.path.realpath(download_dir))
+    if rel.startswith("..") or os.path.isabs(rel):
+        return False
+    parts = rel.replace("\\", "/").split("/")
+    first = parts[0].lower() if os.name == "nt" else parts[0]
+    return len(parts) >= 2 and first in known[0] and first not in CLEANUP_PROTECTED
+
+
+def cleanup_apply(download_dir, items, mover, db_path=None):
+    """Move each item with mover(path) -> bool (the trash). Items outside the
+    known category folders are refused. Returns (done, failed)."""
+    done, failed = [], []
+    for it in items:
+        if not os.path.lexists(it["path"]) or not cleanup_safe(download_dir, it["path"], db_path):
+            failed.append(it)
+            continue
+        try:
+            ok = bool(mover(it["path"]))
+        except Exception:
+            log.warning("cleanup failed: %s", it["path"], exc_info=True)
+            ok = False
+        (done if ok else failed).append(it)
+    return done, failed
+
+
+def delete_permanently(path):
+    """Hard delete; only ever called after the user explicitly agreed."""
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+        return True
+    except OSError:
+        return False
+
+
+def move_to_trash(path):
+    """Send a file or folder to the OS trash without Qt (CLI). False on failure."""
+    path = os.path.abspath(path)
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            class SHFILEOPSTRUCTW(ctypes.Structure):
+                _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT),
+                            ("pFrom", wintypes.LPCWSTR), ("pTo", wintypes.LPCWSTR),
+                            ("fFlags", ctypes.c_ushort), ("fAnyOperationsAborted", wintypes.BOOL),
+                            ("hNameMappings", ctypes.c_void_p),
+                            ("lpszProgressTitle", wintypes.LPCWSTR)]
+            op = SHFILEOPSTRUCTW()
+            op.wFunc = 3                                   # FO_DELETE
+            op.pFrom = path + "\0\0"
+            op.fFlags = 0x40 | 0x10 | 0x4 | 0x400          # UNDO|NOCONFIRM|SILENT|NOERRORUI
+            return (ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)) == 0
+                    and not op.fAnyOperationsAborted)
+        import subprocess
+        if sys.platform == "darwin":
+            script = 'tell application "Finder" to delete POSIX file "%s"' % path.replace('"', '\\"')
+            return subprocess.run(["osascript", "-e", script], capture_output=True,
+                                  timeout=30).returncode == 0
+        for cmd in (["gio", "trash", path], ["trash-put", path]):
+            if shutil.which(cmd[0]):
+                return subprocess.run(cmd, capture_output=True, timeout=30).returncode == 0
+    except Exception:
+        log.warning("move_to_trash failed: %s", path, exc_info=True)
+    return False
+
+
 # ---------------------------------------------------------------- downloads
 _download_source = "auto"
 PART_MAX_AGE = 24 * 3600        # seconds a stopped download's .part may be resumed

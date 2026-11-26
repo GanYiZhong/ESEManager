@@ -22,7 +22,7 @@ except ImportError:
     import tomli as tomllib
 import tomli_w
 
-from PySide6.QtCore import Qt, QThread, QTimer, QProcess, QEvent, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, QProcess, QEvent, QFile, Signal
 from PySide6.QtGui import (QAction, QKeySequence, QShortcut, QGuiApplication, QFont,
                            QFontDatabase, QTextCharFormat, QColor)
 from PySide6.QtWidgets import (
@@ -49,7 +49,7 @@ from detail_panel import DetailPanel
 from workers import (AutoUpdateCheckThread, DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread, ReleaseNotesThread)
-from dialogs import AboutDialog, ReleaseNotesDialog, WhatsNewDialog
+from dialogs import AboutDialog, CleanupDialog, ReleaseNotesDialog, WhatsNewDialog
 from notify import Notifier, set_app_icon
 from power import KeepAwake
 
@@ -351,11 +351,13 @@ class MainWindow(QMainWindow):
         self.act_updates = self._action(self.check_updates)
         self.act_open_dir = self._action(self.open_dir)
         self.act_vsort = self._action(self.download_version_sorting)
+        self.act_cleanup = self._action(self.cleanup_library)
         self.act_settings = self._action(self.open_settings)
         self.act_settings.setShortcut(QKeySequence("Ctrl+,"))
         self.act_quit = self._action(self.close)
         for a in (self.act_update_db, self.act_missing, self.act_updates, self.act_vsort):
             self.menu_file.addAction(a)
+        self.menu_file.addAction(self.act_cleanup)
         self.menu_file.addSeparator()
         self.act_sl_export = self._action(self.export_song_list)
         self.act_sl_copy = self._action(self.copy_song_list)
@@ -474,6 +476,7 @@ class MainWindow(QMainWindow):
                      (self.act_sl_import, "sl_import"), (self.act_sl_paste, "sl_paste")):
             a.setText(self.tr(k))
         self.act_vsort.setToolTip(self.tr("vsort_tip"))
+        self.act_cleanup.setText(self.tr("cleanup_action"))
         self.act_settings.setText(self.tr("mw_settings"))
         self.act_quit.setText(self.tr("mw_act_quit"))
         self.act_official.setText(self.tr("official"))
@@ -2101,6 +2104,39 @@ class MainWindow(QMainWindow):
         d = resolve_dir(self.dir_edit.text())
         if os.path.isdir(d):
             self._open_path(d)
+
+    # ---- clean up the download folder (leftovers move to the trash)
+    def cleanup_library(self):
+        ddir = resolve_dir(self.dir_edit.text())
+        title = self.tr("cleanup_title")
+        if not os.path.isdir(ddir):
+            QMessageBox.information(self, title, self.tr("dir_missing", d=ddir))
+            return
+        report = core.analyze_library(ddir)
+        if report is None:
+            QMessageBox.information(self, title, self.tr("cleanup_no_db"))
+            return
+        if not any(report[k] for k in ("orphans", "strays", "parts", "empty")):
+            QMessageBox.information(self, title, self.tr("cleanup_none"))
+            return
+        dlg = CleanupDialog(self, self.tr, report)
+        if not dlg.exec():
+            return
+        done, failed = core.cleanup_apply(ddir, dlg.selected_items(),
+                                          lambda p: QFile.moveToTrash(p))
+        self.statusBar().showMessage(self.tr("cleanup_done", n=len(done),
+                                             size=human_size(sum(i["size"] for i in done))), 8000)
+        if not failed:
+            return
+        names = "\n".join(i["rel"] for i in failed[:8])
+        ask = QMessageBox.question(self, title, self.tr("cleanup_trash_fail", n=len(failed),
+                                                         names=names))
+        if ask != QMessageBox.Yes:
+            return
+        gone, left = core.cleanup_apply(ddir, failed, core.delete_permanently)
+        self.statusBar().showMessage(self.tr("cleanup_deleted", n=len(gone)), 8000)
+        if left:
+            QMessageBox.warning(self, title, self.tr("cleanup_failed", n=len(left)))
 
     # ---- ESE-Version-Sorting (YataiDON version folders)
     def download_version_sorting(self):
