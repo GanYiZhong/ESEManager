@@ -591,3 +591,42 @@ TR["ja"].update({
     "no_results": "一致する曲がありません。\nキーワード、カテゴリ、フィルターを変えてください。",
     "no_songs": "表示する曲がありません。",
 })
+
+
+# --- friendly network / disk error messages (core.friendly_error)
+TR["zh_TW"].update({
+    "err_offline": "無法連線，請檢查網路連線（或 DNS）後再試一次。",
+    "err_timeout": "連線逾時，伺服器沒有回應，請稍後再試。",
+    "err_tls": "安全連線（TLS／憑證）失敗，請檢查系統時間、代理或防火牆設定。",
+    "err_not_found": "伺服器上找不到這個檔案（404）。",
+    "err_rate_limit": "伺服器暫時拒絕請求（請求過於頻繁），請稍後再試。",
+    "err_server": "伺服器發生問題，請稍後再試。",
+    "err_disk_full": "磁碟空間不足，請釋出空間後再試。",
+    "err_permission": "沒有權限寫入這個資料夾，請換一個下載位置。",
+    "err_checksum": "檔案校驗碼不符，下載內容可能已損毀，請稍後再試。",
+    "err_tried": "（已嘗試：{hosts}）",
+})
+TR["en"].update({
+    "err_offline": "Can't connect. Check your internet connection (or DNS) and try again.",
+    "err_timeout": "The connection timed out; the server did not respond. Try again later.",
+    "err_tls": "Secure connection (TLS/certificate) failed. Check the system clock, proxy or firewall.",
+    "err_not_found": "The file was not found on the server (404).",
+    "err_rate_limit": "The server is refusing requests for now (rate limited). Try again later.",
+    "err_server": "The server is having problems. Try again later.",
+    "err_disk_full": "Not enough disk space. Free some space and try again.",
+    "err_permission": "No permission to write to this folder. Choose another download location.",
+    "err_checksum": "Checksum mismatch; the download may be damaged. Try again later.",
+    "err_tried": " (tried: {hosts})",
+})
+TR["ja"].update({
+    "err_offline": "接続できません。インターネット接続（または DNS）を確認して再試行してください。",
+    "err_timeout": "接続がタイムアウトしました。サーバーが応答しません。後でもう一度お試しください。",
+    "err_tls": "安全な接続（TLS／証明書）に失敗しました。システム時刻、プロキシ、ファイアウォールを確認してください。",
+    "err_not_found": "サーバー上にファイルが見つかりません（404）。",
+    "err_rate_limit": "サーバーが一時的にリクエストを拒否しています（制限中）。後でもう一度お試しください。",
+    "err_server": "サーバーに問題が発生しています。後でもう一度お試しください。",
+    "err_disk_full": "ディスクの空き容量が足りません。空きを作って再試行してください。",
+    "err_permission": "このフォルダーに書き込む権限がありません。別の保存先を選んでください。",
+    "err_checksum": "チェックサムが一致しません。ダウンロードが破損している可能性があります。後でもう一度お試しください。",
+    "err_tried": "（試行：{hosts}）",
+})

@@ -713,7 +713,7 @@ class MainWindow(QMainWindow):
         if not kw and cat is None:
             self._unfiltered_seq = self._search_seq   # full list: its size is the song total
         self.count_label.setText("...")
-        t = self._track(SearchThread(kw, cat, seq=self._search_seq))
+        t = self._track(SearchThread(kw, cat, seq=self._search_seq, tr=self.tr))
         t.done.connect(self.on_search_done)
         t.fail.connect(self.on_search_fail)
         self._search = t
@@ -1046,7 +1046,7 @@ class MainWindow(QMainWindow):
         self.missing_btn.setEnabled(False)
         self.overall_label.setText(self.tr("missing_checking"))
         self._set_busy(True)
-        t = self._track(SearchThread("", None))
+        t = self._track(SearchThread("", None, tr=self.tr))
         t.done.connect(lambda _seq, songs: self.on_missing_loaded(songs))
         t.fail.connect(self._on_missing_fail)
         self._miss = t
@@ -1082,7 +1082,7 @@ class MainWindow(QMainWindow):
         self.updates_btn.setEnabled(False)
         self._set_busy(True)
         self.log_view.appendPlainText(self.tr("upd_checking"))
-        t = self._track(CheckUpdatesThread(ddir, None))
+        t = self._track(CheckUpdatesThread(ddir, None, tr=self.tr))
         t.progress.connect(
             lambda d, n: self.count_label.setText(self.tr("upd_progress", d=d, t=n)))
         t.done.connect(self.on_updates_loaded)
@@ -1134,7 +1134,7 @@ class MainWindow(QMainWindow):
         self.act_vsort.setEnabled(False)
         self.show_monitor(1)
         self.log_view.appendPlainText("——— " + self.tr("vsort_action") + " ———")
-        t = self._vsort = self._track(VersionSortingThread(ddir))
+        t = self._vsort = self._track(VersionSortingThread(ddir, tr=self.tr))
         t.log.connect(self.log_view.appendPlainText)
         t.done.connect(self.on_version_sorting_done)
         t.start()
@@ -1301,7 +1301,7 @@ class MainWindow(QMainWindow):
         self.app_update_btn.setEnabled(False)
         self.overall_label.setText(self.tr("upd_app_downloading", p=0))
         self._set_busy(True)
-        t = self._selfupd = self._track(AppSelfUpdateThread())
+        t = self._selfupd = self._track(AppSelfUpdateThread(tr=self.tr))
         t.restart_exe = sys.executable          # the frozen ESEManager executable
         t.progress.connect(self._on_self_update_progress)
         t.done.connect(self._on_self_update_done)

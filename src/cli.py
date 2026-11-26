@@ -280,7 +280,8 @@ def cmd_update_db(args, tr):
     try:
         v = core.update_databases(remote, log=out.msg, tr=tr)
     except Exception as e:
-        out.err(tr("db_fail", e=e))
+        core.log.warning("database update failed", exc_info=True)
+        out.err(tr("db_fail", e=core.friendly_error(e, tr)))
         return 1
     out.msg(f"{tr('dbv_ok')} ({v})")
     out.data({"status": "updated", "version": v})
@@ -357,7 +358,8 @@ def cmd_updates(args, tr):
         out.err(tr("upd_no_sha"))
         return 1
     except Exception as e:
-        out.err(str(e))
+        core.log.warning("update check failed", exc_info=True)
+        out.err(core.friendly_error(e, tr))
         return 1
     if not songs:
         out.msg(tr("upd_none"))
@@ -370,7 +372,8 @@ def cmd_version_sorting(args, tr):
         status, commit = core.download_version_sorting(args.dir, log=out.msg,
                                                        force=args.force)
     except Exception as e:
-        out.err(tr("vsort_fail", e=e))
+        core.log.warning("version sorting download failed", exc_info=True)
+        out.err(tr("vsort_fail", e=core.friendly_error(e, tr)))
         return 1
     out.msg(tr("vsort_latest" if status == "latest" else "vsort_done", c=commit[:7]))
     out.data({"status": status, "commit": commit})
@@ -381,7 +384,8 @@ def cmd_self_update(args, tr):
     try:
         release = core.fetch_latest_release()
     except Exception as e:
-        out.err(tr("upd_app_fail_cli", e=e))
+        core.log.warning("self-update failed", exc_info=True)
+        out.err(tr("upd_app_fail_cli", e=core.friendly_error(e, tr)))
         return 1
     tag = release.get("tag_name") or ""
     # A source checkout ("dev") has no version to compare: always offer the latest.
@@ -410,7 +414,8 @@ def cmd_self_update(args, tr):
         root = core.download_app_update(release, log=out.msg, progress=progress)
         how = core.install_app_update(root)
     except Exception as e:
-        out.err(tr("upd_app_fail_cli", e=e))
+        core.log.warning("self-update failed", exc_info=True)
+        out.err(tr("upd_app_fail_cli", e=core.friendly_error(e, tr)))
         return 1
     out.msg(tr("upd_app_scheduled_cli" if how == "scheduled" else "upd_app_done_cli", v=tag))
     return 0
