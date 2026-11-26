@@ -20,7 +20,8 @@ except ImportError:
 import tomli_w
 
 from PySide6.QtCore import Qt, QTimer, QProcess, QEvent
-from PySide6.QtGui import QAction, QKeySequence, QShortcut, QGuiApplication, QFontDatabase
+from PySide6.QtGui import (QAction, QKeySequence, QShortcut, QGuiApplication, QFont,
+                           QFontDatabase)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
@@ -58,6 +59,10 @@ class MainWindow(QMainWindow):
         self.lang = detect_system_lang() if self.lang_pref == "auto" else self.lang_pref
         # display.theme: "auto" (follow OS) | "light" | "dark"
         self.theme_pref = self.config.get("display", {}).get("theme", "auto")
+        # display.font_scale: UI font size in percent (90/100/115/130), app-wide
+        self.font_scale = self._valid_font_scale(
+            self.config.get("display", {}).get("font_scale", 100))
+        self.apply_font_scale(self.font_scale)
         self.jp_map = load_jp_map()
         self.meta_map = load_meta_map()
         self.all_songs = []          # 最近一次搜尋的完整結果（篩選前）
@@ -89,6 +94,49 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(500, self._report_failed_update)
 
     SEARCH_DELAY_MS = 300
+    FONT_SCALES = (90, 100, 115, 130)
+
+    @classmethod
+    def _valid_font_scale(cls, v):
+        return v if isinstance(v, int) and not isinstance(v, bool) and v in cls.FONT_SCALES else 100
+
+    def apply_font_scale(self, pct):
+        """Scale the application font (relative to the font at first launch)
+        and re-derive the pixel metrics that depend on it."""
+        app = QApplication.instance()
+        if app is None:
+            return
+        base = app.property("ese_base_font")
+        if base is None:
+            base = app.font()
+            app.setProperty("ese_base_font", base)
+        f = QFont(base)
+        if base.pointSizeF() > 0:
+            f.setPointSizeF(base.pointSizeF() * pct / 100)
+        elif base.pixelSize() > 0:
+            f.setPixelSize(max(1, round(base.pixelSize() * pct / 100)))
+        app.setFont(f)
+        # Item views, headers and menus carry their own platform font, so setFont()
+        # on the app alone leaves them behind: push the font to every widget.
+        self.setFont(f)
+        for child in self.findChildren(QWidget):
+            child.setFont(f)
+        self.update_font_metrics()
+
+    def update_font_metrics(self):
+        """Row heights, minimum widths and bar height follow the font, not fixed
+        pixels, so text stays readable at 125%/150% OS scaling and larger fonts."""
+        if not hasattr(self, "dir_row"):
+            return
+        fm = self.table.fontMetrics()
+        row = max(28, fm.height() + 14)
+        self.table.verticalHeader().setDefaultSectionSize(row)
+        self.dl_table.verticalHeader().setDefaultSectionSize(row)
+        em = fm.horizontalAdvance("M")
+        self.cat_combo.setMinimumWidth(em * 9)
+        self.overall_bar.setMaximumWidth(em * 14)
+        self.overall_bar.setMaximumHeight(max(18, fm.height() + 4))
+        self.dir_row.setMinimumWidth(em * 36)
     DEFAULT_WINDOW = (1280, 860)
 
     # ---- i18n / config
@@ -123,7 +171,8 @@ class MainWindow(QMainWindow):
             win_w, win_h = self.width(), self.height()
         cat = self.cat_combo.currentData() if hasattr(self, "cat_combo") else None
         display = {"page_size": 20, "category": cat or "", "ui_language": self.lang_pref,
-                   "theme": self.theme_pref, "window_w": win_w, "window_h": win_h,
+                   "theme": self.theme_pref, "font_scale": self.font_scale,
+                   "window_w": win_w, "window_h": win_h,
                    "monitor_open": bool(getattr(self, "monitor_btn", None)
                                         and self.monitor_btn.isChecked())}
         sizes = self.splitter.sizes() if hasattr(self, "splitter") else []
@@ -196,13 +245,30 @@ class MainWindow(QMainWindow):
         sb.addPermanentWidget(self.db_ver_label)
 
     def build_shortcuts(self):
-        for seq, slot in (("Ctrl+F", self._focus_search), ("Ctrl+D", self._shortcut_download)):
+        for seq, slot in (("Ctrl+F", self._focus_search), ("Ctrl+D", self._shortcut_download),
+                          ("F5", self._refresh_current)):
             sc = QShortcut(QKeySequence(seq), self)
             sc.activated.connect(slot)
 
     def _focus_search(self):
         self.search_edit.setFocus()
         self.search_edit.selectAll()
+
+    def _refresh_current(self):
+        """F5: re-run the current search (also leaves a check-result view)."""
+        self._search_now()
+
+    def _check_all_visible(self):
+        """Ctrl+A in the table: check every song currently listed."""
+        self.table.selectAll()
+        self.song_model.set_all(True)
+
+    def _search_down(self):
+        """Down in the search box: move into the table."""
+        self.table.setFocus()
+        if self.song_model.rowCount() and not self.table.currentIndex().isValid():
+            self.table.selectRow(0)
+            self.table.setCurrentIndex(self.song_model.index(0, 1))
 
     def _shortcut_download(self):
         # Same guard as the button: nothing to do while a download is running.
@@ -260,8 +326,10 @@ class MainWindow(QMainWindow):
         esc = QShortcut(QKeySequence(Qt.Key_Escape), self.search_edit)
         esc.setContext(Qt.WidgetShortcut)
         esc.activated.connect(self.search_edit.clear)
+        down = QShortcut(QKeySequence(Qt.Key_Down), self.search_edit)
+        down.setContext(Qt.WidgetShortcut)
+        down.activated.connect(self._search_down)
         self.cat_combo = QComboBox()
-        self.cat_combo.setMinimumWidth(140)
         self.cat_combo.currentIndexChanged.connect(self._on_category_changed)
         self.filter_btn = QToolButton()
         self.filter_btn.setPopupMode(QToolButton.InstantPopup)
@@ -312,7 +380,6 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.horizontalHeader().setHighlightSections(False)
@@ -323,6 +390,9 @@ class MainWindow(QMainWindow):
         space = QShortcut(QKeySequence(Qt.Key_Space), self.table)
         space.setContext(Qt.WidgetShortcut)
         space.activated.connect(self.toggle_current_rows)
+        sel = QShortcut(QKeySequence("Ctrl+A"), self.table)
+        sel.setContext(Qt.WidgetShortcut)
+        sel.activated.connect(self._check_all_visible)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_row_menu)
         hh = self.table.horizontalHeader()
@@ -364,8 +434,6 @@ class MainWindow(QMainWindow):
         self.sel_label = QLabel(self.tr("selected", n=0))
         self.overall_bar = QProgressBar()
         self.overall_bar.setFormat("%v / %m")
-        self.overall_bar.setMaximumWidth(220)
-        self.overall_bar.setMaximumHeight(18)
         self.overall_label = QLabel(self.tr("ready"))
         self.pause_btn = QToolButton()
         self.pause_btn.setText(self.tr("pause"))
@@ -389,6 +457,7 @@ class MainWindow(QMainWindow):
         root.addLayout(bottom)
 
         self.build_settings_dialog()
+        self.update_font_metrics()
         self.set_monitor_open(bool(disp.get("monitor_open", False)))
         self.update_filter_button()
 
@@ -396,6 +465,36 @@ class MainWindow(QMainWindow):
         self.song_model.dataChanged.connect(self.update_sel_count)
         self.retranslate_chrome()
         self._apply_icons()
+        self._setup_accessibility()
+
+    def _setup_accessibility(self):
+        """Logical Tab order, accessible names and shortcut-bearing tooltips."""
+        order = (self.search_edit, self.cat_combo, self.filter_btn, self.db_update_btn,
+                 self.missing_btn, self.updates_btn, self.table, self.download_btn,
+                 self.selall_btn, self.deselall_btn, self.pause_btn, self.stop_btn,
+                 self.monitor_btn)
+        for a, b in zip(order, order[1:]):
+            QWidget.setTabOrder(a, b)
+        t = self.tr
+        for wdg, name, tip in (
+                (self.search_edit, t("ph"), t("search_tip")),
+                (self.cat_combo, t("acc_category"), t("acc_category_tip")),
+                (self.filter_btn, t("f_filter"), t("acc_filter_tip")),
+                (self.table, t("acc_table"), t("acc_table_tip")),
+                (self.selall_btn, t("sel_all"), t("selall_tip")),
+                (self.deselall_btn, t("desel_all"), t("deselall_tip")),
+                (self.pause_btn, t("pause"), t("pause")),
+                (self.stop_btn, t("stop"), t("stop")),
+                (self.monitor_btn, t("monitor"), t("monitor")),
+                (self.download_btn, t("download"), t("download_tip")),
+                (self.db_update_btn, t("db_update"), t("db_update_tip")),
+                (self.missing_btn, t("check_missing"), t("check_missing")),
+                (self.updates_btn, t("check_updates"), t("check_updates")),
+                (self.dl_table, t("tab_prog"), t("tab_prog")),
+                (self.fail_list, t("tab_fail"), t("tab_fail"))):
+            wdg.setAccessibleName(name)
+            wdg.setAccessibleDescription(tip)
+            wdg.setToolTip(tip)
 
     # (button/action attribute, icon name); re-tinted by _apply_icons() on theme change
     _ICON_MAP = (
@@ -576,6 +675,7 @@ class MainWindow(QMainWindow):
         dh.addWidget(self.dir_edit, 1)
         dh.addWidget(self.browse_btn)
         dh.addWidget(self.opendir_btn)
+        self.dir_row = dir_row
         self._settings_row(form, self.tr("dir"), dir_row, "dir_help")
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, 8)       # be gentle with the ESE server
@@ -624,6 +724,13 @@ class MainWindow(QMainWindow):
         self.theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.theme_combo.currentIndexChanged.connect(self.change_theme)
         self._settings_row(form, self.tr("th_label"), self.theme_combo, "th_help")
+        self.font_combo = QComboBox()
+        self.font_combo.setToolTip(self.tr("font_tip"))
+        for pct in self.FONT_SCALES:
+            self.font_combo.addItem(f"{pct}%", pct)
+        self.font_combo.setCurrentIndex(self.font_combo.findData(self.font_scale))
+        self.font_combo.currentIndexChanged.connect(self.change_font_scale)
+        self._settings_row(form, self.tr("font_label"), self.font_combo, "font_tip")
 
         root.addSpacing(10)
         buttons = QHBoxLayout()
@@ -1350,6 +1457,14 @@ class MainWindow(QMainWindow):
             return
         if QMessageBox.question(self, self.tr("lang"), self.tr("lang_restart")) == QMessageBox.Yes:
             self._restart()
+
+    def change_font_scale(self, *_):
+        pct = self._valid_font_scale(self.font_combo.currentData())
+        if pct == self.font_scale:
+            return
+        self.font_scale = pct
+        self.apply_font_scale(pct)     # applies immediately
+        self.save_config()
 
     def change_theme(self, *_):
         mode = self.theme_combo.currentData() or "auto"

@@ -474,7 +474,7 @@ TR["ja"].update({
 TR["zh_TW"].update({
     "download_tip": "下載勾選的歌曲（Ctrl+D）",
     "shortcuts": "快捷鍵",
-    "shortcuts_text": "Ctrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\n"
+    "shortcuts_text": "Ctrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\nF5　重新搜尋／重新整理\nCtrl+A　（表格中）勾選全部列出的歌曲\n↓　（搜尋框中）移到表格\n"
                       "Ctrl+,　設定\nSpace　勾選／取消勾選目前的列\n雙擊列　已下載則開啟資料夾，否則勾選\n右鍵　歌曲選單",
     "view_missing": "目前只顯示缺漏的 {n} 首歌曲。",
     "view_updates": "目前只顯示有更新的 {n} 首歌曲。",
@@ -486,7 +486,7 @@ TR["zh_TW"].update({
 TR["en"].update({
     "download_tip": "Download the checked songs (Ctrl+D)",
     "shortcuts": "Keyboard Shortcuts",
-    "shortcuts_text": "Ctrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\n"
+    "shortcuts_text": "Ctrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\nF5  Re-run the search / refresh\nCtrl+A  (in the table) Check all listed songs\nDown arrow  (in the search box) Move into the table\n"
                       "Ctrl+,  Settings\nSpace  Check / uncheck the current row\nDouble-click a row  Open its folder if downloaded, else check\nRight-click  Song menu",
     "view_missing": "Showing only the {n} songs with missing files.",
     "view_updates": "Showing only the {n} songs with upstream changes.",
@@ -500,7 +500,7 @@ TR["en"].update({
 TR["ja"].update({
     "download_tip": "チェックした曲をダウンロード（Ctrl+D）",
     "shortcuts": "キーボードショートカット",
-    "shortcuts_text": "Ctrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\n"
+    "shortcuts_text": "Ctrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\nF5　再検索／更新\nCtrl+A　（表内）表示中の曲をすべてチェック\n↓　（検索ボックス内）表へ移動\n"
                       "Ctrl+,　設定\nSpace　現在の行のチェック切り替え\n行をダブルクリック　ダウンロード済みならフォルダを開く、未ならチェック\n右クリック　曲メニュー",
     "view_missing": "不足している {n} 曲のみ表示しています。",
     "view_updates": "更新のある {n} 曲のみ表示しています。",
@@ -668,4 +668,34 @@ TR["ja"].update({
     "src_help": "曲ファイルのダウンロード元。失敗した場合は自動的にもう一方を使います。",
     "lang_help": "表示言語。「自動」はシステムの言語に合わせます。",
     "th_help": "ライトまたはダーク。「自動」は OS の設定に合わせて切り替わります。",
+})
+
+
+# --- keyboard, accessibility and UI font size
+TR["zh_TW"].update({
+    "search_tip": "搜尋歌曲（Ctrl+F；↓ 移到表格；Esc 清除；F5 重新搜尋）",
+    "acc_category": "分類", "acc_category_tip": "依分類篩選歌曲",
+    "acc_filter_tip": "依 BPM、難度與等級篩選",
+    "acc_table": "歌曲列表", "acc_table_tip": "歌曲列表（Space 勾選、Ctrl+A 全部勾選、Ctrl+D 下載）",
+    "selall_tip": "勾選目前列出的所有歌曲（Ctrl+A）",
+    "deselall_tip": "取消勾選所有歌曲",
+    "font_label": "字體大小", "font_tip": "整個程式的文字大小，立即套用",
+})
+TR["en"].update({
+    "search_tip": "Search songs (Ctrl+F; Down arrow moves to the table; Esc clears; F5 re-runs)",
+    "acc_category": "Category", "acc_category_tip": "Filter songs by category",
+    "acc_filter_tip": "Filter by BPM, difficulty and level",
+    "acc_table": "Song list", "acc_table_tip": "Song list (Space checks, Ctrl+A checks all, Ctrl+D downloads)",
+    "selall_tip": "Check all listed songs (Ctrl+A)",
+    "deselall_tip": "Uncheck all songs",
+    "font_label": "Font size", "font_tip": "Text size for the whole app, applied immediately",
+})
+TR["ja"].update({
+    "search_tip": "曲を検索（Ctrl+F、↓ で表へ移動、Esc でクリア、F5 で再検索）",
+    "acc_category": "カテゴリ", "acc_category_tip": "カテゴリで曲を絞り込み",
+    "acc_filter_tip": "BPM・難易度・レベルで絞り込み",
+    "acc_table": "曲リスト", "acc_table_tip": "曲リスト（Space でチェック、Ctrl+A で全チェック、Ctrl+D でダウンロード）",
+    "selall_tip": "表示中の曲をすべてチェック（Ctrl+A）",
+    "deselall_tip": "すべてのチェックを外す",
+    "font_label": "文字サイズ", "font_tip": "アプリ全体の文字サイズ（すぐに反映）",
 })
