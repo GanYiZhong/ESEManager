@@ -29,7 +29,8 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction, QCheckBox
+    QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction, QCheckBox,
+    QSystemTrayIcon
 )
 
 from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
@@ -45,6 +46,7 @@ from workers import (DownloadStatusThread, SearchThread, CheckUpdatesThread, Dow
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread)
 from notify import Notifier, set_app_icon
+from power import KeepAwake
 
 
 webbrowser = core.LazyModule("webbrowser")   # ~60 ms we do not need at startup
@@ -177,6 +179,10 @@ class MainWindow(QMainWindow):
         self.build_shortcuts()
         self.build_ui()
         self.notifier = Notifier(self)
+        self.awake = KeepAwake()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.awake.release)
         self.load_categories()
         QTimer.singleShot(1200, self.check_db_update)
         QTimer.singleShot(3000, self.check_app_update)
@@ -280,6 +286,7 @@ class MainWindow(QMainWindow):
         cfg = {
             "download": {"directory": self.dir_edit.text(),
                          "workers": self.workers_spin.value(),
+                         "keep_awake": self.keep_awake_chk.isChecked(),
                          "source": (self.source_combo.currentData()
                                     if hasattr(self, "source_combo") else "ese")},
             "display": display,
@@ -832,6 +839,11 @@ class MainWindow(QMainWindow):
         wh.addWidget(self.workers_spin)
         wh.addStretch()
         self._settings_row(form, self.tr("workers"), wbox, "workers_help")
+        ka = self.config.get("download", {}).get("keep_awake", True)
+        self.keep_awake_chk = QCheckBox(self.tr("keep_awake"))
+        self.keep_awake_chk.setChecked(ka if isinstance(ka, bool) else True)
+        self.keep_awake_chk.toggled.connect(self._on_keep_awake_toggled)
+        self._settings_row(form, "", self.keep_awake_chk, "keep_awake_help")
         self.source_combo = QComboBox()
         self.source_combo.setToolTip(self.tr("src_tip"))
         self.source_combo.addItem(self.tr("src_ese"), "ese")
@@ -1473,7 +1485,13 @@ class MainWindow(QMainWindow):
             overwrite=overwrite, tr=self.tr))
         self.dl_thread.log.connect(self.log_view.appendPlainText)
         self.dl_thread.finished_all.connect(self.on_download_done)
-        self.dl_thread.start()
+        try:
+            self.dl_thread.start()
+        except Exception:
+            self.awake.release()
+            raise
+        if self.keep_awake_chk.isChecked():
+            self.awake.acquire()
 
         # 主執行緒以 QTimer 定時拉取進度（取代每 chunk 發訊號，避免卡死）
         if not hasattr(self, "dl_timer"):
@@ -1529,6 +1547,8 @@ class MainWindow(QMainWindow):
             self.dl_model.update_many(dirty)
         if total:
             self.setWindowTitle(f"{done * 100 // total}% – {self.tr('title')}")
+        if self._in_background and self.notifier.tray is not None:
+            self.notifier.tray.setToolTip(f"{self.tr('title')}  {self.overall_label.text()}")
 
     def _reset_window_title(self):
         self.setWindowTitle(f"{self.tr('title')} {APP_VERSION}")
@@ -1552,7 +1572,15 @@ class MainWindow(QMainWindow):
             self.pause_btn.setEnabled(False)
             self.log_view.appendPlainText(self.tr("log_dl_stopping"))
 
+    def _on_keep_awake_toggled(self, on):
+        if not on:
+            self.awake.release()
+        elif self.dl_thread and self.dl_thread.isRunning():
+            self.awake.acquire()
+        self.save_config()
+
     def on_download_done(self, dl, skip, fail, total):
+        self.awake.release()
         if hasattr(self, "dl_timer"):
             self.dl_timer.stop()
         self.refresh_progress()   # 最後一次刷新，確保畫面到位
@@ -1587,6 +1615,8 @@ class MainWindow(QMainWindow):
         key = "stopped_msg" if stopped else "done_msg"
         text = self.tr(key, d=dl, s=skip, f=fail, t=total)
         self.notifier.notify(self.tr("title"), text)
+        if self._in_background:
+            self._leave_background()
         self._show_summary(text, fail)
         deferred, self._deferred_files = getattr(self, "_deferred_files", []), []
         if deferred:
@@ -1968,18 +1998,97 @@ class MainWindow(QMainWindow):
 
     # ---- shutdown
     _closing = False
+    _in_background = False
+    _force_quit = False
+
+    def _ask_close_during_download(self, can_background):
+        """Returns "background", "quit" or "cancel"."""
+        box = QMessageBox(QMessageBox.Question, self.tr("title"),
+                          self.tr("bg_ask" if can_background else "bg_ask_notray"), parent=self)
+        bg = box.addButton(self.tr("bg_keep"), QMessageBox.AcceptRole) if can_background else None
+        quit_btn = box.addButton(self.tr("bg_quit"), QMessageBox.DestructiveRole)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        if bg is not None and clicked is bg:
+            return "background"
+        return "quit" if clicked is quit_btn else "cancel"
+
+    def _enter_background(self):
+        tray = self.notifier.tray
+        menu = QMenu(self)
+        self._tray_menu = menu
+        menu.addAction(self.tr("tray_show"), self._leave_background)
+        self._tray_pause_act = menu.addAction(self.tr("tray_pause"), self._tray_toggle_pause)
+        menu.addSeparator()
+        menu.addAction(self.tr("tray_quit"), self._tray_quit)
+        tray.setContextMenu(menu)
+        tray.activated.connect(self._on_tray_activated)
+        self.notifier.pinned = True
+        tray.show()
+        self._in_background = True
+        QApplication.setQuitOnLastWindowClosed(False)
+        self.hide()
+        self.refresh_progress()
+
+    def _leave_background(self):
+        tray = self.notifier.tray
+        if self._in_background and tray is not None:
+            try:
+                tray.activated.disconnect(self._on_tray_activated)
+            except (RuntimeError, TypeError):
+                pass
+            tray.setContextMenu(None)
+            tray.setToolTip("")
+        self._in_background = False
+        self.notifier.pinned = False
+        if tray is not None:
+            tray.hide()
+        QApplication.setQuitOnLastWindowClosed(True)
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self._leave_background()
+
+    def _tray_toggle_pause(self):
+        self.toggle_pause()
+        paused = bool(self.dl_thread and self.dl_thread.is_paused())
+        self._tray_pause_act.setText(self.tr("tray_resume" if paused else "tray_pause"))
+
+    def _tray_quit(self):
+        self._force_quit = True
+        self.close()
 
     def closeEvent(self, event):
         """Stop background work before the window goes away, so no QThread is
         destroyed while running and no half-written file is left behind."""
         busy = [t for t in self._threads if t.isRunning()]
-        if busy and not self._closing:
-            if self.dl_thread in busy or self._db_busy():
+        dl_running = bool(self.dl_thread and self.dl_thread in busy)
+        if busy and not self._closing and not self._force_quit:
+            if dl_running:
+                can_bg = self.notifier.tray is not None and not getattr(self.dl_thread, "stopped", False)
+                choice = self._ask_close_during_download(can_bg)
+                if choice == "cancel":
+                    event.ignore()
+                    return
+                if choice == "background":
+                    event.ignore()
+                    self._enter_background()
+                    return
+            elif self._db_busy():
                 if QMessageBox.question(self, self.tr("title"),
                                         self.tr("quit_busy")) != QMessageBox.Yes:
                     event.ignore()
                     return
         self._closing = True
+        QApplication.setQuitOnLastWindowClosed(True)
+        self.awake.release()
+        if self.notifier.tray is not None:
+            self.notifier.pinned = False
+            self.notifier.tray.hide()
         if self.dl_thread and self.dl_thread.isRunning():
             self.dl_thread.stop()
         if hasattr(self, "dl_timer"):

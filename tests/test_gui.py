@@ -75,8 +75,8 @@ def test_close_stops_running_download(window, qapp, monkeypatch):
     t = window._track(SlowThread())
     window.dl_thread = t
     t.start()
-    # "Quit while busy?" -> Yes
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    # "Stop and quit / keep in background?" -> stop and quit
+    monkeypatch.setattr(window, "_ask_close_during_download", lambda can_bg: "quit")
     window.close()
     assert window._closing
     assert t.wait(3000) and not t.isRunning()
