@@ -257,3 +257,71 @@ def test_pause_ignored_once_stopping(window):
 def test_download_summary_strings_exist(lang):
     from i18n import TR
     assert TR[lang]["dl_open_folder"] and TR[lang]["dl_retry_failed"]
+
+
+# ---- keyboard, accessibility, scaling
+def _songs(n=3):
+    return [{"title": f"Song {i}", "category": "Pop", "files": [], "id": i} for i in range(n)]
+
+
+def test_tab_order_runs_search_to_download(window):
+    pos = {}
+    w = window.search_edit
+    for i in range(300):
+        pos.setdefault(w, i)
+        w = w.nextInFocusChain()
+    assert pos[window.search_edit] < pos[window.cat_combo] < pos[window.filter_btn] \
+        < pos[window.table] < pos[window.download_btn] < pos[window.selall_btn]
+
+
+def test_accessible_names_and_shortcut_tooltips(window):
+    for w in (window.search_edit, window.cat_combo, window.table, window.pause_btn,
+              window.stop_btn, window.selall_btn, window.monitor_btn):
+        assert w.accessibleName() and w.accessibleDescription()
+    assert window.accessibleName() is not None
+    assert "Ctrl+D" in window.download_btn.toolTip()
+    assert "Ctrl+A" in window.selall_btn.toolTip()
+    assert "Ctrl+F" in window.search_edit.toolTip()
+
+
+def test_ctrl_a_checks_all_and_down_enters_table(window):
+    window.song_model.set_songs(SONGS)
+    assert window.song_model.selected_songs() == []
+    window._check_all_visible()
+    assert len(window.song_model.selected_songs()) == len(SONGS)
+    window._search_down()
+    assert window.table.currentIndex().isValid()
+
+
+def test_f5_reruns_search(window, monkeypatch):
+    calls = []
+    monkeypatch.setattr(window, "do_search", lambda: calls.append(1))
+    window._refresh_current()
+    assert calls == [1]
+
+
+def test_font_scale_applies_and_persists(window, qapp, tmp_path):
+    import tomllib
+    base_h = window.table.fontMetrics().height()
+    try:
+        window.font_combo.setCurrentIndex(window.font_combo.findData(130))
+        assert window.font_scale == 130
+        fm = window.table.fontMetrics()
+        assert window.table.verticalHeader().defaultSectionSize() >= fm.height() + 10
+        assert window.table.font().pointSizeF() > 9.5
+        window.save_config()
+        with open(tmp_path / "config.toml", "rb") as f:
+            assert tomllib.load(f)["display"]["font_scale"] == 130
+    finally:
+        window.font_combo.setCurrentIndex(window.font_combo.findData(100))
+    assert ese_qt.MainWindow._valid_font_scale(77) == 100
+    assert ese_qt.MainWindow._valid_font_scale("130") == 100
+
+
+@pytest.mark.parametrize("lang", ["zh_TW", "en", "ja"])
+def test_new_i18n_keys_present(lang):
+    from i18n import TR
+    for key in ("search_tip", "acc_category", "acc_table", "selall_tip",
+                "font_label", "font_tip"):
+        assert TR[lang][key]
+    assert "F5" in TR[lang]["shortcuts_text"] and "Ctrl+A" in TR[lang]["shortcuts_text"]
