@@ -7,6 +7,7 @@ monkeypatch core.DB_PATH and friends.
 """
 
 import collections
+import functools
 import gzip
 import hashlib
 import json
@@ -62,6 +63,7 @@ class LazyModule:
 
 requests = LazyModule("requests")
 
+from i18n import CATEGORY_NAMES
 from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, NEW_SONGS_FILE,
                        FAVOURITES_FILE, ESE_RAW_BASE,
                        ESE_MIRROR_BASE,
@@ -823,6 +825,309 @@ def search_songs(keyword, category=None):
     # Callers get their own dicts, so mutating a result cannot corrupt the cache.
     return [dict(idx.songs[i], files=list(idx.songs[i]["files"])) for i in out]
 
+
+
+
+# ---------------------------------------------------------------- query syntax
+# `miku bpm:>180 oni:>=8 cat:vocaloid fav new dl:no ura:any -cat:anime "love story"`
+# Free words go to search_songs() unchanged; the structured tokens are parsed
+# here (Qt-free) and applied to the result list by apply_query().
+_NUM_KEYS = {"bpm": "bpm", "easy": "level_easy", "normal": "level_normal",
+             "hard": "level_hard", "oni": "level_oni", "ura": "level_ura",
+             "files": "files"}
+_KEY_ALIASES = {"category": "cat", "favorite": "fav", "favourite": "fav",
+                "star": "fav", "updated": "upd", "update": "upd",
+                "downloaded": "dl", "download": "dl"}
+_FLAG_KEYS = ("fav", "new", "upd")
+_STRUCT_KEYS = frozenset(_NUM_KEYS) | {"cat", "dl"} | frozenset(_FLAG_KEYS)
+_DL_VALUES = {"yes": 2, "y": 2, "true": 2, "1": 2, "done": 2,
+              "no": 0, "n": 0, "false": 0, "0": 0, "none": 0,
+              "partial": 1, "part": 1, "some": 1}
+_BOOL_YES = {"yes", "y", "true", "1", "on"}
+_BOOL_NO = {"no", "n", "false", "0", "off"}
+_CMP_RE = re.compile(r"^(>=|<=|=>|=<|==|>|<|=)?\s*(-?\d+(?:\.\d+)?)$")
+_RANGE_RE = re.compile(r"^(-?\d+(?:\.\d+)?)?\s*\.\.\s*(-?\d+(?:\.\d+)?)?$")
+_FIRST_NUM = re.compile(r"\d+(?:\.\d+)?")
+
+
+class Query:
+    """Parsed search box text. `text` is the free-word part (what search_songs
+    gets); the rest is applied by apply_query(). `invalid` lists tokens of a
+    known key with an unusable value (they are ignored)."""
+
+    def __init__(self):
+        self.text = ""
+        self.phrases = []      # normalized quoted phrases that must appear
+        self.neg_words = []    # normalized words that must not appear
+        self.conds = []        # (negated, kind, arg, spec)
+        self.invalid = []
+        self.structured = False   # any token other than plain words
+
+    @property
+    def active(self):
+        return bool(self.phrases or self.neg_words or self.conds)
+
+    def needs(self, kind):
+        """True when apply_query consults the map of that kind: "meta",
+        "jp", "dl", "marks"."""
+        if kind == "meta":
+            return any(c[1] == "num" and c[2] != "files" for c in self.conds)
+        if kind == "jp":
+            return bool(self.phrases or self.neg_words)
+        if kind == "dl":
+            return any(c[1] == "dl" for c in self.conds)
+        return any(c[1] == "flag" for c in self.conds)
+
+
+def _tokenize_query(text):
+    """[(raw, neg, key, value, quoted, plus)] honouring "quotes" (also
+    key:"a b"). A leading - negates, a leading + forces a flag."""
+    toks = []
+    n = len(text)
+    i = 0
+    while i < n:
+        if text[i].isspace():
+            i += 1
+            continue
+        start = i
+        neg = plus = False
+        if text[i] in "-+" and i + 1 < n and not text[i + 1].isspace():
+            neg, plus = text[i] == "-", text[i] == "+"
+            i += 1
+        buf = []
+        quoted = False
+        key = None
+        while i < n and not text[i].isspace():
+            c = text[i]
+            if c == '"':
+                quoted = True
+                i += 1
+                while i < n and text[i] != '"':
+                    buf.append(text[i])
+                    i += 1
+                i += 1          # closing quote (or end of text)
+                continue
+            if c == ":" and key is None and not quoted and buf:
+                key = "".join(buf)
+                buf = []
+                i += 1
+                continue
+            buf.append(c)
+            i += 1
+        toks.append((text[start:i], neg, key, "".join(buf), quoted, plus))
+    return toks
+
+
+def _parse_numeric(value):
+    """('cmp', op, x) / ('range', lo, hi) / ('any',) / ('none',) or None."""
+    v = value.strip().lower()
+    if v in ("any", "none"):
+        return (v,)
+    m = _CMP_RE.match(v)
+    if m:
+        op = {"=>": ">=", "=<": "<=", "==": "="}.get(m.group(1), m.group(1) or "=")
+        return ("cmp", op, float(m.group(2)))
+    m = _RANGE_RE.match(v)
+    if m and (m.group(1) or m.group(2)):
+        lo = float(m.group(1)) if m.group(1) else None
+        hi = float(m.group(2)) if m.group(2) else None
+        if lo is not None and hi is not None and lo > hi:
+            lo, hi = hi, lo
+        return ("range", lo, hi)
+    return None
+
+
+def parse_query(text):
+    """Split the search box text into free words and structured tokens.
+
+    Grammar (whitespace separated; keys case-insensitive; full-width characters
+    folded):
+      bpm|easy|normal|hard|oni|ura|files:  >N  >=N  <N  <=N  =N  N  A..B  ..B  A..
+          (not files: `any` / `none`, i.e. the chart / BPM exists or not)
+      cat:NAME     category (prefix of its name, localized name or a word of
+                   it); several cat: tokens are OR
+      fav new upd  flags;    dl:yes|no|partial
+      "a phrase"   must appear as written
+      -TOKEN       negation: -word, -"phrase", -cat:anime, -fav, -dl:yes, -oni:>=8
+    A bare flag word (fav/new/upd) is a flag only next to a key:value token or
+    written +fav, so searching a song called "New ..." still works; -fav always
+    negates. Unknown keys (re:zero) stay plain words, bad values of known keys
+    land in Query.invalid. A query with no structured token is returned
+    untouched in Query.text."""
+    q = Query()
+    toks = _tokenize_query(unicodedata.normalize("NFKC", text or ""))
+    has_kv = any(k is not None and _KEY_ALIASES.get(k.lower(), k.lower()) in _STRUCT_KEYS
+                 for _, _, k, _, _, _ in toks)
+    words = []
+    for raw, neg, key, value, quoted, plus in toks:
+        k = _KEY_ALIASES.get(key.lower(), key.lower()) if key is not None else None
+        if k in _NUM_KEYS:
+            q.structured = True
+            spec = _parse_numeric(value)
+            if spec is None or (k == "files" and len(spec) == 1):
+                q.invalid.append(raw)
+            else:
+                q.conds.append((neg, "num", _NUM_KEYS[k], spec))
+        elif k == "cat":
+            q.structured = True
+            v = norm_text(value).strip()
+            if v:
+                q.conds.append((neg, "cat", v, None))
+            else:
+                q.invalid.append(raw)
+        elif k == "dl":
+            q.structured = True
+            st = _DL_VALUES.get(value.strip().lower())
+            if st is None:
+                q.invalid.append(raw)
+            else:
+                q.conds.append((neg, "dl", st, None))
+        elif k in _FLAG_KEYS:
+            q.structured = True
+            v = value.strip().lower()
+            if v in _BOOL_YES or v == "":
+                q.conds.append((neg, "flag", k, None))
+            elif v in _BOOL_NO:
+                q.conds.append((not neg, "flag", k, None))
+            else:
+                q.invalid.append(raw)
+        elif k is None and not quoted and value.lower() in _FLAG_KEYS and \
+                (neg or plus or has_kv):
+            q.structured = True
+            q.conds.append((neg, "flag", value.lower(), None))
+        elif quoted and k is None:
+            q.structured = True
+            p = " ".join(norm_text(value).split())
+            if p and neg:
+                q.neg_words.append(p)
+            elif p:
+                q.phrases.append(p)
+                words.append(value)
+        elif neg and k is None and value.strip():
+            q.structured = True
+            q.neg_words.append(norm_text(value).strip())
+        else:
+            words.append(raw)
+    q.text = " ".join(words) if q.structured else (text or "").strip()
+    return q
+
+
+@functools.lru_cache(maxsize=8192)
+def _nm(text):
+    n = norm_text(text)
+    return n, _compact(n)
+
+
+def _num_match(val, spec):
+    kind = spec[0]
+    if kind == "any":
+        return val is not None
+    if kind == "none":
+        return val is None
+    if val is None:
+        return False
+    if kind == "range":
+        return (spec[1] is None or val >= spec[1]) and (spec[2] is None or val <= spec[2])
+    op, x = spec[1], spec[2]
+    return (val > x if op == ">" else val >= x if op == ">=" else
+            val < x if op == "<" else val <= x if op == "<=" else val == x)
+
+
+def _cat_match(song, v):
+    cat = song.get("category") or ""
+    for c in (_nm(cat)[0], _nm(CATEGORY_NAMES.get(cat, cat))[0]):
+        if c.startswith(v) or v in c.split():
+            return True
+        rest = c.lstrip("0123456789 ")      # "03 vocaloid" -> "vocaloid"
+        if any(w.startswith(v) for w in [rest] + rest.split()):
+            return True
+    return False
+
+
+def apply_query(q, songs, meta_map=None, jp_map=None, dl_status=None,
+                favourites=None, new_marks=None, update_keys=None):
+    """Songs satisfying the structured part of `q` (order kept). The maps are
+    the ones the GUI already holds: meta_map/jp_map keyed by song name,
+    dl_status/favourites/new_marks/update_keys keyed by song_key()."""
+    if not q.active:
+        return list(songs)
+    meta_map = meta_map or {}
+    jp_map = jp_map or {}
+    dl_status = dl_status or {}
+    favourites = favourites or ()
+    new_marks = new_marks or {}
+    update_keys = update_keys or ()
+    cat_pos = [c[2] for c in q.conds if c[1] == "cat" and not c[0]]
+    rest = [c for c in q.conds if c[1] != "cat" or c[0]]
+    cat_memo = {}               # (category, filter) -> bool: few distinct categories
+
+    def cat_is(song, v):
+        k = (song.get("category"), v)
+        r = cat_memo.get(k)
+        if r is None:
+            r = cat_memo[k] = _cat_match(song, v)
+        return r
+
+    out = []
+    for s in songs:
+        name = s["song_name"]
+        if cat_pos and not any(cat_is(s, v) for v in cat_pos):
+            continue
+        if q.phrases or q.neg_words:
+            n, cn = _nm(name)
+            ja = jp_map.get(name)
+            jn, jc = _nm(ja) if ja else ("", "")
+            if any(p not in n and p not in jn and _compact(p) not in cn
+                   and _compact(p) not in jc for p in q.phrases):
+                continue
+            if any(w in n or w in jn for w in q.neg_words):
+                continue
+        for neg, kind, a, b in rest:
+            if kind == "cat":
+                r = cat_is(s, a)
+            elif kind == "num":
+                if a == "files":
+                    val = len(s["files"])
+                else:
+                    meta = meta_map.get(name)
+                    if not meta:
+                        val = None
+                    elif a == "bpm":
+                        m = _FIRST_NUM.search(str(meta.get("bpm") or ""))
+                        val = float(m.group()) if m else None
+                    else:
+                        val = meta.get(a)
+                r = _num_match(val, b)
+            elif kind == "dl":
+                r = dl_status.get(song_key(s), DL_NONE) == a
+            else:
+                key = song_key(s)
+                if a == "fav":
+                    r = key in favourites
+                elif a == "new":
+                    r = key in new_marks
+                else:
+                    r = new_marks.get(key) == "updated" or key in update_keys
+            if r == neg:
+                break
+        else:
+            out.append(s)
+    return out
+
+
+def search_query(text, category=None, **ctx):
+    """search_songs + apply_query in one call -> (songs, Query). `ctx` takes
+    the apply_query maps; the meta / Japanese-title maps are loaded from the
+    local database when the query needs them and none was given."""
+    q = parse_query(text)
+    songs = search_songs(q.text, category)
+    if q.active:
+        if q.needs("meta") and "meta_map" not in ctx:
+            ctx["meta_map"] = load_meta_map()
+        if q.needs("jp") and "jp_map" not in ctx:
+            ctx["jp_map"] = load_jp_map()
+        songs = apply_query(q, songs, **ctx)
+    return songs, q
 
 
 # ---------------------------------------------------------------- suggestions
