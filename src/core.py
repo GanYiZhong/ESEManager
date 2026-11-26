@@ -1167,6 +1167,30 @@ def load_sha_map(db_path=None):
         conn.close()
 
 
+def load_lfs_map(db_path=None):
+    """{file_path: (sha256, size)} of the real content behind LFS audio, from
+    the pointer files read at database build time. Empty for databases that
+    predate the lfs_sha256/lfs_size columns."""
+    conn = connect_ro(db_path or DB_PATH)
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(song_files)")}
+        if not {"lfs_sha256", "lfs_size"} <= cols:
+            return {}
+        return {fp: (sha, size) for fp, sha, size in conn.execute(
+            "SELECT file_path, lfs_sha256, lfs_size FROM song_files "
+            "WHERE lfs_sha256 IS NOT NULL AND lfs_sha256 != '' AND lfs_size IS NOT NULL")}
+    finally:
+        conn.close()
+
+
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 class NoShaError(Exception):
     """The song database predates blob_sha; update checks need a newer one."""
 
@@ -1174,20 +1198,34 @@ class NoShaError(Exception):
 def find_updates(download_dir, category=None, progress=None):
     """Downloaded files whose upstream content changed (git blob sha). Returns
     songs holding only the changed files, plus the song's LFS audio (an updated
-    chart usually ships with new audio). LFS files themselves are not compared:
-    their recorded sha belongs to the pointer file."""
+    chart usually ships with new audio). LFS audio is compared through the
+    pointer's sha256/size (databases without them skip audio): a different
+    size flags it at once, an equal size is confirmed by a cached sha256."""
     progress = progress or (lambda done, total: None)
     songs = search_songs(None, category)
     sha_map = load_sha_map()
     if not sha_map:
         raise NoShaError()
 
+    try:
+        lfs_map = load_lfs_map()
+    except Exception:
+        lfs_map = {}
+
     present = scan_tree(download_dir)
-    candidates = []     # (song, file, key, remote_sha)
+    candidates = []     # (song, file, key, remote_sha); key "sha256:<rel>" = LFS audio
+    size_changed = []   # (song, file): audio whose length differs from the pointer's
     for s in songs:
         for f in s["files"]:
             fp = f["file_path"]
             if is_lfs_path(fp):
+                lfs = lfs_map.get(fp)
+                rel = _rel_key(fp) if lfs else None
+                if rel is not None and rel in present:
+                    if present[rel][1] != lfs[1]:
+                        size_changed.append((s, f))
+                    else:
+                        candidates.append((s, f, "sha256:" + rel, lfs[0]))
                 continue
             sha = sha_map.get(fp)
             if not sha:
@@ -1207,8 +1245,8 @@ def find_updates(download_dir, category=None, progress=None):
     with _sha_cache_lock:
         forgotten = set(_sha_forgotten)
     for _, f, key, _ in candidates:
-        mt, size = present[key]
-        full = os.path.normcase(os.path.join(base, *key.split("/")))
+        mt, size = present[key.removeprefix("sha256:")]
+        full = os.path.normcase(os.path.join(base, *key.removeprefix("sha256:").split("/")))
         hit = disk.get(key)
         if hit and hit[0] == mt and hit[1] == size and full not in forgotten:
             fresh[key] = hit
@@ -1230,7 +1268,9 @@ def find_updates(download_dir, category=None, progress=None):
     def hash_one(item):
         key, fp = item
         try:
-            return key, git_blob_sha(safe_join(download_dir, fp))
+            path = safe_join(download_dir, fp)
+            return key, (file_sha256(path) if key.startswith("sha256:")
+                         else git_blob_sha(path))
         except (OSError, UnsafePathError):
             return key, None
 
@@ -1239,17 +1279,18 @@ def find_updates(download_dir, category=None, progress=None):
             for key, sha in ex.map(hash_one, todo, chunksize=1):
                 done += 1
                 if sha is not None:
-                    mt, size = present[key]
+                    mt, size = present[key.removeprefix("sha256:")]
                     shas[key] = sha
                     fresh[key] = (mt, size, sha)
                 report(done == total)
         with _sha_cache_lock:
             for key, _ in todo:
-                _sha_forgotten.discard(os.path.normcase(os.path.join(base, *key.split("/"))))
+                _sha_forgotten.discard(os.path.normcase(
+                    os.path.join(base, *key.removeprefix("sha256:").split("/"))))
     report(True)
 
     # keep entries for files still on disk (other categories), drop deleted ones
-    keep = {k: v for k, v in disk.items() if k in present}
+    keep = {k: v for k, v in disk.items() if k.removeprefix("sha256:") in present}
     keep.update(fresh)
     if keep != disk:
         save_sha_disk_cache(download_dir, keep)
@@ -1259,6 +1300,10 @@ def find_updates(download_dir, category=None, progress=None):
         local = shas.get(key)
         if local is not None and local != sha:
             entry = changed.setdefault(id(s), dict(s, files=[], _orig=s))
+            entry["files"].append(f)
+    for s, f in size_changed:
+        entry = changed.setdefault(id(s), dict(s, files=[], _orig=s))
+        if f not in entry["files"]:
             entry["files"].append(f)
 
     out = []
@@ -1480,6 +1525,7 @@ class Downloader:
         self.tr = tr or (lambda key, **kw: key)
         self.log = log or (lambda msg: None)
         self._stop = False
+        self._lfs_map = {}
         self._pause = threading.Event()
         self._pause.set()              # set = running, clear = paused
         self.failed = []               # [(song, file_info)]
@@ -1613,6 +1659,10 @@ class Downloader:
         except Exception:
             sha_map = {}
         try:
+            self._lfs_map = load_lfs_map()
+        except Exception:
+            self._lfs_map = {}
+        try:
             # On first download into a category folder, also fetch ESE's box.def.
             self._fetch_boxdefs(sess, self._initial)
             with self._lock:
@@ -1722,7 +1772,8 @@ class Downloader:
                 t0 = time.time()
                 have = os.path.getsize(part) if os.path.exists(part) else 0
                 try:
-                    got = self._fetch(sess, url, part, fp, check)
+                    got = self._fetch(sess, url, part, fp, check,
+                                      self._lfs_map.get(fp) if is_lfs_path(fp) else None)
                     if base:
                         self.router.report(base, fp, True, max(got - have, 1),
                                            time.time() - t0)
@@ -1762,10 +1813,12 @@ class Downloader:
                 except OSError:
                     pass
 
-    def _fetch(self, sess, url, part, fp, want_sha):
-        """Download url into part and check its length and (non-LFS) git blob
-        sha. Returns the byte count; raises on any problem. A leftover .part
-        is resumed with a Range request when the server honours it."""
+    def _fetch(self, sess, url, part, fp, want_sha, lfs=None):
+        """Download url into part and check its length and git blob sha, or for
+        LFS audio with a known pointer `lfs` = (sha256, size) the exact length
+        and the sha256 (hashed while streaming). Returns the byte count; raises
+        on any problem. A leftover .part is resumed with a Range request when
+        the server honours it."""
         got = 0
         have = os.path.getsize(part) if os.path.exists(part) else 0
         # Audio (LFS) has no hash to catch a resume onto a file that changed
@@ -1792,6 +1845,16 @@ class Downloader:
                 got = have
                 clen += have
             base = got
+            h256 = hashlib.sha256() if lfs else None
+            if h256 is not None and got:        # resumed: hash the kept prefix
+                with open(part, "rb") as old:
+                    left = got
+                    while left > 0:
+                        b = old.read(min(1 << 20, left))
+                        if not b:
+                            break
+                        h256.update(b)
+                        left -= len(b)
             ft0 = time.time()
             last = 0.0
             pending = 0                       # bytes not yet added to bytes_total
@@ -1807,6 +1870,8 @@ class Downloader:
                     if not chunk:
                         continue
                     out.write(chunk)
+                    if h256 is not None:
+                        h256.update(chunk)
                     got += len(chunk)
                     pending += len(chunk)
                     now = time.time()
@@ -1825,6 +1890,11 @@ class Downloader:
         try:
             if clen and got != clen:
                 raise IOError(self.tr("log_short", got=got, want=clen))
+            if lfs:
+                if got != lfs[1]:
+                    raise IOError(self.tr("log_short", got=got, want=lfs[1]))
+                if h256.hexdigest() != lfs[0]:
+                    raise ChecksumError(self.tr("log_sha_mismatch"))
             # Re-hash as a git blob (needs the size prefix, so hash the file).
             # A mirror that lags behind fails here and the next host is tried.
             if want_sha and git_blob_sha(part) != want_sha:

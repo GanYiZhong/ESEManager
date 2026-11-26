@@ -12,7 +12,9 @@ import threading
 import urllib.parse
 from pathlib import Path
 
-from appconfig import ESE_RAW_BASE as DOWNLOAD_BASE, ESE_GIT
+from appconfig import ESE_RAW_BASE as DOWNLOAD_BASE, ESE_GIT, parse_lfs_pointer
+
+LFS_EXTS = {".ogg"}      # same as core.LFS_EXTS (ESE's .gitattributes)
 
 
 def _force_rmtree(path):
@@ -110,6 +112,11 @@ class ESEScraperGitV2:
         existing_cols = {r[1] for r in cursor.execute("PRAGMA table_info(song_files)")}
         if "blob_sha" not in existing_cols:
             cursor.execute("ALTER TABLE song_files ADD COLUMN blob_sha TEXT")
+        # LFS 音訊：blob_sha 是 pointer 檔的雜湊，真正內容的 sha256/大小在 pointer 內。
+        # 可為 NULL 的新欄位，舊版程式開啟新資料庫不受影響。
+        for col, typ in (("lfs_sha256", "TEXT"), ("lfs_size", "INTEGER")):
+            if col not in existing_cols:
+                cursor.execute(f"ALTER TABLE song_files ADD COLUMN {col} {typ}")
 
         # 建立索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_songs_category ON songs(category_id)")
@@ -516,12 +523,56 @@ class ESEScraperGitV2:
         # tree 內的檔案一次寫入目前 sha —— 新列與既有列都會被設成最新值。上游改譜面後
         # 該檔的 blob sha 會變，GUI 的「檢查更新」比對本地檔算出的 sha 即可發現。
         if path_sha:
+            old_sha = dict(cur.execute("SELECT file_path, blob_sha FROM song_files"))
             cur.executemany(
                 "UPDATE song_files SET blob_sha = ? WHERE file_path = ?",
                 [(sha, fp) for fp, sha in path_sha.items()]
             )
             self.conn.commit()
             print(f"🔑 已記錄 {len(path_sha)} 個檔案的內容雜湊（供檢查更新）")
+            try:
+                self.record_lfs_pointers(path_sha, ref, old_sha)
+            except Exception as e:      # optional extra check; columns stay NULL
+                print(f"⚠ 無法讀取 LFS pointer（音訊將只檢查長度）: {e}")
+
+    def record_lfs_pointers(self, path_sha, ref, old_sha):
+        """Read the Git LFS pointer blobs of audio files straight from the clone
+        (no LFS download) and store the real content's sha256 and size in
+        song_files.lfs_sha256 / lfs_size. Only files whose pointer blob is new
+        or changed (or not recorded yet) are read."""
+        cur = self.conn.cursor()
+        # a changed pointer invalidates the old values even if reading fails below
+        cur.executemany(
+            "UPDATE song_files SET lfs_sha256 = NULL, lfs_size = NULL WHERE file_path = ?",
+            [(fp,) for fp, sha in path_sha.items()
+             if old_sha.get(fp) not in (None, sha)
+             and os.path.splitext(fp)[1].lower() in LFS_EXTS])
+        self.conn.commit()
+        from build_local_db import _missing_blobs, _fetch_blobs, _read_blobs
+        have = {fp for (fp,) in cur.execute(
+            "SELECT file_path FROM song_files WHERE lfs_sha256 IS NOT NULL")}
+        by_oid = {}
+        for fp, sha in path_sha.items():
+            if os.path.splitext(fp)[1].lower() in LFS_EXTS and (
+                    fp not in have or old_sha.get(fp) != sha):
+                by_oid.setdefault(sha, []).append(fp)
+        if not by_oid:
+            return
+        wanted = sorted(by_oid)
+        missing = _missing_blobs(self.git_exe, self.clone_dir, ref, wanted)
+        if missing:
+            _fetch_blobs(self.git_exe, self.clone_dir, missing)
+        n = 0
+        rows = []
+        for oid, data in _read_blobs(self.git_exe, self.clone_dir, wanted):
+            ptr = parse_lfs_pointer(data)
+            for fp in by_oid[oid]:
+                rows.append((ptr[0], ptr[1], fp) if ptr else (None, None, fp))
+                n += bool(ptr)
+        cur.executemany("UPDATE song_files SET lfs_sha256 = ?, lfs_size = ? "
+                        "WHERE file_path = ?", rows)
+        self.conn.commit()
+        print(f"🎵 已記錄 {n} 個 LFS 音訊檔的 sha256/大小")
 
     def scrape(self, keep_clone: bool = False):
         """
