@@ -616,6 +616,44 @@ def find_missing(songs, download_dir):
     return missing
 
 
+DL_NONE, DL_PARTIAL, DL_COMPLETE = 0, 1, 2
+
+
+def song_key(song):
+    """Identity of a song in status maps (names repeat across categories)."""
+    return (song["song_name"], song["category"])
+
+
+def download_status(songs, download_dir):
+    """{song_key: DL_NONE | DL_PARTIAL | DL_COMPLETE} from ONE scan_tree walk.
+    A song with no files, or whose paths are all unsafe, counts as DL_NONE."""
+    present = scan_tree(download_dir)
+    out = {}
+    for s in songs:
+        have = total = 0
+        for f in s["files"]:
+            key = _rel_key(f["file_path"])
+            if key is None:
+                continue
+            total += 1
+            if key in present:
+                have += 1
+        out[song_key(s)] = (DL_NONE if not have else
+                            DL_COMPLETE if have == total else DL_PARTIAL)
+    return out
+
+
+def filter_by_download(songs, status, mode):
+    """mode None/"all": everything; "missing": not fully downloaded (none or
+    partial, so unfinished songs can be completed); "downloaded": complete.
+    Songs not in `status` (scan pending) are kept in "all" and "missing"."""
+    if mode in (None, "all"):
+        return list(songs)
+    if mode == "downloaded":
+        return [s for s in songs if status.get(song_key(s)) == DL_COMPLETE]
+    return [s for s in songs if status.get(song_key(s)) != DL_COMPLETE]
+
+
 # ---------------------------------------------------------------- update check
 def git_blob_sha(path):
     """git blob object hash: sha1(b"blob <size>\\0" + content), the same value

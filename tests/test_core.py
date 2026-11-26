@@ -200,3 +200,28 @@ def test_core_import_does_not_load_requests():
          "print('requests' in sys.modules)"],
         capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
     assert out.stdout.strip() == "False", out.stderr
+
+
+# ------------------------------------------------------- download status
+def _dl_song(name, *paths, cat="01 Pop"):
+    return {"song_name": name, "category": cat,
+            "files": [{"file_path": p, "filename": p.rsplit("/", 1)[-1]} for p in paths]}
+
+
+def test_download_status_none_partial_complete(tmp_path):
+    for rel in ("A/a.tja", "A/a.ogg", "B/b.tja"):
+        (tmp_path / rel).parent.mkdir(exist_ok=True)
+        (tmp_path / rel).write_bytes(b"x")
+    songs = [_dl_song("A", "A/a.tja", "A/a.ogg"), _dl_song("B", "B/b.tja", "B/b.ogg"),
+             _dl_song("C", "C/c.tja"), _dl_song("D"), _dl_song("E", "../x")]
+    st = core.download_status(songs, str(tmp_path))
+    assert [st[core.song_key(s)] for s in songs] == [
+        core.DL_COMPLETE, core.DL_PARTIAL, core.DL_NONE, core.DL_NONE, core.DL_NONE]
+
+
+def test_filter_by_download():
+    a, b, c = _dl_song("A", "a"), _dl_song("B", "b"), _dl_song("C", "c")
+    st = {core.song_key(a): core.DL_COMPLETE, core.song_key(b): core.DL_PARTIAL}
+    assert core.filter_by_download([a, b, c], st, "all") == [a, b, c]
+    assert core.filter_by_download([a, b, c], st, "downloaded") == [a]
+    assert core.filter_by_download([a, b, c], st, "missing") == [b, c]

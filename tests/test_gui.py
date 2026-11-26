@@ -379,3 +379,16 @@ def test_settings_dialog_fits_its_rows(window):
         assert dlg.width() >= dlg.layout().minimumSize().width()
     finally:
         dlg.hide()
+
+
+def test_download_filter_and_status_column(window):
+    songs = [{"song_name": n, "category": "01 Pop", "files": []} for n in ("a", "b", "c")]
+    window.all_songs = songs
+    window.song_model.dl_status = {("a", "01 Pop"): 2, ("b", "01 Pop"): 1}
+    window.dl_combo.setCurrentIndex(window.dl_combo.findData("downloaded"))
+    assert [s["song_name"] for s in window.song_model.songs] == ["a"]
+    window.dl_combo.setCurrentIndex(window.dl_combo.findData("missing"))
+    assert [s["song_name"] for s in window.song_model.songs] == ["b", "c"]
+    assert window.active_filter_count() == 1
+    window.reset_filters()
+    assert len(window.song_model.songs) == 3
