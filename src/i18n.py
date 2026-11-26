@@ -146,6 +146,10 @@ TR = {
 
 # Strings for first-run guidance, download/DB status and worker logs.
 TR["zh_TW"].update({
+    "palette_ph": "輸入命令或歌曲名稱…", "palette_song": "歌曲",
+    "palette_none": "沒有符合的項目",
+})
+TR["zh_TW"].update({
     "empty_hint": "按下方按鈕下載預先建好的歌曲資料庫，完成後就能搜尋與下載。",
     "welcome_title": "歡迎使用 ESEManager",
     "welcome_download": "下載歌曲資料庫",
@@ -188,6 +192,10 @@ TR["zh_TW"].update({
     "log_db_sha": "{n} 校驗碼不符，請稍後再試",
 })
 
+TR["en"].update({
+    "palette_ph": "Type a command or song name...", "palette_song": "Song",
+    "palette_none": "No matches",
+})
 TR["en"].update({
     "empty_hint": "Download the prebuilt song database with the button below, then search and download charts.",
     "welcome_title": "Welcome to ESEManager",
@@ -234,6 +242,10 @@ TR["en"].update({
     "log_db_sha": "{n} checksum mismatch; please try again later",
 })
 
+TR["ja"].update({
+    "palette_ph": "コマンドまたは曲名を入力…", "palette_song": "曲",
+    "palette_none": "一致する項目がありません",
+})
 TR["ja"].update({
     "empty_hint": "下のボタンでビルド済みの曲データベースをダウンロードすると、検索とダウンロードができます。",
     "welcome_title": "ESEManager へようこそ",
@@ -486,7 +498,7 @@ TR["ja"].update({
 TR["zh_TW"].update({
     "download_tip": "下載勾選的歌曲（Ctrl+D）",
     "shortcuts": "快捷鍵",
-    "shortcuts_text": "Ctrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\nF5　重新搜尋／重新整理\nCtrl+A　（表格中）勾選全部列出的歌曲\n↓　（搜尋框中）移到表格\n"
+    "shortcuts_text": "Ctrl+K　命令面板\nCtrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\nF5　重新搜尋／重新整理\nCtrl+A　（表格中）勾選全部列出的歌曲\n↓　（搜尋框中）移到表格\n"
                       "Ctrl+,　設定\nSpace　勾選／取消勾選目前的列\n雙擊列　已下載則開啟資料夾，否則勾選\n右鍵　歌曲選單",
     "view_missing": "目前只顯示缺漏的 {n} 首歌曲。",
     "view_updates": "目前只顯示有更新的 {n} 首歌曲。",
@@ -498,7 +510,7 @@ TR["zh_TW"].update({
 TR["en"].update({
     "download_tip": "Download the checked songs (Ctrl+D)",
     "shortcuts": "Keyboard Shortcuts",
-    "shortcuts_text": "Ctrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\nF5  Re-run the search / refresh\nCtrl+A  (in the table) Check all listed songs\nDown arrow  (in the search box) Move into the table\n"
+    "shortcuts_text": "Ctrl+K  Command palette\nCtrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\nF5  Re-run the search / refresh\nCtrl+A  (in the table) Check all listed songs\nDown arrow  (in the search box) Move into the table\n"
                       "Ctrl+,  Settings\nSpace  Check / uncheck the current row\nDouble-click a row  Open its folder if downloaded, else check\nRight-click  Song menu",
     "view_missing": "Showing only the {n} songs with missing files.",
     "view_updates": "Showing only the {n} songs with upstream changes.",
@@ -512,7 +524,7 @@ TR["en"].update({
 TR["ja"].update({
     "download_tip": "チェックした曲をダウンロード（Ctrl+D）",
     "shortcuts": "キーボードショートカット",
-    "shortcuts_text": "Ctrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\nF5　再検索／更新\nCtrl+A　（表内）表示中の曲をすべてチェック\n↓　（検索ボックス内）表へ移動\n"
+    "shortcuts_text": "Ctrl+K　コマンドパレット\nCtrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\nF5　再検索／更新\nCtrl+A　（表内）表示中の曲をすべてチェック\n↓　（検索ボックス内）表へ移動\n"
                       "Ctrl+,　設定\nSpace　現在の行のチェック切り替え\n行をダブルクリック　ダウンロード済みならフォルダを開く、未ならチェック\n右クリック　曲メニュー",
     "view_missing": "不足している {n} 曲のみ表示しています。",
     "view_updates": "更新のある {n} 曲のみ表示しています。",

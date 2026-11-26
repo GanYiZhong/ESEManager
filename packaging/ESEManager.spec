@@ -21,6 +21,7 @@ _common = dict(
         'theme',
         'icons',
         'detail_panel',
+        'command_palette',
         'PySide6.QtSvg',
         'app_version',
         'i18n',
