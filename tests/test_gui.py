@@ -201,3 +201,59 @@ def test_new_strings_exist(lang):
     for k in ("ctx_toggle", "ctx_download", "ctx_open_folder", "ctx_copy_title",
               "no_results", "no_songs"):
         assert TR[lang][k]
+
+
+def test_progress_shows_in_window_title_and_resets(window, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: 0)   # never block on the summary
+    class T:
+        stopped = False
+        failed = []
+        def isRunning(self): return False
+        def snapshot(self): return (3, 6, 0, 0, [])
+        def is_paused(self): return False
+    window.dl_thread = T()
+    window.refresh_progress()
+    assert window.windowTitle().startswith("50%")
+    window.on_download_done(6, 0, 0, 6)
+    assert not window.windowTitle().startswith("50%")
+    assert window.download_btn.isEnabled()
+    assert not window.pause_btn.isEnabled() and not window.stop_btn.isEnabled()
+
+
+def test_summary_dialog_has_open_and_retry_buttons(window, monkeypatch, tmp_path):
+    seen = {}
+    def fake_exec(self):
+        seen["texts"] = [b.text() for b in self.buttons()]
+        seen["retry"] = [b for b in self.buttons() if b.text() == window.tr("dl_retry_failed")]
+        self._chosen = seen["retry"][0] if seen["retry"] else None
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda self: getattr(self, "_chosen", None))
+    called = []
+
+    class T:
+        def isRunning(self): return False
+        def wait(self, ms): called.append("wait")
+    window.dl_thread = T()
+    monkeypatch.setattr(window, "retry_failed", lambda: called.append("retry"))
+    window._show_summary("x", 2)
+    assert window.tr("dl_open_folder") in seen["texts"] and window.tr("dl_retry_failed") in seen["texts"]
+    assert called == ["wait", "retry"]
+    window._show_summary("x", 0)
+    assert window.tr("dl_retry_failed") not in seen["texts"]
+
+
+def test_pause_ignored_once_stopping(window):
+    class T:
+        stopped = True
+        running = True
+        def isRunning(self): return self.running
+        def is_paused(self): raise AssertionError("must not toggle")
+    window.dl_thread = T()
+    window.toggle_pause()
+    window.dl_thread.running = False
+
+
+@pytest.mark.parametrize("lang", ["zh_TW", "en", "ja"])
+def test_download_summary_strings_exist(lang):
+    from i18n import TR
+    assert TR[lang]["dl_open_folder"] and TR[lang]["dl_retry_failed"]
