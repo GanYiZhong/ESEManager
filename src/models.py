@@ -152,7 +152,7 @@ class SongModel(QAbstractTableModel):
             if role == Qt.TextAlignmentRole:
                 return int(Qt.AlignCenter)
             if role == Qt.ForegroundRole and st is not None:
-                return QColor({2: "#66BB6A", 1: "#FFA726", 0: "#9E9E9E"}[st])
+                return theme.status_colour({2: "done", 1: "partial", 0: "none"}[st])
             return None
         if role == Qt.DisplayRole:
             return self._row_cells(song)[col - 1] if col else None
@@ -265,8 +265,8 @@ class SongModel(QAbstractTableModel):
 # ------------------------------------------------------------- 下載清單 model
 class DownloadModel(QAbstractTableModel):
     COLS = ["f_file", "f_song", "f_status", "f_pct", "f_speed"]
-    STATUS_COLOR = {"downloading": "#42A5F5", "done": "#66BB6A",
-                    "skipped": "#9E9E9E", "failed": "#EF5350", "paused": "#FFA726"}
+    STATUS_COLOR = {"downloading": "active", "done": "done",
+                    "skipped": "skipped", "failed": "fail", "paused": "paused"}
 
     def __init__(self, tr):
         super().__init__()
@@ -358,5 +358,5 @@ class DownloadModel(QAbstractTableModel):
         if role == Qt.ForegroundRole and col == 2:
             c = self.STATUS_COLOR.get(status)
             if c:
-                return QColor(c)
+                return theme.status_colour(c)
         return None

@@ -37,7 +37,15 @@ _TOKENS = {
         "muted": "#6B6B6B", "success": "#2E7D32",
         "border": "#C4C4C4", "button_hover": "#DEDEDE", "button_pressed": "#D0D0D0",
         "header_bg": "#ECEEF1", "progress_track": "#DADDE1", "progress_chunk": "#90CAF9",
-        "scroll_handle": "#B4B4B4",
+        "scroll_handle": "#B4B4B4", "check_border": "#8A8A8A",
+        # status glyph / text colours (contrast >= 3:1 on white rows)
+        "st_done": "#2E7D32", "st_partial": "#B26A00", "st_none": "#8A8A8A",
+        "st_active": "#1565C0", "st_fail": "#C62828", "st_paused": "#B26A00",
+        "st_skipped": "#6B6B6B",
+        # difficulty level bars: easy, normal, hard, oni, ura
+        "lv_easy": "#E53935", "lv_normal": "#43A047", "lv_hard": "#1E88E5",
+        "lv_oni": "#D81B60", "lv_ura": "#8E24AA",
+        "lv_default": "#888888",
     },
     True: {  # dark
         "window": "#2B2B2B", "window_text": "#E8E8E8",
@@ -52,11 +60,17 @@ _TOKENS = {
         "disabled_text": "#7A7A7A",
         "accent": "#2E7D32", "accent_hover": "#388E3C", "accent_text": "#FFFFFF",
         "disabled_bg": "#4A4A4A", "disabled_fg": "#9A9A9A",
-        "hint_bg": "#3D3314", "hint_fg": "#FFE08A", "hint_border": "#7A6320",
+        "hint_bg": "#302B1C", "hint_fg": "#F0DFA6", "hint_border": "#5C5024",
         "muted": "#9E9E9E", "success": "#81C784",
         "border": "#4A4A4A", "button_hover": "#464646", "button_pressed": "#525252",
         "header_bg": "#323232", "progress_track": "#3A3A3A", "progress_chunk": "#1F6AB5",
-        "scroll_handle": "#5E5E5E",
+        "scroll_handle": "#5E5E5E", "check_border": "#A0A0A0",
+        "st_done": "#66BB6A", "st_partial": "#FFA726", "st_none": "#7A7A7A",
+        "st_active": "#42A5F5", "st_fail": "#EF5350", "st_paused": "#FFA726",
+        "st_skipped": "#9E9E9E",
+        "lv_easy": "#E53935", "lv_normal": "#43A047", "lv_hard": "#1E88E5",
+        "lv_oni": "#D81B60", "lv_ura": "#8E24AA",
+        "lv_default": "#888888",
     },
 }
 
@@ -190,7 +204,7 @@ def primary_button_qss(dark=None, padding="8px 16px"):
             f"font-weight:bold;padding:{padding};border-radius:8px;"
             f"border:1px solid {t['accent']};}}"
             f"QPushButton:hover{{background:{t['accent_hover']};border-color:{t['accent_hover']};}}"
-            f"QPushButton:focus{{border:2px solid {t['highlight']};}}"
+            f"QPushButton:focus{{border:1px solid {t['highlight']};}}"
             f"QPushButton:disabled{{background:{t['disabled_bg']};color:{t['disabled_fg']};"
             f"border-color:{t['disabled_bg']};}}")
 
@@ -241,6 +255,11 @@ def category_colour(hex_colour, dark=None):
     return ensure_contrast(hex_colour, (t["base"], t["alt_base"]), 4.5, dark)
 
 
+def status_colour(key, dark=None):
+    """Theme-aware colour for a status glyph / label ("done", "fail", ...)."""
+    return QColor(colours(dark)["st_" + key])
+
+
 def muted_label_qss(dark=None, font_px=None):
     """Secondary / info text colour (replaces hard-coded grey)."""
     t = colours(dark)
@@ -285,7 +304,7 @@ def check_indicator_qss(dark=None):
     window colour, which disappears on a dark background; draw them explicitly
     (with a tick, also visible on the selected row)."""
     t = colours(dark)
-    border = "#A0A0A0" if t is _TOKENS[True] else "#8A8A8A"
+    border = t["check_border"]
     tick = _tick_icon(t["highlight_text"])
     tick_sel = _tick_icon(t["highlight"])
     return (f"QTableView::indicator{{width:16px;height:16px;border-radius:4px;"

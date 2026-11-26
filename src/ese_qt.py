@@ -948,8 +948,8 @@ class MainWindow(QMainWindow):
         # failed tab
         fail_w = QWidget()
         fv = QVBoxLayout(fail_w)
-        fv.setContentsMargins(0, 6, 0, 0)
-        fv.setSpacing(8)
+        fv.setContentsMargins(0, 4, 0, 0)
+        fv.setSpacing(4)
         self.fail_list = QListWidget()
         self.fail_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.fail_list.itemSelectionChanged.connect(self._update_fail_buttons)
