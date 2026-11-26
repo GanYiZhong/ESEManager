@@ -1339,6 +1339,7 @@ class MainWindow(QMainWindow):
         # Each search gets a sequence number; results from an older search that
         # finishes late are ignored, so typing quickly never shows stale rows.
         self._search_seq += 1
+        self._cancel(self._search)
         if not kw and cat is None:
             self._unfiltered_seq = self._search_seq   # full list: its size is the song total
         self.count_label.setText("...")
@@ -1361,6 +1362,16 @@ class MainWindow(QMainWindow):
 
     # ---- downloaded-status column: one folder scan on a worker thread
     _dl_seq = 0
+    _dl_scan = None
+
+    @staticmethod
+    def _cancel(thread):
+        """Ask a superseded worker to stop; one still queued skips its work."""
+        try:
+            if thread is not None and thread.isRunning():
+                thread.requestInterruption()
+        except RuntimeError:      # C++ object already gone
+            pass
 
     def refresh_download_status(self):
         """Rescan the download folder for the songs currently loaded. Results
@@ -1368,9 +1379,11 @@ class MainWindow(QMainWindow):
         if not self.all_songs:
             return
         self._dl_seq += 1
+        self._cancel(self._dl_scan)
         t = self._track(DownloadStatusThread(
             self.all_songs, resolve_dir(self.dir_edit.text()), seq=self._dl_seq))
         t.done.connect(self.on_download_status)
+        self._dl_scan = t
         t.start()
 
     def on_download_status(self, seq, status):
@@ -1378,6 +1391,8 @@ class MainWindow(QMainWindow):
             return
         merged = dict(self.song_model.dl_status)
         merged.update(status)
+        if merged == self.song_model.dl_status:
+            return                   # nothing changed: no repaint, no re-sort
         self.song_model.set_download_status(merged)
         if self.dl_combo.currentData() != "all":
             self.apply_filters()     # membership depends on status
