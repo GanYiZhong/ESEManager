@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.parse
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -250,6 +251,16 @@ def has_cjk(text):
     return any('぀' <= c <= 'ヿ' or '一' <= c <= '鿿' for c in text or "")
 
 
+def norm_text(text):
+    """Search key: NFKC (full-width -> half-width, half-width kana -> full-width),
+    case-folded, katakana folded to hiragana, so 'ＬＯＶＥ' finds 'love' and
+    'ミク' finds 'みく'."""
+    t = unicodedata.normalize("NFKC", text or "").casefold()
+    if any('ァ' <= c <= 'ヶ' for c in t):
+        t = "".join(chr(ord(c) - 0x60) if 'ァ' <= c <= 'ヶ' else c for c in t)
+    return t
+
+
 def _query_songs(conn, keyword=None, category=None):
     """Songs with their files in one query (no N+1). Box.def rows are dropped
     and songs without files are left out."""
@@ -280,37 +291,99 @@ def _query_songs(conn, keyword=None, category=None):
     return list(songs.values())
 
 
-def search_songs(keyword, category=None):
-    """Search the song database. A Japanese keyword also matches songs whose
-    Japanese title (from the local title database) contains it. Shared by the
-    GUI and the command line."""
-    conn = connect_ro(DB_PATH)
+def _stamp(path):
     try:
-        songs = _query_songs(conn, keyword or None, category)
-        if keyword and has_cjk(keyword) and os.path.exists(LOCAL_DB_PATH):
-            lconn = connect_ro(LOCAL_DB_PATH)
-            try:
-                titles = {r[0].lower() for r in lconn.execute(
-                    "SELECT title FROM local_songs WHERE title_ja LIKE ?",
-                    (f"%{keyword}%",)) if r[0]}
-            finally:
-                lconn.close()
-            if titles:
-                # Match in Python: one query, no limit on the number of titles.
-                seen = {(s["song_name"], s["category"]) for s in songs}
-                for s in _query_songs(conn, None, category):
-                    name = (s["song_name"] or "").lower()
-                    key = (s["song_name"], s["category"])
-                    if key not in seen and any(t in name for t in titles):
-                        seen.add(key)
-                        songs.append(s)
-    finally:
-        conn.close()
-    return songs
+        st = os.stat(path)
+        return (path, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (path, None, None)
+
+
+class _SongIndex:
+    """All songs loaded once, with normalized search keys, so a keystroke is a
+    Python substring scan instead of a database round trip."""
+
+    def __init__(self):
+        conn = connect_ro(DB_PATH)
+        try:
+            self.songs = _query_songs(conn)
+        finally:
+            conn.close()
+        self.names = [norm_text(s["song_name"]) for s in self.songs]
+        self.cats = [norm_text(s["category"]) for s in self.songs]
+        self._ja = None          # [(normalized title_ja, normalized title)], lazy
+
+    def ja_titles(self):
+        if self._ja is None:
+            pairs = set()
+            if os.path.exists(LOCAL_DB_PATH):
+                try:
+                    lconn = connect_ro(LOCAL_DB_PATH)
+                    try:
+                        for title, ja in lconn.execute(
+                                "SELECT title, title_ja FROM local_songs "
+                                "WHERE title_ja IS NOT NULL AND title_ja != ''"):
+                            if title and norm_text(title):
+                                pairs.add((norm_text(ja), norm_text(title)))
+                    finally:
+                        lconn.close()
+                except sqlite3.Error:
+                    log.warning("title lookup failed", exc_info=True)
+            self._ja = list(pairs)
+        return self._ja
+
+
+_index = None
+_index_key = None
+_index_lock = threading.Lock()
+
+
+def _song_index():
+    global _index, _index_key
+    key = (_stamp(DB_PATH), _stamp(LOCAL_DB_PATH))
+    with _index_lock:
+        if _index is None or _index_key != key:
+            _index = _SongIndex()
+            _index_key = key
+        return _index
+
+
+def clear_search_cache():
+    global _index, _index_key
+    with _index_lock:
+        _index = _index_key = None
+
+
+def search_songs(keyword, category=None):
+    """Search the song database (width-, case- and kana-insensitive substring
+    match on the song name). A Japanese keyword also matches songs whose
+    Japanese title (from the local title database) contains it. Shared by the
+    GUI and the command line. The song list is cached until a database file
+    changes."""
+    idx = _song_index()
+    kw = norm_text(keyword).strip() if keyword else ""
+    cat = norm_text(category).strip() if category else ""
+    rows = [i for i in range(len(idx.songs))
+            if (not cat or cat in idx.cats[i]) and (not kw or kw in idx.names[i])]
+    out = [i for i in rows]
+    if kw and has_cjk(keyword):
+        titles = {t for ja, t in idx.ja_titles() if kw in ja}
+        if titles:
+            seen = set(out)
+            for i in range(len(idx.songs)):
+                if i in seen or (cat and cat not in idx.cats[i]):
+                    continue
+                name = idx.names[i]
+                if any(t in name for t in titles):
+                    out.append(i)
+    # Callers get their own dicts, so mutating a result cannot corrupt the cache.
+    return [dict(idx.songs[i], files=list(idx.songs[i]["files"])) for i in out]
 
 
 def find_missing(songs, download_dir):
-    """Songs with at least one file not present in download_dir."""
+    """Songs with at least one file not present in download_dir. (Listing each
+    directory instead of stat-ing files measured slower: song folders hold only
+    a few files each.)"""
     missing = []
     for s in songs:
         for f in s["files"]:

@@ -157,3 +157,24 @@ def test_download_fails_when_no_host_has_it(db, tmp_path, http_dir):
                           bases=[base + "a/", base + "b/"])
     assert job.run() == (0, 0, 1, 1)
     assert not list((tmp_path / "dl").rglob("*.part"))
+
+
+def test_search_is_width_case_and_kana_insensitive(db):
+    assert [s["song_name"] for s in core.search_songs("ＳＯＮＧ")] == ["Song"]
+    assert [s["song_name"] for s in core.search_songs("sOnG", "pop")] == ["Song"]
+    assert core.search_songs("song", "rock") == []
+    assert core.norm_text("ミク") == core.norm_text("みく") == core.norm_text("ﾐｸ")
+
+
+def test_search_cache_follows_database_changes_and_isolates_results(db):
+    first = core.search_songs("song")
+    first[0]["files"].clear()
+    first[0]["song_name"] = "mutated"
+    assert [f["filename"] for f in core.search_songs("song")[0]["files"]] == [
+        "Song.ogg", "Song.tja"]
+    import os
+    os.remove(core.DB_PATH)
+    make_song_db(core.DB_PATH, [("01 Pop/Other/Other.tja", "a" * 40)])
+    st = os.stat(core.DB_PATH)
+    os.utime(core.DB_PATH, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+    assert [f["filename"] for f in core.search_songs("song")[0]["files"]] == ["Other.tja"]
