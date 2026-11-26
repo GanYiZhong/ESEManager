@@ -61,7 +61,7 @@ class LazyModule:
 
 requests = LazyModule("requests")
 
-from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
+from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, NEW_SONGS_FILE, ESE_RAW_BASE,
                        ESE_MIRROR_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
                        UnsafePathError, LATEST_RELEASE_API, is_newer,
@@ -1611,6 +1611,13 @@ def update_databases(version="", log=print, tr=None):
                 _download_db_plain(sess, name, want, part, tr)
             if not sqlite_ok(part):
                 raise ValueError(tr("log_db_bad", n=name))
+        # What is new compared with the database being replaced (best effort).
+        diff = None
+        if os.path.exists(targets[0]):
+            try:
+                diff = diff_song_sets(targets[0], parts[0])
+            except Exception:
+                logging.getLogger("ESEManager").warning("song diff failed", exc_info=True)
         # Swap both in; keep backups so a failed second replace can roll back.
         try:
             for target, part in zip(targets, parts):
@@ -1629,6 +1636,10 @@ def update_databases(version="", log=print, tr=None):
             raise
         installed = manifest.get("version") or version
         write_atomic(VERSION_FILE, installed.encode("utf-8"))
+        try:
+            save_new_songs(diff or {"added": [], "changed": []}, installed)
+        except Exception:
+            logging.getLogger("ESEManager").warning("saving new-songs list failed", exc_info=True)
         return installed
     finally:
         sess.close()
@@ -1642,6 +1653,68 @@ def update_databases(version="", log=print, tr=None):
                 os.remove(part)
             except OSError:
                 pass
+
+
+# ---------------------------------------------------------------- what's new
+def diff_song_sets(old_db, new_db):
+    """Compare two song databases with SQL. Returns {"added": [...], "changed":
+    [...]} of [category, song_name]: added = songs only in new_db; changed =
+    songs in both where some file is new or has a different blob_sha."""
+    conn = connect_ro(new_db)
+    try:
+        conn.execute("ATTACH DATABASE ? AS old", (
+            pathlib.Path(os.path.abspath(old_db)).as_uri() + "?mode=ro",))
+        songs = ("SELECT c.name AS cat, s.song_name AS name "
+                 "FROM {db}.songs s JOIN {db}.categories c ON c.id = s.category_id")
+        files = ("SELECT c.name AS cat, s.song_name AS name, f.file_path AS fp, "
+                 "f.blob_sha AS sha FROM {db}.song_files f "
+                 "JOIN {db}.songs s ON s.id = f.song_id "
+                 "JOIN {db}.categories c ON c.id = s.category_id")
+        added = conn.execute(
+            f"SELECT cat, name FROM ({songs.format(db='main')}) "
+            f"EXCEPT SELECT cat, name FROM ({songs.format(db='old')}) "
+            "ORDER BY 1, 2").fetchall()
+        changed = conn.execute(
+            f"SELECT DISTINCT cat, name FROM (SELECT cat, name, fp, sha FROM ({files.format(db='main')}) "
+            f"EXCEPT SELECT cat, name, fp, sha FROM ({files.format(db='old')})) "
+            f"WHERE (cat, name) IN (SELECT cat, name FROM ({songs.format(db='old')})) "
+            "ORDER BY 1, 2").fetchall()
+        return {"added": [list(r) for r in added], "changed": [list(r) for r in changed]}
+    finally:
+        conn.close()
+
+
+def save_new_songs(diff, version=""):
+    """Persist the last update's diff (atomic) next to the config."""
+    data = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "version": version,
+            "added": [list(x) for x in diff.get("added", [])],
+            "changed": [list(x) for x in diff.get("changed", [])]}
+    write_atomic(NEW_SONGS_FILE, json.dumps(data, ensure_ascii=False).encode("utf-8"))
+    return data
+
+
+def load_new_songs():
+    """The saved diff, or an empty one (missing or damaged file)."""
+    try:
+        with open(NEW_SONGS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return {"time": str(d.get("time", "")), "version": str(d.get("version", "")),
+                "added": [tuple(x) for x in d.get("added", [])],
+                "changed": [tuple(x) for x in d.get("changed", [])]}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {"time": "", "version": "", "added": [], "changed": []}
+
+
+def new_song_marks():
+    """{(song_name, category): "new" | "updated"} for the last DB update."""
+    d = load_new_songs()
+    marks = {(n, c): "updated" for c, n in d["changed"]}
+    marks.update({(n, c): "new" for c, n in d["added"]})
+    return marks
+
+
+def filter_new_songs(songs, marks):
+    return [s for s in songs if song_key(s) in marks]
 
 
 # ---------------------------------------------------------------- app update
@@ -1687,7 +1760,7 @@ def can_self_update():
 # Files and folders in the app folder that an update never touches: the
 # user's settings, databases (the release bundles older copies) and downloads.
 UPDATE_KEEP_FILES = {"config.toml", "version.txt", "manifest.json",
-                     "ese_songs.db", "ese_local.db"}
+                     "ese_songs.db", "ese_local.db", "new_songs.json"}
 UPDATE_KEEP_DIRS = {"downloads", ".update"}
 UPDATE_WORK = ".update"
 UPDATE_OLD_LIST = ".update_old.txt"

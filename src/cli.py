@@ -3,7 +3,7 @@ ESEManager command-line mode.
 
     ESEManager-cli status [--offline]
     ESEManager-cli update-db [--force]
-    ESEManager-cli search KEYWORD [-c CATEGORY] [--limit N]
+    ESEManager-cli search KEYWORD [-c CATEGORY] [--new] [--limit N]
     ESEManager-cli download [KEYWORD] [-c CATEGORY] [--all] [-y]
     ESEManager-cli missing [--download] [-y] [--limit N]
     ESEManager-cli updates [--download] [-y] [--limit N]
@@ -286,7 +286,10 @@ def cmd_update_db(args, tr):
         out.err(tr("db_fail", e=core.friendly_error(e, tr)))
         return 1
     out.msg(f"{tr('dbv_ok')} ({v})")
-    out.data({"status": "updated", "version": v})
+    d = core.load_new_songs()
+    out.msg(tr("sn_summary", new=len(d["added"]), upd=len(d["changed"])))
+    out.data({"status": "updated", "version": v,
+              "new": len(d["added"]), "updated": len(d["changed"])})
     return 0
 
 
@@ -294,9 +297,11 @@ def cmd_search(args, tr):
     if not need_db(tr):
         return 2
     songs = core.search_songs(args.keyword, args.category)
+    if args.new:
+        songs = core.filter_new_songs(songs, core.new_song_marks())
     print_songs(songs, args.limit)
     if not songs:
-        out.err(tr("total", n=0))
+        out.err(tr("sn_none" if args.new else "total", n=0))
         sug = core.suggest(args.keyword, 3) if args.keyword else []
         if sug:
             out.msg(tr("did_you_mean", items=", ".join(sug)))
@@ -460,6 +465,8 @@ def build_parser():
     sp = sub.add_parser("search", parents=[common], help="search songs")
     sp.add_argument("keyword", nargs="?", default="")
     sp.add_argument("-c", "--category", help="category name or part of it, e.g. Anime")
+    sp.add_argument("--new", action="store_true",
+                    help="only songs added or changed by the last database update")
     sp.add_argument("--limit", type=int, default=50, help="max rows to print (0 = all)")
     sp.set_defaults(func=cmd_search)
 
