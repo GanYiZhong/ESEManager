@@ -1373,7 +1373,7 @@ def _cleanup_db(db_path=None):
         cats.add(parts[0])
         for i in range(2, len(parts)):
             dirs.add("/".join(parts[:i]))
-    cats -= CLEANUP_PROTECTED
+    cats = {c for c in cats if c.lower() not in CLEANUP_PROTECTED}   # any OS case
     return cats, files, dirs
 
 
@@ -1510,7 +1510,7 @@ def cleanup_safe(download_dir, path, db_path=None):
         return False
     parts = rel.replace("\\", "/").split("/")
     first = parts[0].lower() if os.name == "nt" else parts[0]
-    return len(parts) >= 2 and first in known[0] and first not in CLEANUP_PROTECTED
+    return len(parts) >= 2 and first in known[0] and first.lower() not in CLEANUP_PROTECTED
 
 
 def cleanup_apply(download_dir, items, mover, db_path=None):

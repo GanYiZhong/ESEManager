@@ -138,6 +138,10 @@ def test_find_updates_flags_changed_audio(tmp_path, monkeypatch):
     lfs[OGG] = (lfs[OGG][0], 5)
     assert [s["id"] for s in core.find_updates(str(tmp_path))] == [1]
     p.write_bytes(new)
+    # A real re-download gets a new mtime; on fast CI disks the rewrite can land
+    # in the same timestamp tick, which the (mtime, size) cache cannot see.
+    t = p.stat().st_mtime + 5
+    os.utime(p, (t, t))
     lfs[OGG] = (hashlib.sha256(new).hexdigest(), len(new))
     monkeypatch.undo()
     monkeypatch.setattr(core, "search_songs", lambda *a, **k: songs)
