@@ -377,9 +377,17 @@ class MainWindow(QMainWindow):
 
     def build_shortcuts(self):
         for seq, slot in (("Ctrl+F", self._focus_search), ("Ctrl+D", self._shortcut_download),
-                          ("F5", self._refresh_current)):
+                          ("F5", self._refresh_current),
+                          ("Ctrl+K", self.open_palette)):
             sc = QShortcut(QKeySequence(seq), self)
             sc.activated.connect(slot)
+
+    def open_palette(self):
+        """Ctrl+K: command palette (created on first use, keeps its recent list)."""
+        if getattr(self, "_palette", None) is None:
+            from command_palette import CommandPalette
+            self._palette = CommandPalette(self)
+        self._palette.open_palette()
 
     def _focus_search(self):
         self.search_edit.setFocus()
