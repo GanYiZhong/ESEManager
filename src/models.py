@@ -63,6 +63,7 @@ class SongModel(QAbstractTableModel):
         self.checked = set()     # {(song_name, category), ...}
         self._cells = {}         # id(song) -> cached display strings
         self._skeys = {}         # column -> {id(song): sort value}
+        self.update_keys = set()  # downloaded songs with upstream changes
         self.dl_status = {}      # (song_name, category) -> 0 none / 1 partial / 2 complete
         self.new_marks = {}      # (song_name, category) -> "new" / "updated" (last DB update)
         self.favourites = set()  # {(song_name, category), ...}
@@ -93,6 +94,14 @@ class SongModel(QAbstractTableModel):
         if self._sort_col == self.DL_COL:
             self.sort(self.DL_COL, Qt.DescendingOrder if self._sort_desc
                       else Qt.AscendingOrder)
+        if self._view:
+            self.dataChanged.emit(self.index(0, self.DL_COL),
+                                  self.index(len(self._view) - 1, self.DL_COL))
+
+    def set_update_keys(self, keys):
+        """Songs whose downloaded files are outdated (shown as ⟳ in the status column)."""
+        self.update_keys = set(keys or ())
+        self._skeys.pop(self.DL_COL, None)
         if self._view:
             self.dataChanged.emit(self.index(0, self.DL_COL),
                                   self.index(len(self._view) - 1, self.DL_COL))
@@ -206,6 +215,16 @@ class SongModel(QAbstractTableModel):
             return None
         if col == self.DL_COL:
             st = self.dl_status.get(self._key(song))
+            if st is not None and self._key(song) in self.update_keys:
+                if role == Qt.DisplayRole:
+                    return "⟳"
+                if role == Qt.ToolTipRole:
+                    return self.tr("dl_update_avail")
+                if role == Qt.TextAlignmentRole:
+                    return int(Qt.AlignCenter)
+                if role == Qt.ForegroundRole:
+                    return theme.status_colour("partial")
+                return None
             if role == Qt.DisplayRole:
                 return self._DL_TEXT.get(st, "")
             if role == Qt.ToolTipRole and st is not None:
