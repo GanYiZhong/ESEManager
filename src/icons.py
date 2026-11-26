@@ -17,7 +17,7 @@ import theme
 
 NAMES = ("search", "filter", "download", "refresh", "check-list", "update",
          "mail", "retry", "folder", "pause", "play", "stop", "chevron-up",
-         "chevron-down", "keyboard", "music", "sidebar")
+         "chevron-down", "keyboard", "music", "sidebar", "more")
 
 _RENDER_PX = 64          # rendered large; Qt scales it down crisply
 _cache = {}

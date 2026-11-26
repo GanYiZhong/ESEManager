@@ -46,6 +46,7 @@ import songlist  # shareable song lists
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
 from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
+from responsive import ResponsiveRow, ElasticLabel
 from workers import (AutoUpdateCheckThread, DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread, ReleaseNotesThread)
@@ -144,7 +145,7 @@ class LogView(QPlainTextEdit):
             self.on_change()
 
 
-class _ClickLabel(QLabel):
+class _ClickLabel(ElasticLabel):
     clicked = Signal()
 
     def mouseReleaseEvent(self, ev):
@@ -261,10 +262,12 @@ class MainWindow(QMainWindow):
         em = fm.horizontalAdvance("M")
         self.cat_picker.setMinimumWidth(em * 9)
         self.overall_bar.setMaximumWidth(em * 14)
+        self.overall_bar.setMinimumWidth(em * 4)  # may shrink in a narrow window
         self.overall_bar.setMaximumHeight(max(18, fm.height() + 4))
         # Size the path field, not the whole row: the row also holds two
         # buttons, and the dialog grows to fit its layout.
         self.dir_edit.setMinimumWidth(em * 22)
+        self._refresh_responsive_rows()
     DEFAULT_WINDOW = (1280, 860)
 
     # ---- i18n / config
@@ -503,8 +506,8 @@ class MainWindow(QMainWindow):
         root.setSpacing(8)
 
         # ---- top row: search + category + filter + maintenance actions
-        top = QHBoxLayout()
-        top.setSpacing(8)
+        self.top_row = ResponsiveRow(spacing=8)
+        top = self.top_row.row_layout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText(self.tr("ph"))
         self._search_icon_action = None
@@ -543,7 +546,25 @@ class MainWindow(QMainWindow):
         self.updates_btn.clicked.connect(self.check_updates)
         for b in (self.db_update_btn, self.missing_btn, self.updates_btn):
             top.addWidget(b)
-        root.addLayout(top)
+        # Overflow "..." menu: only shown when the row is too narrow for all three.
+        self.more_btn = QToolButton()
+        self.more_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.more_btn.setPopupMode(QToolButton.InstantPopup)
+        self.more_menu = QMenu(self.more_btn)
+        more_acts = ((self.more_menu.addAction(self.tr("check_missing"), self.check_missing),
+                      self.missing_btn),
+                     (self.more_menu.addAction(self.tr("check_updates"), self.check_updates),
+                      self.updates_btn))
+        # the hidden buttons still carry the enabled/disabled state
+        self.more_menu.aboutToShow.connect(
+            lambda: [a.setEnabled(b.isEnabled()) for a, b in more_acts])
+        self.more_btn.setMenu(self.more_menu)
+        self.more_btn.setToolTip(self.tr("more_actions"))
+        self.more_btn.setAccessibleName(self.tr("more_actions"))
+        self.more_btn.hide()
+        top.addWidget(self.more_btn)
+        self._setup_top_row_steps()
+        root.addWidget(self.top_row)
 
         # First-run / empty-database hint, hidden once a song database exists.
         self.build_welcome_panel(root)
@@ -627,8 +648,8 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter, 1)
 
         # ---- bottom row: download actions + slim progress
-        bottom = QHBoxLayout()
-        bottom.setSpacing(8)
+        self.bottom_row = ResponsiveRow(spacing=8)
+        bottom = self.bottom_row.row_layout()
         self.download_btn = QPushButton(self.tr("download"))
         self.download_btn.setStyleSheet(theme.primary_button_qss(padding="5px 18px"))
         self.table.setStyleSheet(self._table_qss())
@@ -642,6 +663,15 @@ class MainWindow(QMainWindow):
         self.sel_menu_btn = QPushButton(self.tr("sel_menu"))
         self.sel_menu_btn.setToolTip(self.tr("sel_menu_tip"))
         self.sel_menu = QMenu(self.sel_menu_btn)
+        # Select all / none live here too, but only show when the row is narrow
+        # and the standalone buttons are hidden.
+        self.act_sel_all = self.sel_menu.addAction(
+            self.tr("sel_all"), lambda: self.song_model.set_all(True))
+        self.act_desel_all = self.sel_menu.addAction(
+            self.tr("desel_all"), lambda: self.song_model.set_all(False))
+        self.act_sel_sep = self.sel_menu.addSeparator()
+        for a in (self.act_sel_all, self.act_desel_all, self.act_sel_sep):
+            a.setVisible(False)
         self.act_sel_invert = self.sel_menu.addAction(
             self.tr("sel_invert"), lambda: self.song_model.invert_checked())
         self.act_sel_notdl = self.sel_menu.addAction(
@@ -661,7 +691,7 @@ class MainWindow(QMainWindow):
         self.sel_label.clicked.connect(self.jump_to_next_checked)
         self.overall_bar = QProgressBar()
         self.overall_bar.setFormat("%v / %m")
-        self.overall_label = QLabel(self.tr("ready"))
+        self.overall_label = ElasticLabel(self.tr("ready"))
         self.pause_btn = QToolButton()
         self.pause_btn.setText(self.tr("pause"))
         self._set_pause_icon(False)
@@ -689,7 +719,8 @@ class MainWindow(QMainWindow):
         for wdg in (self.overall_label, self.overall_bar, self.pause_btn, self.stop_btn,
                     self.detail_btn, self.monitor_btn):
             bottom.addWidget(wdg)
-        root.addLayout(bottom)
+        self._setup_bottom_row_steps()
+        root.addWidget(self.bottom_row)
 
         self.build_settings_dialog()
         self.update_font_metrics()
@@ -708,6 +739,50 @@ class MainWindow(QMainWindow):
         self.retranslate_chrome()
         self._apply_icons()
         self._setup_accessibility()
+
+    @staticmethod
+    def _set_icon_only(btn, on):
+        """Collapse a button to its icon (tooltip/accessible name keep the text)."""
+        if isinstance(btn, QToolButton):
+            btn.setToolButtonStyle(Qt.ToolButtonIconOnly if on
+                                   else Qt.ToolButtonTextBesideIcon)
+            return
+        if on:
+            if btn.text():
+                btn.setProperty("fullText", btn.text())
+            btn.setText("")
+        elif btn.property("fullText"):
+            btn.setText(btn.property("fullText"))
+
+    def _setup_top_row_steps(self):
+        icon_only = lambda *bs: (lambda on: [self._set_icon_only(b, on) for b in bs])
+        self.top_row.add_step(icon_only(self.db_update_btn, self.missing_btn,
+                                        self.updates_btn))
+
+        def to_overflow(on):
+            self.missing_btn.setVisible(not on)
+            self.updates_btn.setVisible(not on)
+            self.more_btn.setVisible(on)
+        self.top_row.add_step(to_overflow)
+        self.top_row.add_step(icon_only(self.filter_btn))
+
+    def _setup_bottom_row_steps(self):
+        def monitor_icon(on):
+            self._set_icon_only(self.monitor_btn, on)
+
+        def sel_to_menu(on):
+            self.selall_btn.setVisible(not on)
+            self.deselall_btn.setVisible(not on)
+            for a in (self.act_sel_all, self.act_desel_all, self.act_sel_sep):
+                a.setVisible(on)
+        self.bottom_row.add_step(monitor_icon)
+        self.bottom_row.add_step(sel_to_menu)
+
+    def _refresh_responsive_rows(self):
+        for name in ("top_row", "bottom_row"):
+            row = getattr(self, name, None)
+            if row is not None:
+                row.invalidate_widths()
 
     def _setup_accessibility(self):
         """Logical Tab order, accessible names and shortcut-bearing tooltips."""
@@ -763,9 +838,14 @@ class MainWindow(QMainWindow):
         if getattr(self, "pause_btn", None):
             self._set_pause_icon(self._paused_icon_play)
         self.detail_btn.setIcon(icons.icon("sidebar", dark))
+        self.more_btn.setIcon(icons.icon("more", dark))
         self.act_detail.setIcon(icons.icon("sidebar", dark))
         for b in (self.pause_btn, self.stop_btn, self.monitor_btn, self.filter_btn):
             b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        for name in ("top_row", "bottom_row"):   # restore the current collapse mode
+            row = getattr(self, name, None)
+            if row is not None:
+                row.reapply()
         self.monitor_btn.setIcon(icons.icon(
             "chevron-down" if self.monitor_btn.isChecked() else "chevron-up", dark))
         self.app_update_btn.setIcon(icons.icon(
