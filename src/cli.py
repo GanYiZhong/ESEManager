@@ -430,8 +430,8 @@ def cmd_self_update(args, tr):
 def build_parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--dir", help="download folder (default: config.toml or ./Downloads)")
-    common.add_argument("--source", help="download host: ese, taiko.ac or a base URL "
-                        "(default: config.toml or ese; the other host is the fallback)")
+    common.add_argument("--source", help="download host: auto (fastest), ese, taiko.ac or a "
+                        "base URL (default: config.toml or auto; the other host is the fallback)")
     common.add_argument("--workers", type=int, default=None,
                         help=f"parallel downloads, 1-{MAX_WORKERS} "
                              f"(default: config.toml or {DEFAULT_WORKERS})")

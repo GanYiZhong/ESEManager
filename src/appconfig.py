@@ -37,7 +37,7 @@ ESE_RAW_BASE = "https://ese.tjadataba.se/ESE/ESE/media/branch/master/"
 # when download.source = "taiko.ac".
 ESE_MIRROR_BASE = "https://git.taiko.ac/zdon/ESE/media/branch/master/"
 # download.source values shown in the settings: name -> host label.
-DOWNLOAD_SOURCES = {"ese": "ese.tjadataba.se", "taiko.ac": "git.taiko.ac"}
+DOWNLOAD_SOURCES = {"auto": "auto", "ese": "ese.tjadataba.se", "taiko.ac": "git.taiko.ac"}
 # Prebuilt databases, rebuilt by .github/workflows/pages-db.yml.
 DB_RELEASE_URL = "https://ganyizhong.github.io/ESEManager/"
 USER_AGENT = "ESEManager"

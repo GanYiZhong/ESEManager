@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
                          "workers": self.workers_spin.value(),
                          "keep_awake": self.keep_awake_chk.isChecked(),
                          "source": (self.source_combo.currentData()
-                                    if hasattr(self, "source_combo") else "ese")},
+                                    if hasattr(self, "source_combo") else "auto")},
             "display": display,
         }
         self.config = {**self.config, "display": display}
@@ -877,9 +877,10 @@ class MainWindow(QMainWindow):
         self._settings_row(form, "", self.keep_awake_chk, "keep_awake_help")
         self.source_combo = QComboBox()
         self.source_combo.setToolTip(self.tr("src_tip"))
+        self.source_combo.addItem(self.tr("src_auto"), "auto")
         self.source_combo.addItem(self.tr("src_ese"), "ese")
         self.source_combo.addItem(self.tr("src_mirror"), "taiko.ac")
-        src = self.config.get("download", {}).get("source", "ese")
+        src = self.config.get("download", {}).get("source", "auto")
         if isinstance(src, str) and src.lower().startswith(("http://", "https://")):
             self.source_combo.addItem(self.tr("src_custom", u=src), src)
         idx = self.source_combo.findData(src)

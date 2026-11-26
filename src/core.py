@@ -1072,15 +1072,16 @@ def find_updates(download_dir, category=None, progress=None):
 
 
 # ---------------------------------------------------------------- downloads
-_download_source = "ese"
+_download_source = "auto"
 PART_MAX_AGE = 24 * 3600        # seconds a stopped download's .part may be resumed
 
 
 def set_download_source(pref):
     """Preferred download host from config (download.source): a name from
-    DOWNLOAD_SOURCES or an http(s) base URL. Unknown values mean "ese"."""
+    DOWNLOAD_SOURCES, "auto" (pick the fastest host) or an http(s) base URL.
+    Empty means "auto"; other unknown values behave like "ese"."""
     global _download_source
-    _download_source = pref if isinstance(pref, str) and pref.strip() else "ese"
+    _download_source = pref.strip() if isinstance(pref, str) and pref.strip() else "auto"
 
 
 def source_bases(pref=None):
@@ -1091,8 +1092,154 @@ def source_bases(pref=None):
     first = known.get(pref)
     if first is None and pref.lower().startswith(("http://", "https://")):
         first = pref if pref.endswith("/") else pref + "/"
-    first = first or ESE_RAW_BASE
+    first = first or ESE_RAW_BASE        # also "auto": ese first until measured
     return [first] + [b for b in (ESE_RAW_BASE, ESE_MIRROR_BASE) if b != first]
+
+
+RANK_FILE = "host_rank.json"
+RANK_VERSION = 1
+ESE_MAX_CONN = 3                # concurrent connections we allow to ese.tjadataba.se
+
+
+class HostRouter:
+    """Picks the host for each file in "auto" download mode.
+
+    Per host it keeps EWMAs of bytes and seconds per completed file (speed =
+    bytes / seconds) and of the failure rate; score = speed * (1 - fail)^2.
+    pick() routes to the best host that is under its concurrency limit, sends
+    every `probe_every`-th file to the runner-up so its estimate stays fresh,
+    and never offers a host that already failed this file. A host without any
+    measurement scores infinite, so each host gets measured at job start. The
+    last ranking is persisted to a small JSON file to seed the next run."""
+
+    ALPHA = 0.3
+
+    def __init__(self, bases, limits=None, probe_every=20, path=None, on_switch=None):
+        self.bases = list(bases)
+        self.limits = dict(limits or {})
+        self.probe_every = max(2, probe_every)
+        self.path = path
+        self.on_switch = on_switch
+        self._lock = threading.Lock()
+        self._st = {b: {"b": None, "t": None, "fail": 0.0, "n": 0, "active": 0}
+                    for b in self.bases}
+        self._failed = {}              # file_path -> {bases that failed it}
+        self._n = 0                    # first attempts so far (probe clock)
+        self._dirty = False
+        self._load()
+        self.initial = self._ranked()
+        self._best = self.initial[0]
+
+    # --- persistence
+    def _load(self):
+        if not self.path:
+            return
+        try:
+            with open(self.path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if data.get("v") != RANK_VERSION:
+                return
+            for b, rec in data.get("hosts", {}).items():
+                st = self._st.get(b)
+                spd = float(rec.get("speed", 0) or 0)
+                if st and spd > 0:
+                    st["b"], st["t"] = spd, 1.0
+                    st["fail"] = min(1.0, max(0.0, float(rec.get("fail", 0) or 0)))
+        except Exception:
+            pass
+
+    def save(self):
+        if not self.path:
+            return
+        with self._lock:
+            if not self._dirty:
+                return
+            hosts = {b: {"speed": round(st["b"] / st["t"], 1), "fail": round(st["fail"], 3)}
+                     for b, st in self._st.items() if st["b"] and st["t"]}
+            self._dirty = False
+        if not hosts:
+            return
+        try:
+            write_atomic(self.path, json.dumps({"v": RANK_VERSION, "hosts": hosts}).encode())
+        except Exception:
+            log.info("could not save host ranking", exc_info=True)
+
+    # --- scoring
+    @staticmethod
+    def _speed(st):
+        return st["b"] / st["t"] if st["b"] and st["t"] else None
+
+    def _score(self, b):
+        st = self._st[b]
+        spd = self._speed(st)
+        if spd is None:
+            return float("inf") if st["n"] == 0 else 0.0
+        return spd * (1.0 - st["fail"]) ** 2
+
+    def _ranked(self):
+        return sorted(self.bases, key=lambda b: -self._score(b))
+
+    def speeds(self):
+        with self._lock:
+            return {b: self._speed(st) for b, st in self._st.items()}
+
+    # --- routing
+    def pick(self, fp, tried=()):
+        """Reserve and return the next host to try for `fp`, or None when
+        every host has been tried. Pair with report()."""
+        with self._lock:
+            prior = self._failed.get(fp, ())
+            ranked = [b for b in self._ranked() if b not in tried]
+            if not ranked:
+                return None
+            ranked.sort(key=lambda b: b in prior)          # past failures last
+            free = [b for b in ranked
+                    if self._st[b]["active"] < self.limits.get(b, 1 << 30)]
+            pool = free or ranked[:1]
+            choice = pool[0]
+            if not tried:
+                self._n += 1
+                if self._n % self.probe_every == 0:
+                    others = [b for b in pool[1:] if b not in prior]
+                    if others:
+                        choice = others[0]
+            self._st[choice]["active"] += 1
+            switched = self._check_best()
+        if switched and self.on_switch:
+            self.on_switch(switched)
+        return choice
+
+    def _check_best(self):
+        best = self._ranked()[0]
+        if best != self._best:
+            self._best = best
+            return best
+        return None
+
+    def report(self, base, fp, ok, nbytes=0, secs=0.0):
+        """Finish an attempt: ok True/False update the estimates, None (cancelled)
+        only releases the slot."""
+        with self._lock:
+            st = self._st[base]
+            st["active"] -= 1
+            if ok is None:
+                return
+            a = self.ALPHA
+            st["fail"] = st["fail"] * (1 - a) + (0.0 if ok else a)
+            st["n"] += 1
+            if ok:
+                secs = max(secs, 1e-3)
+                if st["b"] is None:
+                    st["b"], st["t"] = float(nbytes), secs
+                else:
+                    st["b"] = st["b"] * (1 - a) + nbytes * a
+                    st["t"] = st["t"] * (1 - a) + secs * a
+            else:
+                self._failed.setdefault(fp, set()).add(base)
+            self._dirty = True
+            switched = self._check_best()
+        if switched and self.on_switch:
+            self.on_switch(switched)
 
 
 def _host(url):
@@ -1110,12 +1257,23 @@ class Downloader:
     """
 
     def __init__(self, files, download_dir, workers, overwrite=False, tr=None, log=None,
-                 bases=None):
+                 bases=None, auto=None, rank_path=None):
         self.files = files
         # Hosts tried in order for each file; a host that works after the
         # first one failed moves to the front for the rest of the job.
+        # auto: route each file to the measured-fastest host (the default
+        # source, or auto=True with explicit bases).
+        self.auto = auto if auto is not None else (not bases and _download_source == "auto")
         self.bases = list(bases) if bases else source_bases()
         self._switched = set()
+        self.router = None
+        if self.auto and len(self.bases) > 1:
+            if rank_path is None and not bases:
+                rank_path = os.path.join(APP_DIR, RANK_FILE)
+            self.router = HostRouter(
+                self.bases, limits={ESE_RAW_BASE: ESE_MAX_CONN}, path=rank_path,
+                on_switch=self._announce)
+            self.bases = list(self.router.initial)
         self.download_dir = download_dir
         self.workers = max(1, workers)
         self.overwrite = overwrite     # True = replace existing files (update mode)
@@ -1275,6 +1433,8 @@ class Downloader:
             with self._lock:
                 self._closed = True
             sess.close()
+            if self.router:
+                self.router.save()
         return self.dl, self.skip, self.fail, self.total
 
     def _urls(self, f):
@@ -1291,8 +1451,35 @@ class Downloader:
             urls.insert(0, rec)
         return urls
 
+    def _announce(self, base):
+        with self._lock:
+            first = base not in self._switched
+            self._switched.add(base)
+        if first:
+            self.log(self.tr("log_mirror", host=_host(base)))
+
+    def _next_url(self, f, tried):
+        """(url, router_base) of the next host to try for file f, or (None, None).
+        router_base is set only in auto mode (that slot must be report()ed)."""
+        if not self.router:
+            for u in self._urls(f):
+                if u not in tried:
+                    return u, None
+            return None, None
+        fp = f["file_path"]
+        rec = live_url(f["download_url"] or "")
+        if rec and not rec.startswith(ESE_RAW_BASE) and rec not in tried and \
+                not any(rec.startswith(b) for b in self.bases):
+            return rec, None
+        base = self.router.pick(fp, tried)
+        if base is None:
+            return None, None
+        return base + urllib.parse.quote(fp), base
+
     def _worked(self, url):
         """Move the host that served `url` to the front (logged once)."""
+        if self.router:
+            return                  # the router tracks the ranking
         with self._lock:
             base = next((b for b in self.bases if url.startswith(b)), None)
             if base is None or self.bases[0] == base:
@@ -1324,23 +1511,33 @@ class Downloader:
             check = want if want and not is_lfs_path(fp) else None
             err = None
             tried = []
-            for url in self._urls(f):
+            while True:
                 if self._stop:
                     raise InterruptedError(self.tr("log_cancelled"))
+                url, base = self._next_url(f, tried)
+                if url is None:
+                    if err is None:
+                        raise IOError("no download source")
+                    raise AllHostsFailed([_host(t) for t in tried], err) from err
+                t0 = time.time()
+                have = os.path.getsize(part) if os.path.exists(part) else 0
                 try:
                     got = self._fetch(sess, url, part, fp, check)
+                    if base:
+                        self.router.report(base, fp, True, max(got - have, 1),
+                                           time.time() - t0)
                     self._worked(url)
                     break
                 except InterruptedError:
+                    if base:
+                        self.router.report(base, fp, None)
                     raise
                 except Exception as e:              # try the next host
+                    if base:
+                        self.router.report(base, fp, False)
                     log.info("%s: %s", url, e)
                     err = e
-                    tried.append(_host(url))
-            else:
-                if err is None:
-                    raise IOError("no download source")
-                raise AllHostsFailed(tried, err) from err
+                    tried.append(base or url)
             os.replace(part, save_path)
             part = None
             forget_blob_sha(save_path)
