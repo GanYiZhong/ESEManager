@@ -740,6 +740,7 @@ TR["zh_TW"].update({
     "acc_table": "歌曲列表", "acc_table_tip": "歌曲列表（Space 勾選、Ctrl+A 全部勾選、Ctrl+D 下載）",
     "selall_tip": "勾選目前列出的所有歌曲（Ctrl+A）",
     "deselall_tip": "取消勾選所有歌曲",
+    "density_label": "列高密度", "density_tip": "表格列高與儲存格間距，立即套用", "density_comfortable": "舒適", "density_compact": "緊湊", "col_reset": "重設欄位",
     "font_label": "字體大小", "font_tip": "整個程式的文字大小，立即套用",
 })
 TR["en"].update({
@@ -756,6 +757,7 @@ TR["en"].update({
     "acc_table": "Song list", "acc_table_tip": "Song list (Space checks, Ctrl+A checks all, Ctrl+D downloads)",
     "selall_tip": "Check all listed songs (Ctrl+A)",
     "deselall_tip": "Uncheck all songs",
+    "density_label": "Row density", "density_tip": "Table row height and cell padding, applied immediately", "density_comfortable": "Comfortable", "density_compact": "Compact", "col_reset": "Reset columns",
     "font_label": "Font size", "font_tip": "Text size for the whole app, applied immediately",
 })
 TR["ja"].update({
@@ -772,6 +774,7 @@ TR["ja"].update({
     "acc_table": "曲リスト", "acc_table_tip": "曲リスト（Space でチェック、Ctrl+A で全チェック、Ctrl+D でダウンロード）",
     "selall_tip": "表示中の曲をすべてチェック（Ctrl+A）",
     "deselall_tip": "すべてのチェックを外す",
+    "density_label": "行の密度", "density_tip": "表の行の高さとセルの余白（すぐに反映）", "density_comfortable": "標準", "density_compact": "コンパクト", "col_reset": "列をリセット",
     "font_label": "文字サイズ", "font_tip": "アプリ全体の文字サイズ（すぐに反映）",
 })
 

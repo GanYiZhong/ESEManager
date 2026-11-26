@@ -398,3 +398,8 @@ QScrollBar::handle:hover {{ background:{t['dark']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width:0; height:0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background:transparent; }}
 """
+
+
+def cell_padding_qss(px):
+    """Horizontal padding of song-table cells (density setting)."""
+    return f"QTableView::item{{padding:0 {int(px)}px;}}"
