@@ -13,7 +13,8 @@ ESEManager command-line mode.
 Common options: --dir DIR (download folder; default from config.toml or
 ./Downloads next to the app), --workers N (parallel downloads, 1-8, default 3
 or config.toml), --lang zh_TW|en|ja, --json (machine-readable output on
-stdout: one JSON object per line; messages go to stderr).
+stdout: one JSON object per line; messages go to stderr), --quiet (results
+and errors only). Colour only on a terminal; NO_COLOR turns it off.
 
 Uses the same databases, download folder and verification as the GUI.
 From source: python src/cli.py ...   Release builds: ESEManager-cli(.exe).
@@ -23,9 +24,11 @@ Exit codes: 0 success, 1 something failed, 2 bad usage / nothing to work on.
 import argparse
 import json
 import os
+import shutil
 import sys
 import threading
 import time
+import unicodedata
 
 try:
     import tomllib
@@ -59,13 +62,22 @@ def make_tr(lang):
 
 class Output:
     """Human text on stdout, or (with --json) JSON lines on stdout and the
-    human messages on stderr, so scripts can parse stdout safely."""
+    human messages on stderr, so scripts can parse stdout safely.
+    --quiet drops the chatter; errors (err) are always shown on stderr."""
 
-    def __init__(self, as_json=False):
+    def __init__(self, as_json=False, quiet=False):
         self.json = as_json
+        self.quiet = quiet
+
+    def stream(self):
+        return sys.stderr if self.json else sys.stdout
 
     def msg(self, text=""):
-        print(text, file=sys.stderr if self.json else sys.stdout, flush=True)
+        if not self.quiet:
+            print(text, file=self.stream(), flush=True)
+
+    def err(self, text):
+        print(paint(text, "31", sys.stderr), file=sys.stderr, flush=True)
 
     def data(self, obj):
         if self.json:
@@ -73,6 +85,53 @@ class Output:
 
 
 out = Output()
+
+
+def use_color(stream):
+    """Colour only on a terminal, and never when NO_COLOR is set."""
+    if os.environ.get("NO_COLOR"):
+        return False
+    try:
+        return bool(stream.isatty())
+    except Exception:
+        return False
+
+
+def paint(text, code, stream=None):
+    stream = stream or out.stream()
+    return f"\033[{code}m{text}\033[0m" if use_color(stream) else text
+
+
+def disp_width(text):
+    """Terminal cells the text occupies (CJK full-width characters take two)."""
+    return sum(0 if unicodedata.combining(ch) else
+               2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+
+
+def fit(text, width):
+    """Pad with spaces to `width` cells, or cut with an ellipsis if longer."""
+    w = disp_width(text)
+    if w <= width:
+        return text + " " * (width - w)
+    cut, used = "", 0
+    for ch in text:
+        cw = disp_width(ch)
+        if used + cw > width - 1:
+            break
+        cut += ch
+        used += cw
+    return cut + "…" + " " * (width - used - 1)
+
+
+def render_progress(done, total, spd, eta, cols):
+    """One progress line: bar, percent, count, speed, ETA; never wider than cols-1."""
+    pct = int(done * 100 / total) if total else 100
+    tail = f" {pct:3d}%  {done}/{total}  {core.human_speed(spd)}  ETA {core.human_eta(eta)}"
+    bar_w = max(0, min(30, cols - 1 - len(tail) - 2))
+    if bar_w < 8:
+        return tail.strip()[:max(0, cols - 1)]
+    fill = bar_w * done // total if total else bar_w
+    return f"[{'#' * fill}{'-' * (bar_w - fill)}]{tail}"
 
 
 def confirm(question, assume_yes):
@@ -89,7 +148,7 @@ def confirm(question, assume_yes):
 
 def need_db(tr):
     if not core.has_song_db():
-        out.msg(tr("cli_no_db"))
+        out.err(tr("cli_no_db"))
         return False
     return True
 
@@ -100,13 +159,17 @@ def song_record(s, jp):
 
 
 def run_download(files, ddir, workers, tr, overwrite=False):
-    """Download with a progress line on a terminal (every 10 s otherwise)."""
-    tty = sys.stderr.isatty() if out.json else sys.stdout.isatty()
-    stream = sys.stderr if out.json else sys.stdout
+    """Download with a progress bar on a terminal (every 10 s otherwise)."""
+    stream = out.stream()
+    tty = stream.isatty() and not out.quiet
+
+    def clear():
+        if tty:
+            cols = shutil.get_terminal_size((80, 24)).columns
+            stream.write("\r" + " " * (cols - 1) + "\r")
 
     def log(m):
-        if tty:                      # clear the progress line first
-            stream.write("\r" + " " * 79 + "\r")
+        clear()
         out.msg(m)
 
     job = core.Downloader(files, ddir, workers, overwrite=overwrite, tr=tr, log=log)
@@ -119,21 +182,23 @@ def run_download(files, ddir, workers, tr, overwrite=False):
             done, total, spd, eta, _ = job.snapshot()
             now = time.time()
             if tty:
-                stream.write(f"\r{done}/{total}  {core.human_speed(spd)}  "
-                             f"ETA {core.human_eta(eta)}   ")
+                cols = shutil.get_terminal_size((80, 24)).columns
+                line = render_progress(done, total, spd, eta, cols)
+                stream.write("\r" + line + " " * max(0, cols - 1 - len(line)))
                 stream.flush()
-            elif now - last > 10:
+            elif not out.quiet and now - last > 10:
                 last = now
                 out.msg(f"{done}/{total}")
     except KeyboardInterrupt:
-        out.msg("\n" + tr("log_dl_stopping"))
+        clear()
+        out.msg(tr("log_dl_stopping"))
         job.stop()
         runner.join()
-    if tty:
-        stream.write("\r" + " " * 79 + "\r")
-    out.msg(tr("log_dl_done", d=job.dl, s=job.skip, f=job.fail))
+    clear()
+    summary = tr("log_dl_done", d=job.dl, s=job.skip, f=job.fail)
+    out.msg(paint(summary, "31" if job.fail else "32"))
     for song, f in job.failed:
-        out.msg(f"  ✗ {f['file_path']}")
+        out.err(f"  ✗ {f['file_path']}")
     out.data({"downloaded": job.dl, "skipped": job.skip, "failed": job.fail,
               "total": job.total, "stopped": job.stopped,
               "failed_files": [f["file_path"] for _, f in job.failed]})
@@ -147,16 +212,31 @@ def song_files(songs):
 def print_songs(songs, limit):
     jp = core.load_jp_map()
     shown = songs[:limit] if limit else songs
-    for s in shown:
-        if out.json:
+    if out.json:
+        for s in shown:
             out.data(song_record(s, jp))
-            continue
-        cat = CATEGORY_NAMES.get(s["category"], s["category"])
-        ja = jp.get(s["song_name"], "")
-        out.msg(f"{s['song_name']}" + (f"  /  {ja}" if ja and ja != s["song_name"] else "")
-                + f"   [{cat}]  {len(s['files'])}")
+        return
+    if out.quiet:                    # one song per line, nothing else
+        for s in shown:
+            print(s["song_name"], flush=True)
+        return
+    rows = [(s["song_name"],
+             jp.get(s["song_name"], "") if jp.get(s["song_name"]) != s["song_name"] else "",
+             CATEGORY_NAMES.get(s["category"], s["category"]), str(len(s["files"])))
+            for s in shown]
+    w1 = min(36, max((disp_width(r[0]) for r in rows), default=0))
+    w2 = min(30, max((disp_width(r[1]) for r in rows), default=0))
+    w3 = max((disp_width(r[2]) for r in rows), default=0)
+    for name, ja, cat, n in rows:
+        line = "  ".join((paint(fit(name, w1), "1"), paint(fit(ja, w2), "36"),
+                          fit(cat, w3), n.rjust(3)))
+        out.msg(line.rstrip())
     if limit and len(songs) > limit:
         out.msg(f"… (+{len(songs) - limit})")
+
+
+def quote_arg(text):
+    return f'"{text}"' if text and any(c in text for c in " \t()&|;<>") else text
 
 
 # ---------------------------------------------------------------- commands
@@ -190,7 +270,7 @@ def cmd_status(args, tr):
 def cmd_update_db(args, tr):
     remote = core.fetch_remote_version()
     if not remote:
-        out.msg(tr("db_offline"))
+        out.err(tr("db_offline"))
         return 1
     local = core.read_local_version()
     if remote == local and not args.force and core.has_song_db():
@@ -200,7 +280,7 @@ def cmd_update_db(args, tr):
     try:
         v = core.update_databases(remote, log=out.msg, tr=tr)
     except Exception as e:
-        out.msg(tr("db_fail", e=e))
+        out.err(tr("db_fail", e=e))
         return 1
     out.msg(f"{tr('dbv_ok')} ({v})")
     out.data({"status": "updated", "version": v})
@@ -212,19 +292,29 @@ def cmd_search(args, tr):
         return 2
     songs = core.search_songs(args.keyword, args.category)
     print_songs(songs, args.limit)
+    if not songs:
+        out.err(tr("total", n=0))
+        return 2
     out.msg(tr("total", n=len(songs)))
-    return 0 if songs else 2
+    if args.keyword or args.category:
+        cmd = "ESEManager-cli download"
+        if args.keyword:
+            cmd += " " + quote_arg(args.keyword)
+        if args.category:
+            cmd += " -c " + quote_arg(args.category)
+        out.msg(paint(tr("cli_next", cmd=cmd), "2"))
+    return 0
 
 
 def cmd_download(args, tr):
     if not need_db(tr):
         return 2
     if not args.keyword and not args.category and not args.all:
-        out.msg(tr("cli_download_what"))
+        out.err(tr("cli_download_what"))
         return 2
     songs = core.search_songs(args.keyword, args.category)
     if not songs:
-        out.msg(tr("total", n=0))
+        out.err(tr("total", n=0))
         return 2
     files = song_files(songs)
     out.msg(tr("cli_found", n=len(songs), f=len(files)))
@@ -258,16 +348,16 @@ def cmd_updates(args, tr):
     if not need_db(tr):
         return 2
     if not os.path.isdir(args.dir):
-        out.msg(tr("dir_missing", d=args.dir))
+        out.err(tr("dir_missing", d=args.dir))
         return 2
     out.msg(tr("upd_checking"))
     try:
         songs = core.find_updates(args.dir)
     except core.NoShaError:
-        out.msg(tr("upd_no_sha"))
+        out.err(tr("upd_no_sha"))
         return 1
     except Exception as e:
-        out.msg(str(e))
+        out.err(str(e))
         return 1
     if not songs:
         out.msg(tr("upd_none"))
@@ -280,7 +370,7 @@ def cmd_version_sorting(args, tr):
         status, commit = core.download_version_sorting(args.dir, log=out.msg,
                                                        force=args.force)
     except Exception as e:
-        out.msg(tr("vsort_fail", e=e))
+        out.err(tr("vsort_fail", e=e))
         return 1
     out.msg(tr("vsort_latest" if status == "latest" else "vsort_done", c=commit[:7]))
     out.data({"status": status, "commit": commit})
@@ -291,7 +381,7 @@ def cmd_self_update(args, tr):
     try:
         release = core.fetch_latest_release()
     except Exception as e:
-        out.msg(tr("upd_app_fail_cli", e=e))
+        out.err(tr("upd_app_fail_cli", e=e))
         return 1
     tag = release.get("tag_name") or ""
     # A source checkout ("dev") has no version to compare: always offer the latest.
@@ -320,7 +410,7 @@ def cmd_self_update(args, tr):
         root = core.download_app_update(release, log=out.msg, progress=progress)
         how = core.install_app_update(root)
     except Exception as e:
-        out.msg(tr("upd_app_fail_cli", e=e))
+        out.err(tr("upd_app_fail_cli", e=e))
         return 1
     out.msg(tr("upd_app_scheduled_cli" if how == "scheduled" else "upd_app_done_cli", v=tag))
     return 0
@@ -338,6 +428,9 @@ def build_parser():
     common.add_argument("--lang", choices=["zh_TW", "en", "ja"], help="message language")
     common.add_argument("--json", action="store_true",
                         help="JSON lines on stdout (messages go to stderr)")
+
+    common.add_argument("-q", "--quiet", action="store_true",
+                        help="only results and errors (search prints one song name per line)")
 
     p = argparse.ArgumentParser(
         prog="ESEManager-cli", description="ESEManager command-line mode",
@@ -403,6 +496,7 @@ def main(argv=None):
         pass
     args = build_parser().parse_args(argv)
     out.json = args.json
+    out.quiet = args.quiet
     cfg = load_config()
     pref = args.lang or cfg.get("display", {}).get("ui_language", "auto")
     tr = make_tr(detect_system_lang() if pref in (None, "auto") else pref)

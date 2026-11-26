@@ -80,3 +80,54 @@ def test_json_output_and_offline_status(app):
                        env=env, timeout=120)
     st = json.loads(r.stdout)
     assert r.returncode == 0 and st["songs"] == 1 and st["db_latest"] is None
+
+
+def load_cli():
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    import cli
+    return cli
+
+
+def test_cjk_width_and_fit():
+    cli = load_cli()
+    assert cli.disp_width("abc") == 3 and cli.disp_width("千本桜") == 6
+    assert cli.disp_width(cli.fit("千本桜", 10)) == 10
+    cut = cli.fit("千本桜千本桜", 7)
+    assert cut.endswith("…") and cli.disp_width(cut) == 7
+
+
+def test_render_progress_fits_terminal():
+    cli = load_cli()
+    line = cli.render_progress(5, 10, 1.5, 12, 80)
+    assert "50%" in line and "5/10" in line and line.startswith("[#####") is False \
+        or "50%" in line
+    assert len(line) <= 79
+    narrow = cli.render_progress(5, 10, 1.5, 12, 30)
+    assert len(narrow) <= 29 and "50%" in narrow
+    assert "100%" in cli.render_progress(0, 0, 0, 0, 80)
+
+
+def test_color_respects_no_color_and_tty(monkeypatch):
+    cli = load_cli()
+
+    class Tty:
+        def isatty(self):
+            return True
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert cli.paint("x", "31", Tty()) == "\033[31mx\033[0m"
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert cli.paint("x", "31", Tty()) == "x"
+
+
+def test_search_hint_quiet_and_no_match(app):
+    tmp, run = app
+    make_db(tmp / "ese_songs.db")
+    rc, out = run("search", "Song")
+    assert rc == 0 and 'ESEManager-cli download Song' in out
+    assert "\033[" not in out                           # no colour when piped
+    rc, out = run("search", "Song", "--quiet")
+    assert rc == 0 and out.strip() == "Song"
+    rc, out = run("search", "nothing-like-this", "-q")
+    assert rc == 2 and "0 songs" in out                 # errors survive --quiet
+    rc, out = run("search", "Song", "--json", "--quiet")
+    assert rc == 0 and '"song": "Song"' in out

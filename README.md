@@ -66,6 +66,7 @@ ESEManager-cli self-update                 # install the latest ESEManager over 
 | `--source S` | download, updates | download host: `ese`, `taiko.ac` or a base URL (default: `config.toml`, else `ese`; the other is the fallback) |
 | `--lang zh_TW\|en\|ja` | all | message language |
 | `--json` | all | one JSON object per line on stdout; messages go to stderr |
+| `-q`, `--quiet` | all | Results and errors only; `search` prints one song name per line |
 | `-c`, `--category NAME` | search, download | category, or part of its name (`-c Anime`) |
 | `--limit N` | search, missing, updates | rows to print (default 50, 0 = all) |
 | `--all` | download | download every song |
@@ -74,6 +75,8 @@ ESEManager-cli self-update                 # install the latest ESEManager over 
 | `--force` | update-db, version-sorting | download even if already up to date |
 | `--offline` | status | do not ask GitHub Pages for the latest database version |
 | `--check` | self-update | only report whether a newer version exists |
+
+On a terminal you get a progress bar (percent, speed, ETA) and coloured results; set `NO_COLOR` to turn colour off (it is never used when piped). `search` ends with a hint for the matching `download` command.
 
 Exit code 0 = success, 1 = something failed, 2 = nothing to do / bad usage. Without a
 terminal (scripts, cron) confirmation prompts answer "no", so pass `-y` there.

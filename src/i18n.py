@@ -427,6 +427,7 @@ TR["zh_TW"].update({
     "cli_db_remote": "最新資料庫版本",
     "cli_download_what": "請指定關鍵字、--category，或用 --all 下載全部。",
     "cli_continue": "要繼續嗎？",
+    "cli_next": "下一步：{cmd}",
 })
 TR["en"].update({
     "cli_found": "{n} songs ({f} files) to download",
@@ -438,6 +439,7 @@ TR["en"].update({
     "cli_db_remote": "Latest database",
     "cli_download_what": "Give a keyword, --category, or --all to download everything.",
     "cli_continue": "Continue?",
+    "cli_next": "Next: {cmd}",
 })
 TR["ja"].update({
     "cli_found": "{n} 曲（{f} ファイル）をダウンロードします",
@@ -449,6 +451,7 @@ TR["ja"].update({
     "cli_db_remote": "最新のデータベース",
     "cli_download_what": "キーワード、--category、またはすべてなら --all を指定してください。",
     "cli_continue": "続行しますか？",
+    "cli_next": "次のコマンド：{cmd}",
 })
 
 
