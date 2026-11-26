@@ -1113,7 +1113,7 @@ class MainWindow(QMainWindow):
         self.theme_combo = QComboBox()
         self.theme_combo.setToolTip(self.tr("th_tip"))
         for label_key, code in (("th_auto", "auto"), ("th_light", "light"),
-                                ("th_dark", "dark")):
+                                ("th_dark", "dark"), ("th_hc", "high_contrast")):
             self.theme_combo.addItem(self.tr(label_key), code)
         idx = self.theme_combo.findData(self.theme_pref)
         self.theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
