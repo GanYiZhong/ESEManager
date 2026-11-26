@@ -216,6 +216,13 @@ def hint_qss(dark=None):
             f"border:1px solid {t['hint_border']};border-radius:6px;padding:8px;}}")
 
 
+def empty_state_qss(dark=None):
+    """Quiet message over an empty table ("no songs match"): no box, muted text."""
+    t = colours(dark)
+    return (f"QLabel{{background:transparent;color:{t['muted']};border:none;"
+            f"font-size:14px;padding:8px;}}")
+
+
 def success_text_qss(dark=None):
     """Bold "good news" text (e.g. the app-update notice in the status bar)."""
     return (f"QPushButton{{color:{colours(dark)['success']};font-weight:bold;"

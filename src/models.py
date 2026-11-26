@@ -5,7 +5,6 @@ import unicodedata
 
 from PySide6.QtCore import (Qt, QAbstractTableModel,
                             QModelIndex)
-from PySide6.QtGui import QColor
 
 from i18n import CATEGORY_NAMES, CATEGORY_COLORS
 import theme

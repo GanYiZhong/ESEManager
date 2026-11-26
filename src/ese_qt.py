@@ -532,7 +532,7 @@ class MainWindow(QMainWindow):
         self.empty_label = QLabel(self.table.viewport())  # empty-state message over the table
         self.empty_label.setAlignment(Qt.AlignCenter)
         self.empty_label.setWordWrap(True)
-        self.empty_label.setStyleSheet(theme.hint_qss())
+        self.empty_label.setStyleSheet(theme.empty_state_qss())
         self.empty_label.setOpenExternalLinks(False)
         self.empty_label.linkActivated.connect(self._on_suggestion_link)
         self._suggestions = []
@@ -1939,6 +1939,7 @@ class MainWindow(QMainWindow):
             self.welcome_panel.setStyleSheet(self._welcome_qss(dark))
             self.welcome_btn.setStyleSheet(theme.primary_button_qss(dark))
             self.view_label.setStyleSheet(theme.hint_qss(dark))
+            self.empty_label.setStyleSheet(theme.empty_state_qss(dark))
             self.table.setStyleSheet(theme.check_indicator_qss(dark))
             self.detail_panel.restyle(dark)
             self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
