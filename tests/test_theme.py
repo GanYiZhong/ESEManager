@@ -191,3 +191,12 @@ def test_app_qss_and_selection_contrast(dark):
 def test_apply_theme_installs_stylesheet(qapp):
     theme.apply_theme(qapp, "dark")
     assert "QHeaderView::section" in qapp.styleSheet()
+
+
+def test_no_hardcoded_hex_colours_outside_theme():
+    import re
+    from pathlib import Path
+    src = Path(__file__).resolve().parent.parent / "src"
+    for name in ("ese_qt.py", "detail_panel.py", "models.py"):
+        text = (src / name).read_text(encoding="utf-8")
+        assert not re.search(r"#[0-9A-Fa-f]{6}\b|#[0-9A-Fa-f]{3}\b", text), name

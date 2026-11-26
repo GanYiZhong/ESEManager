@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from i18n import CATEGORY_NAMES, CATEGORY_COLORS
 import theme
 
-DIFFS = (("c_easy", "level_easy", "#E53935"), ("c_normal", "level_normal", "#43A047"),
-         ("c_hard", "level_hard", "#1E88E5"), ("c_oni", "level_oni", "#D81B60"),
-         ("c_ura", "level_ura", "#8E24AA"))
+DIFFS = (("c_easy", "level_easy", "lv_easy"), ("c_normal", "level_normal", "lv_normal"),
+         ("c_hard", "level_hard", "lv_hard"), ("c_oni", "level_oni", "lv_oni"),
+         ("c_ura", "level_ura", "lv_ura"))
 MAX_LEVEL = 10
 
 
@@ -31,8 +31,9 @@ class LevelBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.level = None
-        self.colour = "#888888"
-        self.empty = "#B8B8B8"
+        t = theme.colours()
+        self.colour = t["lv_default"]
+        self.empty = t["progress_track"]
         self.setFixedHeight(12)
         self.setMinimumWidth(MAX_LEVEL * 8)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -185,10 +186,10 @@ class DetailPanel(QFrame):
 
     def _paint_levels(self, dark=None):
         t = theme.colours(dark)
-        for num, bar, (_k, col, colour) in zip(self.level_nums, self.level_bars, DIFFS):
+        for num, bar, (_k, col, token) in zip(self.level_nums, self.level_bars, DIFFS):
             lv = self._meta.get(col) if self._song is not None else None
             num.setText(str(lv) if lv is not None else "−")
-            bar.set_level(lv, theme.ensure_contrast(colour, (t["window"], t["base"]), 3.0, dark),
+            bar.set_level(lv, theme.ensure_contrast(t[token], (t["window"], t["base"]), 3.0, dark),
                           t["progress_track"])
 
     # ---- theme
