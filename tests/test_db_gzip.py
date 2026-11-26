@@ -31,6 +31,7 @@ def env(tmp_path, http_dir, monkeypatch):
     monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "ese_songs.db"))
     monkeypatch.setattr(core, "LOCAL_DB_PATH", str(tmp_path / "ese_local.db"))
     monkeypatch.setattr(core, "VERSION_FILE", str(tmp_path / "version.txt"))
+    monkeypatch.setattr(core, "NEW_SONGS_FILE", str(tmp_path / "new_songs.json"))
     return www, tmp_path
 
 
