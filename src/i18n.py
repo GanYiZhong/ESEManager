@@ -682,6 +682,12 @@ TR["ja"].update({
 
 # --- keyboard, accessibility and UI font size
 TR["zh_TW"].update({
+    "sel_menu": "選取 ▾", "sel_invert": "反向選取", "sel_notdl": "選取未下載的",
+    "sel_partial": "選取部分下載的（補齊）", "sel_cat": "選取目前分類的歌曲",
+    "sel_visible_only": "清除隱藏列的勾選（只留可見的）",
+    "sel_menu_tip": "更多選取方式", "sel_detail": "已選擇 {n} 首 · {f} 個檔案",
+    "sel_detail_size": "已選擇 {n} 首 · {f} 個檔案 · {size}",
+    "sel_label_tip": "點擊跳到已勾選的歌曲（再點跳下一首）",
     "search_tip": "搜尋歌曲（Ctrl+F；↓ 移到表格；Esc 清除；F5 重新搜尋）",
     "acc_category": "分類", "acc_category_tip": "依分類篩選歌曲",
     "acc_filter_tip": "依 BPM、難度與等級篩選",
@@ -691,6 +697,12 @@ TR["zh_TW"].update({
     "font_label": "字體大小", "font_tip": "整個程式的文字大小，立即套用",
 })
 TR["en"].update({
+    "sel_menu": "Select ▾", "sel_invert": "Invert selection", "sel_notdl": "Select not downloaded",
+    "sel_partial": "Select partially downloaded (to complete)", "sel_cat": "Select songs in current category",
+    "sel_visible_only": "Clear checks in hidden rows (keep visible only)",
+    "sel_menu_tip": "More ways to select", "sel_detail": "{n} selected · {f} files",
+    "sel_detail_size": "{n} selected · {f} files · {size}",
+    "sel_label_tip": "Click to jump to checked songs (click again for the next)",
     "search_tip": "Search songs (Ctrl+F; Down arrow moves to the table; Esc clears; F5 re-runs)",
     "acc_category": "Category", "acc_category_tip": "Filter songs by category",
     "acc_filter_tip": "Filter by BPM, difficulty and level",
@@ -700,6 +712,12 @@ TR["en"].update({
     "font_label": "Font size", "font_tip": "Text size for the whole app, applied immediately",
 })
 TR["ja"].update({
+    "sel_menu": "選択 ▾", "sel_invert": "選択を反転", "sel_notdl": "未ダウンロードを選択",
+    "sel_partial": "一部ダウンロード済みを選択（補完）", "sel_cat": "現在のカテゴリの曲を選択",
+    "sel_visible_only": "非表示行のチェックを解除（表示中のみ残す）",
+    "sel_menu_tip": "その他の選択方法", "sel_detail": "{n} 曲選択 · {f} ファイル",
+    "sel_detail_size": "{n} 曲選択 · {f} ファイル · {size}",
+    "sel_label_tip": "クリックでチェック済みの曲へ移動（もう一度で次へ）",
     "search_tip": "曲を検索（Ctrl+F、↓ で表へ移動、Esc でクリア、F5 で再検索）",
     "acc_category": "カテゴリ", "acc_category_tip": "カテゴリで曲を絞り込み",
     "acc_filter_tip": "BPM・難易度・レベルで絞り込み",

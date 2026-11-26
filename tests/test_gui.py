@@ -1,6 +1,7 @@
 """Offscreen smoke tests for the main window."""
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 import appconfig
@@ -551,3 +552,101 @@ def test_log_batch_is_split_into_lines(window):
     window.log_err_chk.setChecked(True)
     assert "ok one" not in lv.toPlainText() and "b.tja" in lv.toPlainText()
     window.log_err_chk.setChecked(False)
+
+
+# ---- selection menu / label
+def _sel_songs(n=40):
+    cats = ["Pop", "Anime"]
+    out = []
+    for i in range(n):
+        files = [{"filename": f"f{i}_{k}.tja", "file_path": f"{cats[i % 2]}/s{i}/f{k}.tja",
+                  "size": 1024 * 1024 if i < 4 else 0} for k in range(2)]
+        out.append({"song_name": f"S{i}", "category": cats[i % 2], "files": files})
+    return out
+
+
+def _keys(window):
+    return window.song_model.checked
+
+
+def test_select_menu_actions(window):
+    m = window.song_model
+    songs = _sel_songs()
+    m.set_songs(songs)
+    m.set_download_status({("S0", "Pop"): 2, ("S1", "Anime"): 1, ("S2", "Pop"): 0,
+                          ("S3", "Anime"): 1, ("S4", "Pop"): 0})
+    window.act_sel_notdl.trigger()
+    assert _keys(window) == {("S2", "Pop"), ("S4", "Pop")}
+    window.act_sel_partial.trigger()
+    assert _keys(window) == {("S2", "Pop"), ("S4", "Pop"), ("S1", "Anime"), ("S3", "Anime")}
+    window.act_sel_invert.trigger()
+    assert len(_keys(window)) == 36 and ("S2", "Pop") not in _keys(window)
+    m.set_all(False)
+    # category: combo on "all" falls back to the current row's category
+    window.table.setCurrentIndex(m.index(1, 1))
+    window.act_sel_cat.trigger()
+    assert len(_keys(window)) == 20 and all(c == "Anime" for _, c in _keys(window))
+    # stray check for a song that is not listed is dropped
+    m.checked.add(("ghost", "Pop"))
+    window.act_sel_visible.trigger()
+    assert ("ghost", "Pop") not in _keys(window) and len(_keys(window)) == 20
+
+
+def test_select_ops_emit_single_datachanged(window):
+    m = window.song_model
+    m.set_songs(_sel_songs())
+    hits = []
+    m.dataChanged.connect(lambda *a: hits.append(a))
+    m.invert_checked()
+    m.check_by_status(0)          # nothing has a status: no change, no signal
+    assert len(hits) == 1
+
+
+def test_selection_label_shows_files_and_size(window):
+    m = window.song_model
+    m.set_songs(_sel_songs())
+    window.update_sel_count()
+    assert window.sel_label.text() == window.tr("selected", n=0)
+    m.setData(m.index(10, 0), Qt.Checked, Qt.CheckStateRole)    # no sizes known
+    assert window.sel_label.text() == window.tr("sel_detail", n=1, f=2)
+    m.set_all(False)
+    for r in range(4):
+        m.setData(m.index(r, 0), Qt.Checked, Qt.CheckStateRole)
+    assert window.sel_label.text() == window.tr(
+        "sel_detail_size", n=4, f=8, size="8.0 MB")
+
+
+def test_clicking_label_cycles_checked_rows(window):
+    m = window.song_model
+    m.set_songs(_sel_songs())
+    for r in (3, 12, 30):
+        m.setData(m.index(r, 0), Qt.Checked, Qt.CheckStateRole)
+    seen = []
+    for _ in range(4):
+        window.sel_label.clicked.emit()
+        seen.append(window.table.currentIndex().row())
+    assert seen == [3, 12, 30, 3]
+
+
+def test_bulk_select_fast_for_3200_rows(window):
+    import time
+    m = window.song_model
+    m.set_songs(_sel_songs(3200))
+    m.set_download_status({(f"S{i}", "Pop" if i % 2 == 0 else "Anime"): i % 3
+                           for i in range(3200)})
+    t = time.perf_counter()
+    for act in (window.act_sel_invert, window.act_sel_notdl, window.act_sel_partial,
+                window.act_sel_cat, window.act_sel_visible):
+        act.trigger()
+    window.update_sel_count()
+    per = (time.perf_counter() - t) / 5
+    print(f"bulk select avg {per * 1000:.1f} ms / op")
+    assert per < 0.25
+
+
+def test_select_menu_strings_in_all_languages():
+    for lang in ("zh_TW", "en", "ja"):
+        for k in ("sel_menu", "sel_invert", "sel_notdl", "sel_partial", "sel_cat",
+                  "sel_visible_only", "sel_menu_tip", "sel_detail", "sel_detail_size",
+                  "sel_label_tip"):
+            assert ese_qt.TR[lang][k]
