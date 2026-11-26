@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QDialog, QFormLayout, QMenu, QToolButton, QWidgetAction
+    QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction
 )
 
 from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         return v if isinstance(v, int) and not isinstance(v, bool) and v >= lo else default
 
     def save_config(self):
+        self.refresh_welcome_dir()
         prev = self.config.get("display", {})
         # Keep the last normal (not maximized) size; a maximized window would store the screen size.
         if self.isMaximized() or self.isMinimized():
@@ -287,10 +288,7 @@ class MainWindow(QMainWindow):
         root.addLayout(top)
 
         # First-run / empty-database hint, hidden once a song database exists.
-        self.empty_hint = QLabel(self.tr("empty_hint"))
-        self.empty_hint.setWordWrap(True)
-        self.empty_hint.setStyleSheet(theme.hint_qss())
-        root.addWidget(self.empty_hint)
+        self.build_welcome_panel(root)
         self.refresh_empty_hint()
 
         # Shown while the table holds a check result instead of a search.
@@ -649,8 +647,63 @@ class MainWindow(QMainWindow):
     def has_song_db():
         return core.has_song_db()
 
+    def build_welcome_panel(self, root):
+        """In-window first-run panel: one primary button to fetch the song
+        database, plus the download folder with a way to change it."""
+        self.welcome_panel = self.empty_hint = QFrame()
+        self.welcome_panel.setObjectName("welcome")
+        self.welcome_panel.setStyleSheet(self._welcome_qss(None))
+        v = QVBoxLayout(self.welcome_panel)
+        v.setContentsMargins(18, 14, 18, 14)
+        v.setSpacing(8)
+        self.welcome_title = QLabel(self.tr("welcome_title"))
+        f = self.welcome_title.font()
+        f.setBold(True)
+        f.setPointSize(f.pointSize() + 3)
+        self.welcome_title.setFont(f)
+        self.welcome_body = QLabel(self.tr("empty_hint"))
+        self.welcome_body.setWordWrap(True)
+        self.welcome_btn = QPushButton(self.tr("welcome_download"))
+        self.welcome_btn.setMinimumHeight(36)
+        self.welcome_btn.setStyleSheet(theme.primary_button_qss())
+        self.welcome_btn.clicked.connect(self.update_database)
+        self.welcome_dir = QLabel()
+        self.welcome_dir.setWordWrap(True)
+        self.welcome_dir.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        change = self.welcome_change_btn = QPushButton(self.tr("welcome_change_dir"))
+        change.clicked.connect(self.browse_dir)
+        dir_row = QHBoxLayout()
+        dir_row.addWidget(self.welcome_dir, 1)
+        dir_row.addWidget(change)
+        for wdg in (self.welcome_title, self.welcome_body):
+            v.addWidget(wdg)
+        v.addWidget(self.welcome_btn, 0, Qt.AlignLeft)
+        v.addLayout(dir_row)
+        root.addWidget(self.welcome_panel)
+        self.refresh_welcome_dir()
+
+    @staticmethod
+    def _welcome_qss(dark):
+        return (theme.hint_qss(dark).replace("QLabel", "QFrame#welcome")
+                + "QFrame#welcome QLabel{background:transparent;border:none;padding:0;}")
+
+    def refresh_welcome_dir(self):
+        if hasattr(self, "welcome_dir"):
+            d = self.dir_edit.text() if hasattr(self, "dir_edit") else self.download_dir
+            self.welcome_dir.setText(self.tr("welcome_dir", d=os.path.abspath(d)))
+
     def refresh_empty_hint(self):
-        self.empty_hint.setVisible(not self.has_song_db())
+        has = self.has_song_db()
+        self.welcome_panel.setVisible(not has)
+        for b in (self.missing_btn, self.updates_btn):
+            b.setEnabled(has)
+        if not has:
+            self.count_label.setText("")      # no "Total 0" before a database exists
+        self.refresh_welcome_dir()
+
+    def _db_btns_enabled(self, on):
+        self.db_update_btn.setEnabled(on)
+        self.welcome_btn.setEnabled(on)
 
     def _track(self, thread):
         """Remember a worker so closeEvent can stop it; forget it when it ends."""
@@ -705,7 +758,6 @@ class MainWindow(QMainWindow):
         self.empty_label.hide()
         if not self.has_song_db():
             self.refresh_empty_hint()
-            self.count_label.setText(self.tr("total", n=0))
             return
         # Each search gets a sequence number; results from an older search that
         # finishes late are ignored, so typing quickly never shows stale rows.
@@ -1119,6 +1171,7 @@ class MainWindow(QMainWindow):
         if d:
             self.dir_edit.setText(d)
             self.save_config()
+            self.refresh_welcome_dir()
 
     def open_dir(self):
         d = resolve_dir(self.dir_edit.text())
@@ -1162,7 +1215,7 @@ class MainWindow(QMainWindow):
         if self._db_busy():
             QMessageBox.warning(self, self.tr("db_update"), self.tr("db_building"))
             return
-        self.db_update_btn.setEnabled(False)
+        self._db_btns_enabled(False)
         self.overall_label.setText(self.tr("db_checking"))
         self._set_busy(True)
         t = self._track(VersionThread())
@@ -1171,7 +1224,7 @@ class MainWindow(QMainWindow):
         t.start()
 
     def start_db_download(self, remote):
-        self.db_update_btn.setEnabled(False)
+        self._db_btns_enabled(False)
         self.overall_label.setText(self.tr("db_building"))
         self._set_busy(True)
         self._dbu = self._track(DBUpdateThread(remote, tr=self.tr))
@@ -1233,7 +1286,8 @@ class MainWindow(QMainWindow):
     def _restyle_theme(self, dark):
         try:
             self.download_btn.setStyleSheet(theme.primary_button_qss(dark))
-            self.empty_hint.setStyleSheet(theme.hint_qss(dark))
+            self.welcome_panel.setStyleSheet(self._welcome_qss(dark))
+            self.welcome_btn.setStyleSheet(theme.primary_button_qss(dark))
             self.view_label.setStyleSheet(theme.hint_qss(dark))
             self.table.setStyleSheet(theme.check_indicator_qss(dark))
             self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
@@ -1335,7 +1389,7 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
         if manual:
-            self.db_update_btn.setEnabled(True)
+            self._db_btns_enabled(True)
             self.overall_label.setText(self.tr("ready"))
             self._set_busy(False)
             if not remote:
@@ -1351,14 +1405,15 @@ class MainWindow(QMainWindow):
         if not remote or remote == local or self._db_busy():
             return
         if not self.has_song_db():
-            msg = self.tr("dbv_first", v=remote)
+            return      # the welcome panel already offers the download
         else:
             msg = self.tr("dbv_found", cur=local or self.tr("dbv_none"), new=remote)
         if QMessageBox.question(self, self.tr("dbv_title"), msg) == QMessageBox.Yes:
             self.start_db_download(remote)
 
     def on_db_updated(self, ok, msg):
-        self.db_update_btn.setEnabled(True)
+        first_run = not self.welcome_panel.isHidden()
+        self._db_btns_enabled(True)
         self.overall_label.setText(self.tr("ready"))
         self._set_busy(False)
         self._db_warned = False
@@ -1367,7 +1422,11 @@ class MainWindow(QMainWindow):
         if ok:
             self._db_version = read_local_version()
             self._refresh_status()
-            self.reload_databases(self.tr("dbv_ok"))
+            # First database: no modal, just show the list and let them type.
+            self.reload_databases(None if first_run else self.tr("dbv_ok"))
+            if first_run:
+                self.show_all()
+                self.search_edit.setFocus()
         elif not self._closing:
             QMessageBox.critical(self, self.tr("dbv_title"), self.tr("db_fail", e=msg))
 
