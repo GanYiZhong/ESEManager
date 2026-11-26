@@ -38,6 +38,7 @@ import icons  # themed SVG icons
 import core
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
 from models import SongModel, DownloadModel
+from detail_panel import DetailPanel
 from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread)
@@ -177,6 +178,12 @@ class MainWindow(QMainWindow):
                    "window_w": win_w, "window_h": win_h,
                    "monitor_open": bool(getattr(self, "monitor_btn", None)
                                         and self.monitor_btn.isChecked())}
+        dp = getattr(self, "detail_panel", None)
+        if dp is not None:
+            if dp.isVisible() and self.hsplit.sizes()[1] >= 220:
+                self._detail_w = self.hsplit.sizes()[1]
+            display["detail_open"] = bool(self.detail_btn.isChecked())
+            display["detail_w"] = int(self._detail_w)
         sizes = self.splitter.sizes() if hasattr(self, "splitter") else []
         if len(sizes) == 2 and all(s > 0 for s in sizes):
             display["splitter"] = [int(s) for s in sizes]
@@ -221,6 +228,13 @@ class MainWindow(QMainWindow):
         self.menu_file.addAction(self.act_settings)
         self.menu_file.addSeparator()
         self.menu_file.addAction(self.act_quit)
+
+        # View: toggles for optional panes
+        self.menu_view = mb.addMenu("")
+        self.act_detail = self._action(self.set_detail_open)
+        self.act_detail.setCheckable(True)
+        self.act_detail.setShortcut(QKeySequence("F4"))
+        self.menu_view.addAction(self.act_detail)
 
         # Help: contact page
         self.menu_help = mb.addMenu("")
@@ -285,6 +299,13 @@ class MainWindow(QMainWindow):
         """Apply the current language to menus, actions and status bar."""
         self.menu_file.setTitle(self.tr("mw_menu_file"))
         self.menu_help.setTitle(self.tr("mw_menu_help"))
+        self.menu_view.setTitle(self.tr("mw_menu_view"))
+        self.act_detail.setText(self.tr("dp_toggle"))
+        self.act_detail.setToolTip(self.tr("dp_toggle_tip"))
+        if getattr(self, "detail_btn", None):
+            self.detail_btn.setText(self.tr("dp_toggle"))
+            self.detail_btn.setToolTip(self.tr("dp_toggle_tip"))
+            self.detail_panel.retranslate()
         self.act_update_db.setText(self.tr("db_update"))
         self.act_missing.setText(self.tr("check_missing"))
         self.act_updates.setText(self.tr("check_updates"))
@@ -409,7 +430,18 @@ class MainWindow(QMainWindow):
         self.empty_label.setStyleSheet(theme.hint_qss())
         self.empty_label.hide()
         self.table.viewport().installEventFilter(self)
-        splitter.addWidget(self.table)
+        # song table | detail panel (collapsible, on the right)
+        self.detail_panel = DetailPanel(self.tr)
+        self.detail_panel.download_requested.connect(self._detail_download)
+        self.detail_panel.open_folder_requested.connect(self._detail_open_folder)
+        self.detail_panel.copy_requested.connect(self._detail_copy)
+        hsplit = self.hsplit = QSplitter(Qt.Horizontal)
+        hsplit.setChildrenCollapsible(False)
+        hsplit.addWidget(self.table)
+        hsplit.addWidget(self.detail_panel)
+        hsplit.setStretchFactor(0, 1)
+        hsplit.setStretchFactor(1, 0)
+        splitter.addWidget(hsplit)
         splitter.addWidget(self.build_monitor())
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
@@ -453,14 +485,26 @@ class MainWindow(QMainWindow):
         for wdg in (self.download_btn, self.selall_btn, self.deselall_btn, self.sel_label):
             bottom.addWidget(wdg)
         bottom.addStretch()
+        self.detail_btn = QToolButton()
+        self.detail_btn.setCheckable(True)
+        self.detail_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.detail_btn.setFocusPolicy(Qt.NoFocus)
+        self.detail_btn.toggled.connect(self.set_detail_open)
         for wdg in (self.overall_label, self.overall_bar, self.pause_btn, self.stop_btn,
-                    self.monitor_btn):
+                    self.detail_btn, self.monitor_btn):
             bottom.addWidget(wdg)
         root.addLayout(bottom)
 
         self.build_settings_dialog()
         self.update_font_metrics()
         self.set_monitor_open(bool(disp.get("monitor_open", False)))
+        w_saved = disp.get("detail_w")
+        self._detail_w = w_saved if (isinstance(w_saved, int) and not isinstance(w_saved, bool)
+                                     and w_saved >= 220) else 300
+        self.set_detail_open(bool(disp.get("detail_open", False)))
+        self.table.selectionModel().currentRowChanged.connect(self.refresh_detail)
+        self.song_model.modelReset.connect(self.refresh_detail)
+        self.song_model.layoutChanged.connect(self.refresh_detail)
         self.update_filter_button()
 
         # connect selection count
@@ -522,6 +566,8 @@ class MainWindow(QMainWindow):
                 w.setIcon(icons.icon(name, dark, colour))
         if getattr(self, "pause_btn", None):
             self._set_pause_icon(self._paused_icon_play)
+        self.detail_btn.setIcon(icons.icon("sidebar", dark))
+        self.act_detail.setIcon(icons.icon("sidebar", dark))
         for b in (self.pause_btn, self.stop_btn, self.monitor_btn, self.filter_btn):
             b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.monitor_btn.setIcon(icons.icon(
@@ -803,6 +849,53 @@ class MainWindow(QMainWindow):
             self.monitor_btn.blockSignals(False)
         self.monitor_btn.setText(self.tr("monitor"))
         self.monitor_btn.setIcon(icons.icon("chevron-down" if on else "chevron-up"))
+
+    # ---- song detail panel
+    def set_detail_open(self, on=None):
+        """Show or hide the detail panel (also the View menu / button slot)."""
+        on = bool(on)
+        if not on and self.detail_panel.isVisible() and self.hsplit.sizes()[1] >= 220:
+            self._detail_w = self.hsplit.sizes()[1]
+        self.detail_panel.setVisible(on)
+        if on:
+            total = max(self.hsplit.width(), self._detail_w + 300)
+            self.hsplit.setSizes([total - self._detail_w, self._detail_w])
+        for w in (self.detail_btn, self.act_detail):
+            if w.isChecked() != on:
+                w.blockSignals(True)
+                w.setChecked(on)
+                w.blockSignals(False)
+        self.refresh_detail()
+
+    def _current_song(self):
+        idx = self.table.currentIndex()
+        return self._row_song(idx.row()) if idx.isValid() else None
+
+    def refresh_detail(self, *_):
+        if not self.detail_panel.isVisible() and not self.detail_btn.isChecked():
+            return
+        song = self._current_song()
+        if song is None:
+            self.detail_panel.set_song(None)
+            return
+        name = song["song_name"]
+        self.detail_panel.set_song(song, self.jp_map.get(name, ""), self.meta_map.get(name),
+                                   bool(self._song_dir(song)))
+
+    def _detail_download(self):
+        song = self._current_song()
+        if song and self.download_btn.isEnabled():
+            self.start_download([(song, f) for f in song["files"]])
+
+    def _detail_open_folder(self):
+        d = self._song_dir(self._current_song()) if self._current_song() else None
+        if d:
+            self._open_path(d)
+
+    def _detail_copy(self):
+        song = self._current_song()
+        if song:
+            QGuiApplication.clipboard().setText(song["song_name"])
 
     def show_monitor(self, tab=None):
         """Open the monitor (e.g. when a download starts) and pick a tab."""
@@ -1243,6 +1336,7 @@ class MainWindow(QMainWindow):
             it.setData(Qt.UserRole, (song, f))
             self.fail_list.addItem(it)
         self.retry_btn.setEnabled(fail > 0)
+        self.refresh_detail()      # "Open folder" may have become available
         if fail > 0:
             self.show_monitor(2)
         if self._closing:
@@ -1436,6 +1530,7 @@ class MainWindow(QMainWindow):
                                           self.song_model.columnCount() - 1),
                     [Qt.DisplayRole])
             self.count_label.setText(self.tr("total", n=self.song_model.rowCount()))
+            self.refresh_detail()
             if done_msg and not self._closing:
                 QMessageBox.information(self, self.tr("db_update"), done_msg)
 
@@ -1482,6 +1577,7 @@ class MainWindow(QMainWindow):
             self.welcome_btn.setStyleSheet(theme.primary_button_qss(dark))
             self.view_label.setStyleSheet(theme.hint_qss(dark))
             self.table.setStyleSheet(theme.check_indicator_qss(dark))
+            self.detail_panel.restyle(dark)
             self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
             self._apply_icons(dark)
             self.song_model.layoutChanged.emit()          # category colours

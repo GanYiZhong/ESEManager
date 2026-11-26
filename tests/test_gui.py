@@ -379,3 +379,74 @@ def test_settings_dialog_fits_its_rows(window):
         assert dlg.width() >= dlg.layout().minimumSize().width()
     finally:
         dlg.hide()
+
+
+# ---------------------------------------------------------------- detail panel
+_SONG = {"song_name": "Test Song", "category": "01 Pop",
+         "files": [{"filename": "a.tja", "file_path": "01 Pop/Test Song/a.tja",
+                    "file_type": "tja", "size": 2048},
+                   {"filename": "a.ogg", "file_path": "01 Pop/Test Song/a.ogg",
+                    "file_type": "ogg", "size": 0}]}
+
+
+def _load_song(window):
+    window.jp_map = window.song_model.jp_map = {"Test Song": "テスト"}
+    window.meta_map = window.song_model.meta_map = {
+        "Test Song": {"bpm": "150", "level_easy": 2, "level_oni": 9}}
+    window.song_model.set_songs([_SONG])
+    window.table.setCurrentIndex(window.song_model.index(0, 1))
+
+
+def test_detail_panel_shows_current_song(window):
+    window.set_detail_open(True)
+    _load_song(window)
+    dp = window.detail_panel
+    assert dp.title.text() == "Test Song"
+    assert dp.jp.text() == "テスト"
+    assert "150" in dp.bpm.text()
+    assert [n.text() for n in dp.level_nums] == ["2", "−", "−", "9", "−"]
+    assert dp.files.count() == 2
+    assert not dp.open_btn.isEnabled()          # not downloaded
+    window.song_model.set_songs([])
+    assert dp.title.isHidden()                   # no current row -> placeholder
+
+
+def test_detail_panel_toggle_and_config(window, tmp_path):
+    import tomllib
+    window.set_detail_open(True)
+    assert window.detail_btn.isChecked() and window.act_detail.isChecked()
+    window.act_detail.trigger()                  # View menu toggles it off
+    assert not window.detail_btn.isChecked()
+    assert window.detail_panel.isHidden()
+    window.detail_btn.setChecked(True)
+    window._detail_w = 333
+    window.save_config()
+    with open(tmp_path / "config.toml", "rb") as f:
+        disp = tomllib.load(f)["display"]
+    assert disp["detail_open"] is True and disp["detail_w"] >= 220
+
+
+def test_detail_panel_buttons_never_take_focus(window):
+    from PySide6.QtCore import Qt
+    dp = window.detail_panel
+    for b in (dp.dl_btn, dp.open_btn, dp.copy_btn, window.detail_btn):
+        assert b.focusPolicy() == Qt.NoFocus
+
+
+def test_detail_panel_copy_and_download(window, monkeypatch):
+    from PySide6.QtGui import QGuiApplication
+    window.set_detail_open(True)
+    _load_song(window)
+    got = []
+    monkeypatch.setattr(window, "start_download", lambda files, **k: got.append(files))
+    window.detail_panel.copy_btn.click()
+    assert QGuiApplication.clipboard().text() == "Test Song"
+    window.detail_panel.dl_btn.click()
+    assert len(got) == 1 and len(got[0]) == 2
+
+
+@pytest.mark.parametrize("lang", ["zh_TW", "en", "ja"])
+def test_detail_panel_strings_exist(lang):
+    for k in ("dp_title", "dp_files", "dp_download", "dp_copy", "dp_empty",
+              "mw_menu_view", "dp_toggle", "dp_toggle_tip"):
+        assert ese_qt.TR[lang].get(k)

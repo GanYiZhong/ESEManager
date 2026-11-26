@@ -699,3 +699,23 @@ TR["ja"].update({
     "deselall_tip": "すべてのチェックを外す",
     "font_label": "文字サイズ", "font_tip": "アプリ全体の文字サイズ（すぐに反映）",
 })
+
+# --- song detail panel
+TR["zh_TW"].update({
+    "dp_title": "歌曲詳細資料", "dp_files": "檔案", "dp_download": "下載此歌曲",
+    "dp_copy": "複製歌名", "dp_empty": "選擇一首歌曲以查看詳細資料",
+    "mw_menu_view": "檢視(&V)", "dp_toggle": "歌曲詳細資料面板",
+    "dp_toggle_tip": "顯示或隱藏歌曲詳細資料面板",
+})
+TR["en"].update({
+    "dp_title": "Song details", "dp_files": "Files", "dp_download": "Download this song",
+    "dp_copy": "Copy title", "dp_empty": "Select a song to see its details",
+    "mw_menu_view": "&View", "dp_toggle": "Song Details Panel",
+    "dp_toggle_tip": "Show or hide the song details panel",
+})
+TR["ja"].update({
+    "dp_title": "曲の詳細", "dp_files": "ファイル", "dp_download": "この曲をダウンロード",
+    "dp_copy": "曲名をコピー", "dp_empty": "曲を選ぶと詳細が表示されます",
+    "mw_menu_view": "表示(&V)", "dp_toggle": "曲の詳細パネル",
+    "dp_toggle_tip": "曲の詳細パネルを表示/非表示",
+})
