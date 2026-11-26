@@ -33,6 +33,7 @@ from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
                        DEFAULT_DOWNLOAD_DIR, resolve_dir)
 from i18n import TR, CATEGORY_NAMES, detect_system_lang
 import theme  # light/dark palette and style-sheet helpers
+import icons  # themed SVG icons
 import core
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
 from models import SongModel, DownloadModel
@@ -249,7 +250,8 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         top.setSpacing(8)
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("🔍  " + self.tr("ph"))
+        self.search_edit.setPlaceholderText(self.tr("ph"))
+        self._search_icon_action = None
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.returnPressed.connect(self._search_now)
         self.search_edit.textChanged.connect(lambda _=None: self._search_timer.start())
@@ -262,7 +264,7 @@ class MainWindow(QMainWindow):
         self.cat_combo.currentIndexChanged.connect(self._on_category_changed)
         self.filter_btn = QToolButton()
         self.filter_btn.setPopupMode(QToolButton.InstantPopup)
-        self.filter_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.filter_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         filter_menu = QMenu(self.filter_btn)
         fa = QWidgetAction(filter_menu)
         fa.setDefaultWidget(self.build_filter_panel())
@@ -369,6 +371,7 @@ class MainWindow(QMainWindow):
         self.overall_label = QLabel(self.tr("ready"))
         self.pause_btn = QToolButton()
         self.pause_btn.setText(self.tr("pause"))
+        self._set_pause_icon(False)
         self.pause_btn.clicked.connect(self.toggle_pause)
         self.pause_btn.setEnabled(False)
         self.stop_btn = QToolButton()
@@ -377,7 +380,7 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(False)
         self.monitor_btn = QToolButton()
         self.monitor_btn.setCheckable(True)
-        self.monitor_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.monitor_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.monitor_btn.toggled.connect(self.set_monitor_open)
         for wdg in (self.download_btn, self.selall_btn, self.deselall_btn, self.sel_label):
             bottom.addWidget(wdg)
@@ -394,6 +397,49 @@ class MainWindow(QMainWindow):
         # connect selection count
         self.song_model.dataChanged.connect(self.update_sel_count)
         self.retranslate_chrome()
+        self._apply_icons()
+
+    # (button/action attribute, icon name); re-tinted by _apply_icons() on theme change
+    _ICON_MAP = (
+        ("db_update_btn", "refresh"), ("missing_btn", "check-list"),
+        ("updates_btn", "update"), ("filter_btn", "filter"),
+        ("pause_btn", "pause"), ("stop_btn", "stop"),
+        ("retry_btn", "retry"), ("opendir_btn", "folder"),
+        ("act_update_db", "refresh"), ("act_missing", "check-list"),
+        ("act_updates", "update"), ("act_open_dir", "folder"),
+        ("act_official", "mail"), ("act_shortcuts", "keyboard"),
+        ("download_btn", "download"),
+    )
+
+    def _apply_icons(self, dark=None):
+        """(Re)set every themed icon; called after build and on theme change."""
+        if dark is None:
+            dark = theme.is_dark()
+        for attr, name in self._ICON_MAP:
+            w = getattr(self, attr, None)
+            if w is not None and name:
+                # the green download button keeps white text/icon in both themes
+                colour = theme.colours(dark)["accent_text"] if attr == "download_btn" else None
+                w.setIcon(icons.icon(name, dark, colour))
+        if getattr(self, "pause_btn", None):
+            self._set_pause_icon(self._paused_icon_play)
+        for b in (self.pause_btn, self.stop_btn, self.monitor_btn, self.filter_btn):
+            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.monitor_btn.setIcon(icons.icon(
+            "chevron-down" if self.monitor_btn.isChecked() else "chevron-up", dark))
+        self.app_update_btn.setIcon(icons.icon(
+            "update", dark, theme.colours(dark)["success"]))
+        if not getattr(self, "_search_icon_action", None):
+            self._search_icon_action = self.search_edit.addAction(
+                icons.icon("search", dark), QLineEdit.LeadingPosition)
+        else:
+            self._search_icon_action.setIcon(icons.icon("search", dark))
+
+    _paused_icon_play = False
+
+    def _set_pause_icon(self, show_play):
+        self._paused_icon_play = bool(show_play)
+        self.pause_btn.setIcon(icons.icon("play" if show_play else "pause"))
 
     @staticmethod
     def _fit_to_screen(w, h):
@@ -458,7 +504,7 @@ class MainWindow(QMainWindow):
 
     def update_filter_button(self):
         n = self.active_filter_count()
-        self.filter_btn.setText(("🎚 " + self.tr("f_filter"))
+        self.filter_btn.setText((self.tr("f_filter"))
                                 + (f" ({n})" if n else "") + "  ")
 
     def build_settings_dialog(self):
@@ -573,7 +619,8 @@ class MainWindow(QMainWindow):
             self.monitor_btn.blockSignals(True)
             self.monitor_btn.setChecked(on)
             self.monitor_btn.blockSignals(False)
-        self.monitor_btn.setText(("▾ " if on else "▴ ") + self.tr("monitor"))
+        self.monitor_btn.setText(self.tr("monitor"))
+        self.monitor_btn.setIcon(icons.icon("chevron-down" if on else "chevron-up"))
 
     def show_monitor(self, tab=None):
         """Open the monitor (e.g. when a download starts) and pick a tab."""
@@ -665,7 +712,7 @@ class MainWindow(QMainWindow):
         self._search_seq += 1
         if not kw and cat is None:
             self._unfiltered_seq = self._search_seq   # full list: its size is the song total
-        self.count_label.setText("🔍 ...")
+        self.count_label.setText("...")
         t = self._track(SearchThread(kw, cat, seq=self._search_seq))
         t.done.connect(self.on_search_done)
         t.fail.connect(self.on_search_fail)
@@ -687,7 +734,7 @@ class MainWindow(QMainWindow):
     def on_search_fail(self, seq, err):
         if seq != self._search_seq:
             return
-        self.count_label.setText("✗ " + err)
+        self.count_label.setText(err)
         if any(m in err for m in self.DB_DAMAGED) and not self._db_warned:
             self._db_warned = True     # once per session
             QMessageBox.warning(self, self.tr("dbv_title"), self.tr("db_corrupt", e=err))
@@ -870,6 +917,7 @@ class MainWindow(QMainWindow):
         self.overall_bar.setValue(0)
         self.show_monitor(0)
         self.pause_btn.setText(self.tr("pause"))
+        self._set_pause_icon(False)
         self.pause_btn.setEnabled(True)
         self.stop_btn.setEnabled(True)
         self.log_view.appendPlainText(self.tr("log_dl_start", n=len(files)))
@@ -921,9 +969,11 @@ class MainWindow(QMainWindow):
         if self.dl_thread.is_paused():
             self.dl_thread.resume()
             self.pause_btn.setText(self.tr("pause"))
+            self._set_pause_icon(False)
         else:
             self.dl_thread.pause()
             self.pause_btn.setText(self.tr("resume"))
+            self._set_pause_icon(True)
 
     def stop_download(self):
         if self.dl_thread and self.dl_thread.isRunning():
@@ -940,6 +990,7 @@ class MainWindow(QMainWindow):
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.pause_btn.setText(self.tr("pause"))
+        self._set_pause_icon(False)
         self.overall_label.setText(self.tr("ready"))
         stopped = self.dl_thread.stopped
         self.log_view.appendPlainText(self.tr("log_dl_done", d=dl, s=skip, f=fail))
@@ -1008,7 +1059,7 @@ class MainWindow(QMainWindow):
             return
         self.updates_btn.setEnabled(False)
         self._set_busy(True)
-        self.log_view.appendPlainText("▶ " + self.tr("upd_checking"))
+        self.log_view.appendPlainText(self.tr("upd_checking"))
         t = self._track(CheckUpdatesThread(ddir, None))
         t.progress.connect(
             lambda d, n: self.count_label.setText(self.tr("upd_progress", d=d, t=n)))
@@ -1164,6 +1215,7 @@ class MainWindow(QMainWindow):
             self.view_label.setStyleSheet(theme.hint_qss(dark))
             self.table.setStyleSheet(theme.check_indicator_qss(dark))
             self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
+            self._apply_icons(dark)
             self.song_model.layoutChanged.emit()          # category colours
         except RuntimeError:  # widgets already deleted by Qt
             pass
