@@ -19,6 +19,7 @@ _common = dict(
         'appconfig',
         'core',
         'theme',
+        'toast',
         'icons',
         'responsive',
         'detail_panel',

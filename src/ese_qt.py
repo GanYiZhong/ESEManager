@@ -23,7 +23,7 @@ except ImportError:
     import tomli as tomllib
 import tomli_w
 
-from PySide6.QtCore import Qt, QThread, QTimer, QProcess, QEvent, QFile, Signal
+from PySide6.QtCore import Qt, QPoint, QThread, QTimer, QProcess, QEvent, QFile, Signal
 from PySide6.QtGui import (QAction, QKeySequence, QShortcut, QGuiApplication, QFont,
                            QFontDatabase, QTextCharFormat, QColor)
 from PySide6.QtWidgets import (
@@ -40,6 +40,7 @@ from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
 from category_picker import CategoryPicker
 from i18n import TR, detect_system_lang
 import theme  # light/dark palette and style-sheet helpers
+from toast import ToastManager
 import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
 import core
@@ -236,6 +237,7 @@ class MainWindow(QMainWindow):
         self.build_shortcuts()
         self.build_ui()
         self.notifier = Notifier(self)
+        self.toasts = ToastManager(self, self.tr, self._toast_anchor)
         self.awake = KeepAwake()
         app = QApplication.instance()
         if app is not None:
@@ -307,6 +309,17 @@ class MainWindow(QMainWindow):
     DEFAULT_WINDOW = (1280, 860)
 
     # ---- i18n / config
+    def _toast_anchor(self):
+        """y (window coords) that toasts stack above: the top of the bottom row."""
+        row = getattr(self, "bottom_row", None)
+        if row is None or not row.isVisible():
+            return self.height()
+        return row.mapTo(self, QPoint(0, 0)).y()
+
+    def toast(self, text, kind="info", actions=(), timeout=None):
+        """Non-blocking in-window message (see toast.py)."""
+        return self.toasts.show(text, kind, actions=actions, timeout=timeout)
+
     def tr(self, key, **kw):
         s = TR.get(self.lang, TR["zh_TW"]).get(key, TR["zh_TW"].get(key, key))
         return s.format(**kw) if kw else s
@@ -1469,8 +1482,7 @@ class MainWindow(QMainWindow):
         """Settings: list likely simulator song folders and let the user pick one."""
         found = core.find_song_folders()
         if not found:
-            QMessageBox.information(self.settings_dlg, self.tr("detect_title"),
-                                    self.tr("detect_none"))
+            self.toast(self.tr("detect_none"))
             return
         labels = [f"{c['path']}  ({core.describe_song_folder(c, self.tr)})" for c in found]
         label, ok = QInputDialog.getItem(self.settings_dlg, self.tr("detect_title"),
@@ -1831,7 +1843,7 @@ class MainWindow(QMainWindow):
     def export_song_list(self):
         songs = self._list_songs_to_share()
         if not songs:
-            QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_nothing"))
+            self.toast(self.tr("sl_nothing"))
             return
         path, _ = QFileDialog.getSaveFileName(
             self, self.tr("sl_export"), "songlist.esesongs", self.tr("sl_filter"))
@@ -1851,7 +1863,7 @@ class MainWindow(QMainWindow):
     def copy_song_list(self):
         songs = self._list_songs_to_share()
         if not songs:
-            QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_nothing"))
+            self.toast(self.tr("sl_nothing"))
             return
         QGuiApplication.clipboard().setText(
             songlist.to_text(songlist.entries_from_songs(songs)))
@@ -1983,7 +1995,7 @@ class MainWindow(QMainWindow):
         except ValueError:
             entries = []
         if not entries:
-            QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_bad"))
+            self.toast(self.tr("sl_bad"), "warning")
             return
         res = songlist.match(entries, self.all_songs)
         keys = {(s["song_name"], s["category"]) for s in res.songs}
@@ -1991,8 +2003,7 @@ class MainWindow(QMainWindow):
         if not keys <= shown:
             self.reset_filters()          # matched songs hidden by a filter
         self.song_model.check_keys(keys)
-        QMessageBox.information(self, self.tr("sl_title"),
-                                songlist.report(res, self.tr))
+        self.toast(songlist.report(res, self.tr), timeout=8000)
 
     # ---- favourites
     def on_cell_clicked(self, index):
@@ -2102,7 +2113,7 @@ class MainWindow(QMainWindow):
     def start_download_selected(self):
         songs = self.song_model.selected_songs()
         if not songs:
-            QMessageBox.warning(self, self.tr("download"), self.tr("no_selection"))
+            self.toast(self.tr("no_selection"), "warning")
             return
         files = [(s, f) for s in songs for f in s["files"]]
         if len(files) > self.LARGE_DOWNLOAD and QMessageBox.question(
@@ -2118,7 +2129,7 @@ class MainWindow(QMainWindow):
             self._queue_download(files)
             return
         if self.dl_thread and self.dl_thread.isRunning():
-            QMessageBox.warning(self, self.tr("download"), self.tr("dl_busy"))
+            self.toast(self.tr("dl_busy"), "warning")
             return
         if not self._disk_ok(files, overwrite):
             return
@@ -2304,7 +2315,16 @@ class MainWindow(QMainWindow):
             self.start_download(deferred)
 
     def _show_summary(self, text, fail):
-        """Completion dialog with shortcuts: open the download folder / retry failures."""
+        """Completion message with shortcuts: open the download folder / retry failures.
+        A clean run is a toast; failures keep the modal so they get read."""
+        if fail <= 0:
+            def open_folder():
+                d = resolve_dir(self.dir_edit.text())
+                if os.path.isdir(d):
+                    self._open_path(d)
+            self.toast(text, actions=[(self.tr("dl_open_folder"), open_folder)],
+                       timeout=8000)
+            return
         box = QMessageBox(QMessageBox.Information, self.tr("download"), text,
                           QMessageBox.Ok, self)
         open_btn = box.addButton(self.tr("dl_open_folder"), QMessageBox.ActionRole)
@@ -2327,7 +2347,7 @@ class MainWindow(QMainWindow):
     # ---- check missing
     def check_missing(self):
         if not self.has_song_db():
-            QMessageBox.information(self, self.tr("check_missing"), self.tr("empty_hint"))
+            self.toast(self.tr("empty_hint"))
             return
         self.missing_btn.setEnabled(False)
         self.overall_label.setText(self.tr("missing_checking"))
@@ -2350,7 +2370,7 @@ class MainWindow(QMainWindow):
         self.overall_label.setText(self.tr("ready"))
         missing = core.find_missing(songs, resolve_dir(self.dir_edit.text()))
         if not missing:
-            QMessageBox.information(self, self.tr("check_missing"), self.tr("missing_none"))
+            self.toast(self.tr("missing_none"))
             return
         files = [(s, f) for s in missing for f in s["files"]]
         if QMessageBox.question(
@@ -2380,7 +2400,7 @@ class MainWindow(QMainWindow):
         self.updates_btn.setEnabled(True)
         self._set_busy(False)
         if e == "__NO_SHA__":
-            QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_no_sha"))
+            self.toast(self.tr("upd_no_sha"))
         else:
             QMessageBox.critical(self, self.tr("check_updates"), e)
 
@@ -2391,7 +2411,7 @@ class MainWindow(QMainWindow):
         self._last_full_check = time.time()
         self.on_auto_updates(songs, False)
         if not songs:
-            QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_none"))
+            self.toast(self.tr("upd_none"))
             return
         files = [(s, f) for s in songs for f in s["files"]]
         if QMessageBox.question(
@@ -2420,14 +2440,14 @@ class MainWindow(QMainWindow):
         ddir = resolve_dir(self.dir_edit.text())
         title = self.tr("cleanup_title")
         if not os.path.isdir(ddir):
-            QMessageBox.information(self, title, self.tr("dir_missing", d=ddir))
+            self.toast(self.tr("dir_missing", d=ddir), "warning")
             return
         report = core.analyze_library(ddir)
         if report is None:
-            QMessageBox.information(self, title, self.tr("cleanup_no_db"))
+            self.toast(self.tr("cleanup_no_db"))
             return
         if not any(report[k] for k in ("orphans", "strays", "parts", "empty")):
-            QMessageBox.information(self, title, self.tr("cleanup_none"))
+            self.toast(self.tr("cleanup_none"))
             return
         dlg = CleanupDialog(self, self.tr, report)
         if not dlg.exec():
@@ -2472,7 +2492,7 @@ class MainWindow(QMainWindow):
         key = "vsort_latest" if info == "latest" else "vsort_done"
         text = self.tr(key, c=commit[:7])
         self.notifier.notify(self.tr("vsort_action"), text)
-        QMessageBox.information(self, self.tr("vsort_action"), text)
+        self.toast(text, timeout=8000)
 
     # ---- database update (prebuilt databases from GitHub Pages)
     def _db_busy(self):
@@ -2483,7 +2503,7 @@ class MainWindow(QMainWindow):
         """Manual "Update DB": check the published version and download it if
         it differs. The databases are rebuilt from ESE every 6 hours by CI."""
         if self._db_busy():
-            QMessageBox.warning(self, self.tr("db_update"), self.tr("db_building"))
+            self.toast(self.tr("db_building"), "warning")
             return
         self._db_btns_enabled(False)
         self.overall_label.setText(self.tr("db_checking"))
@@ -2511,12 +2531,8 @@ class MainWindow(QMainWindow):
 
     def _db_done_box(self, msg, show_btn):
         """Success message; with "Show them" when the update brought news."""
-        box = QMessageBox(QMessageBox.Information, self.tr("db_update"), msg, parent=self)
-        show = box.addButton(self.tr("sn_show"), QMessageBox.AcceptRole) if show_btn else None
-        box.addButton(QMessageBox.Ok)
-        box.exec()
-        if show is not None and box.clickedButton() is show:
-            self.show_new_songs()
+        actions = [(self.tr("sn_show"), self.show_new_songs)] if show_btn else []
+        self.toast(msg, actions=actions, timeout=8000 if show_btn else None)
 
     def reload_databases(self, done_msg=None, show_btn=False):
         """Reload categories and the Japanese-title/level maps after a DB change.
@@ -2557,7 +2573,7 @@ class MainWindow(QMainWindow):
         # 有下載/資料庫工作進行中就別重啟，避免中斷；下次啟動再套用
         busy = (self.dl_thread and self.dl_thread.isRunning()) or self._db_busy()
         if busy:
-            QMessageBox.information(self, "", self.tr("lang_busy"))
+            self.toast(self.tr("lang_busy"))
             return
         if QMessageBox.question(self, self.tr("lang"), self.tr("lang_restart")) == QMessageBox.Yes:
             self._restart()
@@ -2683,7 +2699,7 @@ class MainWindow(QMainWindow):
         if t and t.isRunning():
             return
         if (self.dl_thread and self.dl_thread.isRunning()) or self._db_busy():
-            QMessageBox.information(self, self.tr("upd_app_title"), self.tr("upd_app_busy"))
+            self.toast(self.tr("upd_app_busy"), "warning")
             return
         tag = getattr(self, "_app_update_tag", "")
         msg = self.tr("upd_app_confirm", cur=APP_VERSION, v=tag)
@@ -2734,11 +2750,10 @@ class MainWindow(QMainWindow):
             self.overall_label.setText(self.tr("ready"))
             self._set_busy(False)
             if not remote:
-                QMessageBox.warning(self, self.tr("dbv_title"), self.tr("db_offline"))
+                self.toast(self.tr("db_offline"), "warning")
                 return
             if remote == local and self.has_song_db():
-                QMessageBox.information(self, self.tr("dbv_title"),
-                                        self.tr("db_latest", v=local))
+                self.toast(self.tr("db_latest", v=local))
                 return
             self.start_db_download(remote)      # the user asked for it: no extra prompt
             return

@@ -49,9 +49,10 @@ def test_empty_database_shows_hint_and_does_not_create_db(window, tmp_path):
 
 def test_no_selection_warning_uses_its_own_text(window, monkeypatch):
     seen = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: seen.append(a[2]))
+    monkeypatch.setattr(window, "toast", lambda text, kind="info", **k: seen.append((text, kind)))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: 1 / 0)
     window.start_download_selected()
-    assert seen == [window.tr("no_selection")]
+    assert seen == [(window.tr("no_selection"), "warning")]
 
 
 def test_stale_search_results_are_ignored(window):
@@ -325,8 +326,12 @@ def test_summary_dialog_has_open_and_retry_buttons(window, monkeypatch, tmp_path
     window._show_summary("x", 2)
     assert window.tr("dl_open_folder") in seen["texts"] and window.tr("dl_retry_failed") in seen["texts"]
     assert called == ["wait", "retry"]
+    # a clean run is a toast with "Open folder", not a modal
+    seen.clear()
     window._show_summary("x", 0)
-    assert window.tr("dl_retry_failed") not in seen["texts"]
+    assert "texts" not in seen
+    t = window.toasts.toasts[-1]
+    assert [b.text() for b in t.action_buttons] == [window.tr("dl_open_folder")]
 
 
 def test_pause_ignored_once_stopping(window):

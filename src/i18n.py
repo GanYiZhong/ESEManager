@@ -25,6 +25,7 @@ CATEGORY_COLORS = {
 
 TR = {
     "zh_TW": {
+        "toast_close": "關閉",
         "title": "ESEManager", "search": "搜尋", "show_all": "顯示全部",
         "clear": "清除", "ph": "搜尋歌曲名稱，支援日文（Ctrl+F）", "category": "分類",
         "all_cat": "全部分類", "official": "聯絡我們", "check_missing": "檢查缺漏",
@@ -64,6 +65,7 @@ TR = {
         
     },
     "en": {
+        "toast_close": "Close",
         "title": "ESEManager", "search": "Search", "show_all": "Show all",
         "clear": "Clear", "ph": "Search songs; Japanese is supported (Ctrl+F)", "category": "Category",
         "all_cat": "All categories", "official": "Contact us", "check_missing": "Check missing",
@@ -103,6 +105,7 @@ TR = {
         
     },
     "ja": {
+        "toast_close": "閉じる",
         "title": "ESEManager", "search": "検索", "show_all": "すべて表示",
         "clear": "クリア", "ph": "曲名で検索（日本語対応、Ctrl+F）", "category": "カテゴリー",
         "all_cat": "すべて", "official": "お問い合わせ", "check_missing": "不足チェック",

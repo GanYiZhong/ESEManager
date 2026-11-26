@@ -157,7 +157,8 @@ def test_settings_detect_button(window, monkeypatch, tmp_path):  # noqa: F811
 def test_settings_detect_none_shows_info(window, monkeypatch):  # noqa: F811
     shown = []
     monkeypatch.setattr(core, "find_song_folders", lambda: [])
+    monkeypatch.setattr(window, "toast", lambda text, kind="info", **k: shown.append(text))
     monkeypatch.setattr(ese_qt.QMessageBox, "information",
-                        staticmethod(lambda *a, **k: shown.append(a)))
+                        staticmethod(lambda *a, **k: 1 / 0))
     window.detect_btn.click()
-    assert len(shown) == 1
+    assert shown == [window.tr("detect_none")]

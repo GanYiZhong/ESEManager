@@ -93,7 +93,8 @@ def test_manual_update_reports_up_to_date(window, monkeypatch):
     w, started, tmp = window
     (tmp / "ese_songs.db").write_bytes(b"x")
     info = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: info.append(a[2]))
+    monkeypatch.setattr(w, "toast", lambda text, kind="info", **k: info.append(text))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: 1 / 0)
     w.on_version("v1", "v1", manual=True)
     assert started == [] and info == [w.tr("db_latest", v="v1")]
 
@@ -101,7 +102,8 @@ def test_manual_update_reports_up_to_date(window, monkeypatch):
 def test_manual_update_offline(window, monkeypatch):
     w, started, tmp = window
     warned = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a[2]))
+    monkeypatch.setattr(w, "toast", lambda text, kind="info", **k: warned.append(text))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: 1 / 0)
     w.on_version("", "v1", manual=True)
     assert started == [] and warned == [w.tr("db_offline")]
     assert w.db_update_btn.isEnabled()
