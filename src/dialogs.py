@@ -7,11 +7,13 @@ import sys
 from PySide6.QtCore import Qt, QUrl, qVersion
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout, QLabel,
-                               QPushButton, QTextBrowser, QVBoxLayout)
+                               QPushButton, QTextBrowser, QTreeWidget, QTreeWidgetItem,
+                               QVBoxLayout)
 
 import core
 import theme
 from appconfig import APP_DIR, APP_VERSION, GITHUB_REPO, RELEASES_URL
+from models import human_size
 from notify import resource_path
 
 LINKS = (
@@ -152,3 +154,79 @@ class WhatsNewDialog(QDialog):
         b.clicked.connect(self.close)
         row.addWidget(b)
         lay.addLayout(row)
+
+
+class CleanupDialog(QDialog):
+    """Groups of leftovers in the download folder with checkboxes. Only stale
+    .part files start checked; the caller moves selected_items() to the trash."""
+
+    GROUPS = (("orphans", "cleanup_g_orphan"), ("strays", "cleanup_g_stray"),
+              ("parts", "cleanup_g_part"), ("empty", "cleanup_g_empty"))
+
+    def __init__(self, parent, tr, report):
+        super().__init__(parent)
+        self.tr_ = tr
+        self.setWindowTitle(tr("cleanup_title"))
+        self.resize(680, 520)
+        lay = QVBoxLayout(self)
+        intro = QLabel(tr("cleanup_intro"))
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        lay.addWidget(self.tree, 1)
+        for key, label in self.GROUPS:
+            items = report.get(key, [])
+            if not items:
+                continue
+            total = sum(i["size"] for i in items)
+            top = QTreeWidgetItem(self.tree, [f"{tr(label)}  ({len(items)}, {human_size(total)})"])
+            top.setFlags(top.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
+            for it in items:
+                text = it["rel"] if it["kind"] == "empty" \
+                    else f"{it['rel']}  ({human_size(it['size'])})"
+                if it["kind"] == "part":
+                    text += "  " + tr("cleanup_age", t=self._age(it["age"]))
+                child = QTreeWidgetItem(top, [text])
+                child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
+                child.setData(0, Qt.UserRole, it)
+                child.setToolTip(0, it["path"])
+                child.setCheckState(0, Qt.Checked if core.cleanup_default_selection(it)
+                                    else Qt.Unchecked)
+            top.setExpanded(True)
+        cats = report.get("categories", {})
+        sizes = ", ".join(f"{c} {human_size(v['size'])}" for c, v in sorted(cats.items()))
+        self.cat_label = QLabel(tr("cleanup_cat_sizes", s=sizes))
+        self.cat_label.setWordWrap(True)
+        self.cat_label.setStyleSheet(theme.muted_label_qss())
+        lay.addWidget(self.cat_label)
+        self.summary = QLabel()
+        lay.addWidget(self.summary)
+        self.bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.bb.button(QDialogButtonBox.Ok).setText(tr("cleanup_btn"))
+        self.bb.accepted.connect(self.accept)
+        self.bb.rejected.connect(self.reject)
+        lay.addWidget(self.bb)
+        self.tree.itemChanged.connect(lambda *_: self._update())
+        self._update()
+
+    def _age(self, sec):
+        if sec >= 86400:
+            return self.tr_("cleanup_age_d", n=int(sec // 86400))
+        return self.tr_("cleanup_age_h", n=int(sec // 3600))
+
+    def selected_items(self):
+        out = []
+        for i in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(i)
+            for j in range(top.childCount()):
+                c = top.child(j)
+                if c.checkState(0) == Qt.Checked:
+                    out.append(c.data(0, Qt.UserRole))
+        return out
+
+    def _update(self):
+        sel = self.selected_items()
+        self.summary.setText(self.tr_("cleanup_selected", n=len(sel),
+                                      size=human_size(sum(i["size"] for i in sel))))
+        self.bb.button(QDialogButtonBox.Ok).setEnabled(bool(sel))

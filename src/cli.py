@@ -8,6 +8,8 @@ ESEManager command-line mode.
     ESEManager-cli missing [--download] [-y] [--limit N]
     ESEManager-cli updates [--download] [-y] [--limit N]
     ESEManager-cli version-sorting [--force]
+    ESEManager-cli cleanup [--dry-run] [--yes] [--part-files-only|--orphans|--strays|--empty|--all]
+                           [--permanent]
     ESEManager-cli self-update [--check] [-y]
 
 Common options: --dir DIR (download folder; default from config.toml or
@@ -381,6 +383,65 @@ def cmd_updates(args, tr):
     return _report_found(songs, "cli_updated", args, tr, overwrite=True)
 
 
+def _size(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def cmd_cleanup(args, tr):
+    """Report leftovers; with --yes trash the chosen kinds (--permanent: delete)."""
+    if not need_db(tr):
+        return 2
+    if not os.path.isdir(args.dir):
+        out.err(tr("dir_missing", d=args.dir))
+        return 2
+    rep = core.analyze_library(args.dir)
+    groups = (("orphans", "cleanup_g_orphan", args.orphans or args.all),
+              ("strays", "cleanup_g_stray", args.strays or args.all),
+              ("parts", "cleanup_g_part", args.part_files_only or args.all),
+              ("empty", "cleanup_g_empty", args.empty or args.all))
+    found = 0
+    for key, label, _sel in groups:
+        items = rep[key]
+        if not items:
+            continue
+        out.msg(f"{tr(label)}: {len(items)}, {_size(sum(i['size'] for i in items))}")
+        for i in items:
+            extra = f"  ({int(i['age'] // 3600)} h)" if key == "parts" else ""
+            out.msg(f"  {i['rel']}  {_size(i['size'])}{extra}")
+            out.data({"kind": i["kind"], "path": i["path"], "size": i["size"],
+                      **({"age": i["age"]} if key == "parts" else {})})
+            found += 1
+    cats = ", ".join(f"{c} {_size(v['size'])}" for c, v in sorted(rep["categories"].items()))
+    out.msg(tr("cleanup_cat_sizes", s=cats))
+    if not found:
+        out.msg(tr("cleanup_none"))
+        return 0
+    if args.dry_run or not args.yes:
+        if not args.dry_run:
+            out.msg(tr("cli_cleanup_hint"))
+        return 0
+    wanted = [k for k, _l, sel in groups if sel]
+    if not wanted:
+        out.err(tr("cli_cleanup_need"))
+        return 2
+    chosen = []
+    for k in wanted:
+        for i in rep[k]:
+            # .part files: all with --all, otherwise only those older than a day
+            if k != "parts" or args.all or core.cleanup_default_selection(i):
+                chosen.append(i)
+    mover = core.delete_permanently if args.permanent else core.move_to_trash
+    done, failed = core.cleanup_apply(args.dir, chosen, mover)
+    out.msg(tr("cleanup_done", n=len(done), size=_size(sum(i["size"] for i in done))))
+    for i in failed:
+        out.err(tr("cli_cleanup_trash_fail", p=i["path"]))
+    return 1 if failed else 0
+
+
 def cmd_version_sorting(args, tr):
     try:
         status, commit = core.download_version_sorting(args.dir, log=out.msg,
@@ -497,6 +558,20 @@ def build_parser():
                         help=f"download {VSORT_FOLDER} into the download folder")
     sp.add_argument("--force", action="store_true", help="download even if up to date")
     sp.set_defaults(func=cmd_version_sorting)
+
+    sp = sub.add_parser("cleanup", parents=[common],
+                        help="list (default) or trash leftovers in the download folder")
+    sp.add_argument("--dry-run", action="store_true", help="only print the report (default)")
+    sp.add_argument("-y", "--yes", action="store_true", help="actually clean up the chosen kinds")
+    sp.add_argument("--part-files-only", action="store_true",
+                    help="leftover .part files older than a day")
+    sp.add_argument("--orphans", action="store_true", help="song folders not in the database")
+    sp.add_argument("--strays", action="store_true", help="files the database does not list")
+    sp.add_argument("--empty", action="store_true", help="empty folders")
+    sp.add_argument("--all", action="store_true", help="every kind (incl. all .part files)")
+    sp.add_argument("--permanent", action="store_true",
+                    help="delete for good instead of moving to the trash")
+    sp.set_defaults(func=cmd_cleanup)
 
     sp = sub.add_parser("self-update", parents=[common],
                         help="download the latest ESEManager release over this folder")
