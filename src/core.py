@@ -8,6 +8,7 @@ monkeypatch core.DB_PATH and friends.
 
 import collections
 import hashlib
+import json
 import logging
 import logging.handlers
 import os
@@ -385,18 +386,72 @@ def search_songs(keyword, category=None):
     return [dict(idx.songs[i], files=list(idx.songs[i]["files"])) for i in out]
 
 
+def _rel_key(rel):
+    """Normalised lookup key for a database-relative path, or None if it is
+    unsafe (same rules as safe_join, without the per-path abspath cost)."""
+    if not rel:
+        return None
+    norm = rel.replace("\\", "/")
+    if norm.startswith("/") or (len(norm) > 1 and norm[1] == ":"):
+        return None
+    parts = [p for p in norm.split("/") if p not in ("", ".")]
+    if not parts or any(p == ".." or "\0" in p or ":" in p for p in parts):
+        return None
+    key = "/".join(parts)
+    return key.lower() if os.name == "nt" else key
+
+
+def scan_tree(root):
+    """One scandir walk of root: {key: (mtime_ns, size)} for every file, keyed
+    like _rel_key. DirEntry.stat() reuses the listing data on Windows, so this
+    costs one directory read per folder instead of one stat per file."""
+    out = {}
+    stack = [(root, "")]
+    lower = os.name == "nt"
+    while stack:
+        d, prefix = stack.pop()
+        try:
+            it = os.scandir(d)
+        except OSError:
+            continue
+        with it:
+            for e in it:
+                try:
+                    name = e.name.lower() if lower else e.name
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append((e.path, prefix + name + "/"))
+                    else:
+                        st = e.stat()
+                        out[prefix + name] = (st.st_mtime_ns, st.st_size)
+                except OSError:
+                    continue
+    return out
+
+
 def find_missing(songs, download_dir):
-    """Songs with at least one file not present in download_dir. (Listing each
-    directory instead of stat-ing files measured slower: song folders hold only
-    a few files each.)"""
+    """Songs with at least one file not present in download_dir. A single
+    directory walk replaces one os.path.exists per file; for a handful of
+    files the plain existence check is cheaper, so it is kept for those."""
+    songs = list(songs)
+    nfiles = sum(len(s["files"]) for s in songs)
+    present = None
+    if nfiles > 64:
+        present = scan_tree(download_dir)
     missing = []
     for s in songs:
         for f in s["files"]:
-            try:
-                path = safe_join(download_dir, f["file_path"])
-            except UnsafePathError:
-                continue
-            if not os.path.exists(path):
+            if present is None:
+                try:
+                    path = safe_join(download_dir, f["file_path"])
+                except UnsafePathError:
+                    continue
+                gone = not os.path.exists(path)
+            else:
+                key = _rel_key(f["file_path"])
+                if key is None:
+                    continue
+                gone = key not in present
+            if gone:
                 missing.append(s)
                 break
     return missing
@@ -422,6 +477,42 @@ def git_blob_sha_bytes(data):
 # path -> (mtime_ns, size, sha); avoids re-hashing unchanged files on every check
 _sha_cache = {}
 _sha_cache_lock = threading.Lock()
+# paths whose on-disk cache entry must not be trusted (file replaced by us)
+_sha_forgotten = set()
+
+SHA_CACHE_NAME = ".ese_sha_cache.json"
+SHA_CACHE_VERSION = 1
+
+
+def load_sha_disk_cache(download_dir):
+    """{key: [mtime_ns, size, sha]} saved by a previous check, or {} if absent,
+    corrupt or from another format version."""
+    try:
+        with open(os.path.join(download_dir, SHA_CACHE_NAME), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if data.get("v") != SHA_CACHE_VERSION or not isinstance(data.get("files"), dict):
+            return {}
+        return {k: tuple(v) for k, v in data["files"].items()
+                if isinstance(v, list) and len(v) == 3}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def save_sha_disk_cache(download_dir, files):
+    """Atomically write the cache (temp file + os.replace). Failure is harmless."""
+    path = os.path.join(download_dir, SHA_CACHE_NAME)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"v": SHA_CACHE_VERSION,
+                       "files": {k: list(v) for k, v in files.items()}},
+                      fh, separators=(",", ":"))
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 def cached_blob_sha(path):
@@ -443,6 +534,7 @@ def forget_blob_sha(path):
     resolution would not change."""
     with _sha_cache_lock:
         _sha_cache.pop(path, None)
+        _sha_forgotten.add(os.path.normcase(os.path.abspath(path)))
 
 
 def load_sha_map(db_path=None):
@@ -470,7 +562,8 @@ def find_updates(download_dir, category=None, progress=None):
     if not sha_map:
         raise NoShaError()
 
-    candidates = []     # (song, file, local_path, remote_sha)
+    present = scan_tree(download_dir)
+    candidates = []     # (song, file, key, remote_sha)
     for s in songs:
         for f in s["files"]:
             fp = f["file_path"]
@@ -479,34 +572,74 @@ def find_updates(download_dir, category=None, progress=None):
             sha = sha_map.get(fp)
             if not sha:
                 continue
-            try:
-                lp = safe_join(download_dir, fp)
-            except UnsafePathError:
-                continue
-            if os.path.exists(lp):
-                candidates.append((s, f, lp, sha))
+            key = _rel_key(fp)
+            if key is not None and key in present:
+                candidates.append((s, f, key, sha))
 
     total = len(candidates)
     progress(0, total)
 
-    def check(item):
-        s, f, lp, sha = item
+    disk = load_sha_disk_cache(download_dir)
+    base = os.path.abspath(download_dir)
+    fresh = {}          # key -> (mtime_ns, size, sha) for files seen this run
+    shas = {}           # key -> local sha
+    todo = []           # keys that need hashing
+    with _sha_cache_lock:
+        forgotten = set(_sha_forgotten)
+    for _, f, key, _ in candidates:
+        mt, size = present[key]
+        full = os.path.normcase(os.path.join(base, *key.split("/")))
+        hit = disk.get(key)
+        if hit and hit[0] == mt and hit[1] == size and full not in forgotten:
+            fresh[key] = hit
+            shas[key] = hit[2]
+        else:
+            todo.append((key, f["file_path"]))
+
+    done = total - len(todo)
+    last = [0.0]
+
+    def report(force=False):
+        now = time.monotonic()
+        if force or now - last[0] >= 0.05:
+            last[0] = now
+            progress(done, total)
+
+    report(True)
+
+    def hash_one(item):
+        key, fp = item
         try:
-            return (s, f) if cached_blob_sha(lp) != sha else None
-        except OSError:
-            return None
+            return key, git_blob_sha(safe_join(download_dir, fp))
+        except (OSError, UnsafePathError):
+            return key, None
+
+    if todo:
+        with ThreadPoolExecutor(max_workers=min(16, (os.cpu_count() or 4) * 2)) as ex:
+            for key, sha in ex.map(hash_one, todo, chunksize=1):
+                done += 1
+                if sha is not None:
+                    mt, size = present[key]
+                    shas[key] = sha
+                    fresh[key] = (mt, size, sha)
+                report(done == total)
+        with _sha_cache_lock:
+            for key, _ in todo:
+                _sha_forgotten.discard(os.path.normcase(os.path.join(base, *key.split("/"))))
+    report(True)
+
+    # keep entries for files still on disk (other categories), drop deleted ones
+    keep = {k: v for k, v in disk.items() if k in present}
+    keep.update(fresh)
+    if keep != disk:
+        save_sha_disk_cache(download_dir, keep)
 
     changed = {}    # id(song) -> song dict with only the changed files
-    done = 0
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        for res in ex.map(check, candidates):
-            done += 1
-            if done % 100 == 0 or done == total:
-                progress(done, total)
-            if res:
-                s, f = res
-                entry = changed.setdefault(id(s), dict(s, files=[], _orig=s))
-                entry["files"].append(f)
+    for s, f, key, sha in candidates:
+        local = shas.get(key)
+        if local is not None and local != sha:
+            entry = changed.setdefault(id(s), dict(s, files=[], _orig=s))
+            entry["files"].append(f)
 
     out = []
     for entry in changed.values():
