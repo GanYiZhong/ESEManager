@@ -131,3 +131,12 @@ def test_search_hint_quiet_and_no_match(app):
     assert rc == 2 and "0 songs" in out                 # errors survive --quiet
     rc, out = run("search", "Song", "--json", "--quiet")
     assert rc == 0 and '"song": "Song"' in out
+
+
+def test_search_no_match_suggests(app):
+    tmp, run = app
+    make_db(tmp / "ese_songs.db")
+    rc, out = run("search", "Sogn")
+    assert rc == 2 and "0 songs" in out and "Did you mean: Song?" in out
+    rc, out = run("search", "qqqqqqqq")
+    assert rc == 2 and "Did you mean" not in out

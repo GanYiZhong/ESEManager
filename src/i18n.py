@@ -755,3 +755,8 @@ TR["ja"].update({
     "fail_retry_sel": "選択を再試行", "fail_open_page": "曲のページを開く",
     "fail_copy_path": "パスをコピー",
 })
+
+# --- search typo suggestions
+TR["zh_TW"].update({"did_you_mean": "你是不是要找：{items}？"})
+TR["en"].update({"did_you_mean": "Did you mean: {items}?"})
+TR["ja"].update({"did_you_mean": "もしかして：{items}？"})
