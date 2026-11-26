@@ -42,6 +42,13 @@ extract a new version over the old folder by hand.
 On Linux, if Qt reports it cannot load the `xcb` platform plugin, install `libxcb-cursor0`
 (Debian/Ubuntu) or `xcb-util-cursor` (Fedora/Arch).
 
+## Drag and drop, Open with
+
+- Drop a song list (`.esesongs`, `.json` or `.txt`) or lines of text copied from a chat onto the window to import it, the same as File > Import. A hint shows while the drag is acceptable.
+- Drop a folder onto the window to be asked whether it should be the download folder; dropping it on the folder field sets it directly.
+- `ESEManager.exe path	o\list.esesongs` opens the app and imports the list. To "Open with" it from Explorer: right-click a `.esesongs` file > Open with > Choose another app > ESEManager.exe (tick "Always" if you like). No file association is registered automatically.
+- Exported lists use the `.esesongs` extension by default (JSON content); `.json` and `.txt` still work.
+
 ## Command-line mode
 
 Release builds include `ESEManager-cli` (`ESEManager-cli.exe` on Windows) next to the GUI; from

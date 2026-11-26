@@ -956,7 +956,9 @@ TR["zh_TW"].update({
     "sl_save_fail": "無法儲存歌單：{e}", "sl_open_fail": "無法讀取歌單：{e}",
     "sl_bad": "這不是有效的歌單，或內容是空的。",
     "sl_report": "找到 {m} 首、近似比對 {f} 首、找不到 {x} 首",
-    "sl_filter": "歌單 (*.json);;文字 (*.txt);;全部 (*)",
+    "sl_filter": "歌單 (*.esesongs *.json);;文字 (*.txt);;全部 (*)",
+    "drop_import": "放開以匯入歌單", "drop_dir_q": "要把這個資料夾設為下載資料夾嗎？\n{d}",
+    "drop_dir_saved": "下載資料夾已設為：{d}",
     "cli_list_none": "歌單中沒有可下載的歌曲。",
     "cli_export_what": "請指定關鍵字、-c 分類或 --favourites。",
 })
@@ -970,7 +972,9 @@ TR["en"].update({
     "sl_open_fail": "Could not read the song list: {e}",
     "sl_bad": "This is not a valid song list, or it is empty.",
     "sl_report": "{m} matched, {f} fuzzy-matched, {x} not found",
-    "sl_filter": "Song list (*.json);;Text (*.txt);;All (*)",
+    "sl_filter": "Song list (*.esesongs *.json);;Text (*.txt);;All (*)",
+    "drop_import": "Drop to import song list", "drop_dir_q": "Use this as the download folder?\n{d}",
+    "drop_dir_saved": "Download folder set to: {d}",
     "cli_list_none": "No downloadable songs in the list.",
     "cli_export_what": "Give a keyword, -c CATEGORY or --favourites.",
 })
@@ -984,7 +988,9 @@ TR["ja"].update({
     "sl_open_fail": "曲リストを読み込めません：{e}",
     "sl_bad": "有効な曲リストではないか、空です。",
     "sl_report": "一致 {m} 曲、あいまい一致 {f} 曲、見つからない {x} 曲",
-    "sl_filter": "曲リスト (*.json);;テキスト (*.txt);;すべて (*)",
+    "sl_filter": "曲リスト (*.esesongs *.json);;テキスト (*.txt);;すべて (*)",
+    "drop_import": "ドロップして曲リストを読み込み", "drop_dir_q": "このフォルダーを保存先にしますか？\n{d}",
+    "drop_dir_saved": "保存先を設定しました：{d}",
     "cli_list_none": "リストにダウンロードできる曲がありません。",
     "cli_export_what": "キーワード、-c カテゴリー、または --favourites を指定してください。",
 })
