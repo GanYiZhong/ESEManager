@@ -25,6 +25,21 @@ def clean(tmp_path, monkeypatch):
     sys.excepthook, threading.excepthook = saved
     crash._state["prev_hooks"] = None
     crash.reset()
+    _dispose_top_level_widgets()
+
+
+def _dispose_top_level_widgets():
+    """Crash dialogs/boxes have no parent; left alive they are destroyed after
+    QApplication at interpreter exit, which segfaults (CI exit code 127/139)."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 def boom(exc=ValueError("bad"), line=None):
