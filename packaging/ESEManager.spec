@@ -26,6 +26,7 @@ _common = dict(
         'i18n',
         'models',
         'workers',
+        'dialogs',
         'notify',
         'power',
         'cli',

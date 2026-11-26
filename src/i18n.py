@@ -808,3 +808,23 @@ TR["ja"].update({
 TR["zh_TW"].update({"did_you_mean": "你是不是要找：{items}？"})
 TR["en"].update({"did_you_mean": "Did you mean: {items}?"})
 TR["ja"].update({"did_you_mean": "もしかして：{items}？"})
+
+# --- About / release notes
+TR["zh_TW"].update({
+    "about_title": "關於 ESEManager", "about_version": "版本", "about_data_dir": "資料夾",
+    "about_log": "記錄檔", "about_open": "開啟", "about_copy_diag": "複製診斷資訊",
+    "about_copied": "已複製", "about_close": "關閉",
+    "whatsnew_title": "{v} 的新功能", "whatsnew_none": "（此版本沒有更新說明）",
+})
+TR["en"].update({
+    "about_title": "About ESEManager", "about_version": "Version", "about_data_dir": "Data folder",
+    "about_log": "Log file", "about_open": "Open", "about_copy_diag": "Copy diagnostics",
+    "about_copied": "Copied", "about_close": "Close",
+    "whatsnew_title": "What's new in {v}", "whatsnew_none": "(No release notes for this version.)",
+})
+TR["ja"].update({
+    "about_title": "ESEManager について", "about_version": "バージョン", "about_data_dir": "データフォルダ",
+    "about_log": "ログファイル", "about_open": "開く", "about_copy_diag": "診断情報をコピー",
+    "about_copied": "コピーしました", "about_close": "閉じる",
+    "whatsnew_title": "{v} の新機能", "whatsnew_none": "（このバージョンのリリースノートはありません）",
+})

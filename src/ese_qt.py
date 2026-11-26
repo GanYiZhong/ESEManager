@@ -45,7 +45,8 @@ from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
 from workers import (DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
-                     VersionSortingThread, AppSelfUpdateThread)
+                     VersionSortingThread, AppSelfUpdateThread, ReleaseNotesThread)
+from dialogs import AboutDialog, ReleaseNotesDialog, WhatsNewDialog
 from notify import Notifier, set_app_icon
 from power import KeepAwake
 
@@ -197,6 +198,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(1200, self.check_db_update)
         QTimer.singleShot(3000, self.check_app_update)
         QTimer.singleShot(500, self._report_failed_update)
+        QTimer.singleShot(2000, self.check_whats_new)
 
     SEARCH_DELAY_MS = 300
     FONT_SCALES = (90, 100, 115, 130)
@@ -278,6 +280,8 @@ class MainWindow(QMainWindow):
             win_w, win_h = self.width(), self.height()
         cat = self.cat_combo.currentData() if hasattr(self, "cat_combo") else None
         display = {"page_size": 20, "category": cat or "", "ui_language": self.lang_pref,
+                   "last_seen_version": getattr(self, "_last_seen_version",
+                                                prev.get("last_seen_version", "")),
                    "theme": self.theme_pref, "font_scale": self.font_scale,
                    "window_w": win_w, "window_h": win_h,
                    "monitor_open": bool(getattr(self, "monitor_btn", None)
@@ -349,6 +353,9 @@ class MainWindow(QMainWindow):
         self.menu_help.addAction(self.act_shortcuts)
         self.act_official = self._action(lambda: webbrowser.open("https://taiko.ac"))
         self.menu_help.addAction(self.act_official)
+        self.menu_help.addSeparator()
+        self.act_about = self._action(self.show_about)
+        self.menu_help.addAction(self.act_about)
 
     def build_status_bar(self):
         sb = self.statusBar()
@@ -421,6 +428,7 @@ class MainWindow(QMainWindow):
         self.act_quit.setText(self.tr("mw_act_quit"))
         self.act_official.setText(self.tr("official"))
         self.act_shortcuts.setText(self.tr("shortcuts"))
+        self.act_about.setText(self.tr("about_title"))
         self._refresh_status()
 
     # ---- UI
@@ -1965,6 +1973,33 @@ class MainWindow(QMainWindow):
         self._ver.result.connect(self.on_version)
         self._ver.start()
 
+    def show_about(self):
+        dlg = AboutDialog(self, self.tr, self._db_version)
+        dlg.exec()
+
+    # ---- release notes: "What's new" after an update, notes in the update confirm
+    def check_whats_new(self):
+        """Once per new version: compare APP_VERSION with display.last_seen_version."""
+        if core.parse_version(APP_VERSION) is None:
+            return                                   # dev / CI builds
+        seen = self.config.get("display", {}).get("last_seen_version")
+        self._last_seen_version = APP_VERSION
+        if seen != APP_VERSION:
+            self.save_config()
+        if seen and core.is_newer(APP_VERSION, seen):
+            t = self._notes_thread = self._track(ReleaseNotesThread(APP_VERSION))
+            t.loaded.connect(self._show_whats_new)
+            t.start()
+
+    def _show_whats_new(self, tag, body):
+        if self._closing or not body:
+            return
+        dlg = self._whats_new = WhatsNewDialog(self, self.tr, tag, body)
+        dlg.show()
+
+    def _on_notes_loaded(self, tag, body):
+        self._app_update_notes = (tag, body)
+
     def check_app_update(self):
         """Rolling releases: tell the user when GitHub has a newer build."""
         t = self._track(AppUpdateThread())
@@ -1986,6 +2021,10 @@ class MainWindow(QMainWindow):
         self._app_update_url = url
         self._app_update_tag = tag
         self.app_update_btn.show()
+        t = self._track(ReleaseNotesThread(tag))     # prefetch for the confirm dialog
+        t.loaded.connect(self._on_notes_loaded)
+        self._upd_notes_thread = t
+        t.start()
 
     def install_app_update(self):
         """Download the new release over this folder and restart (release
@@ -2001,9 +2040,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.tr("upd_app_title"), self.tr("upd_app_busy"))
             return
         tag = getattr(self, "_app_update_tag", "")
-        if QMessageBox.question(self, self.tr("upd_app_title"),
-                                self.tr("upd_app_confirm", cur=APP_VERSION, v=tag)) \
-                != QMessageBox.Yes:
+        msg = self.tr("upd_app_confirm", cur=APP_VERSION, v=tag)
+        ntag, notes = getattr(self, "_app_update_notes", ("", ""))
+        if notes and ntag == tag:
+            if ReleaseNotesDialog(self, self.tr, msg, notes).exec() != QDialog.Accepted:
+                return
+        elif QMessageBox.question(self, self.tr("upd_app_title"), msg) != QMessageBox.Yes:
             return
         self.app_update_btn.setEnabled(False)
         self.overall_label.setText(self.tr("upd_app_downloading", p=0))
