@@ -90,7 +90,7 @@ class AboutDialog(QDialog):
                                            (tr("about_log"), log_path()))):
             grid.addWidget(QLabel(key), row, 0)
             lbl = QLabel(path)
-            lbl.setWordWrap(True)
+            lbl.setToolTip(path)   # no word wrap: a path has no spaces to break at
             lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
             lbl.setStyleSheet(theme.muted_label_qss())
             grid.addWidget(lbl, row, 1)
