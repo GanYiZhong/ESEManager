@@ -6,6 +6,7 @@ Paths and URLs are read from this module's globals at call time, so tests can
 monkeypatch core.DB_PATH and friends.
 """
 
+import collections
 import hashlib
 import logging
 import logging.handlers
@@ -93,9 +94,13 @@ def human_eta(sec):
     return f"{h}h{m:02d}m"
 
 
-def new_session():
+def new_session(pool_size=10):
     sess = requests.Session()
     sess.headers["User-Agent"] = USER_AGENT
+    if pool_size > 10:      # requests' default pool is 10 connections per host
+        ad = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=pool_size)
+        sess.mount("http://", ad)
+        sess.mount("https://", ad)
     return sess
 
 
@@ -500,6 +505,7 @@ class Downloader:
         self.dl = self.skip = self.fail = 0
         self.bytes_total = 0
         self.t0 = time.time()
+        self._samples = collections.deque()   # (time, bytes_total, done) for rates
 
     @property
     def stopped(self):
@@ -521,9 +527,25 @@ class Downloader:
     def snapshot(self):
         """Counters plus the rows that changed since the previous call."""
         with self._lock:
-            el = time.time() - self.t0
-            spd = (self.bytes_total / 1024 / 1024) / el if el > 0 else 0
-            eta = (self.total - self.done) / (self.done / el) if self.done > 0 and el > 0 else 0
+            now = time.time()
+            el = now - self.t0
+            # Rates over a sliding window (~8 s) so speed/ETA follow the
+            # current pace instead of the whole-job average.
+            sm = self._samples
+            sm.append((now, self.bytes_total, self.done))
+            while len(sm) > 2 and now - sm[0][0] > 8.0:
+                sm.popleft()
+            t_old, b_old, d_old = sm[0]
+            win = now - t_old
+            if win >= 1.0:
+                spd = (self.bytes_total - b_old) / 1024 / 1024 / win
+                rate = (self.done - d_old) / win
+            else:
+                spd = (self.bytes_total / 1024 / 1024) / el if el > 0 else 0
+                rate = self.done / el if el > 0 else 0
+            if rate <= 0 and self.done > 0 and el > 0:
+                rate = self.done / el
+            eta = (self.total - self.done) / rate if rate > 0 and self.done < self.total else 0
             dirty = self._dirty
             self._dirty = {}
             return (self.done, self.total, spd, eta, dirty)
@@ -538,7 +560,7 @@ class Downloader:
             setattr(self, kind, getattr(self, kind) + 1)
 
     def run(self):
-        sess = new_session()
+        sess = new_session(self.workers + 2)
         try:
             sha_map = load_sha_map()
         except Exception:
@@ -547,7 +569,10 @@ class Downloader:
             # On first download into a category folder, also fetch ESE's box.def.
             self._fetch_boxdefs(sess)
             with ThreadPoolExecutor(max_workers=self.workers) as ex:
-                list(ex.map(lambda item: self._one(sess, sha_map, item), self.files))
+                # Small files (charts) before LFS audio: the list fills quickly
+                # and a stop leaves complete charts rather than half an .ogg.
+                order = sorted(self.files, key=lambda it: is_lfs_path(it[1]["file_path"]))
+                list(ex.map(lambda item: self._one(sess, sha_map, item), order))
         finally:
             sess.close()
         return self.dl, self.skip, self.fail, self.total
@@ -625,7 +650,9 @@ class Downloader:
             self._mark(fp, "failed", 0.0, 0.0)
             self.log(self.tr("log_fail", f=disp, e=e))
         finally:
-            if part and os.path.exists(part):
+            # A stopped download keeps its .part so the next run can resume it
+            # with a Range request; any other failure discards it.
+            if part and os.path.exists(part) and not self._stop:
                 try:
                     os.remove(part)
                 except OSError:
@@ -633,14 +660,33 @@ class Downloader:
 
     def _fetch(self, sess, url, part, fp, want_sha):
         """Download url into part and check its length and (non-LFS) git blob
-        sha. Returns the byte count; raises on any problem."""
+        sha. Returns the byte count; raises on any problem. A leftover .part
+        is resumed with a Range request when the server honours it."""
         got = 0
-        with get_with_retry(sess, url, stream=True, timeout=60,
-                            stop=lambda: self._stop) as r:
+        have = os.path.getsize(part) if os.path.exists(part) else 0
+        hdrs = {"Range": f"bytes={have}-"} if have > 0 else {}
+        try:
+            resp = get_with_retry(sess, url, stream=True, timeout=60, headers=hdrs,
+                                  stop=lambda: self._stop)
+        except requests.HTTPError as e:
+            if have and getattr(e.response, "status_code", 0) == 416:
+                have, hdrs = 0, {}          # stale/oversized part: start over
+                resp = get_with_retry(sess, url, stream=True, timeout=60,
+                                      stop=lambda: self._stop)
+            else:
+                raise
+        with resp as r:
             clen = int(r.headers.get("content-length", 0) or 0)
+            mode = "wb"
+            if have and r.status_code == 206:
+                mode = "ab"
+                got = have
+                clen += have
+            base = got
             ft0 = time.time()
             last = 0.0
-            with open(part, "wb") as out:
+            pending = 0                       # bytes not yet added to bytes_total
+            with open(part, mode) as out:
                 for chunk in r.iter_content(chunk_size=65536):
                     if self._stop:
                         raise InterruptedError(self.tr("log_cancelled"))
@@ -653,21 +699,33 @@ class Downloader:
                         continue
                     out.write(chunk)
                     got += len(chunk)
-                    with self._lock:
-                        self.bytes_total += len(chunk)
+                    pending += len(chunk)
                     now = time.time()
                     if now - last >= 0.2:            # at most 5 updates/s per file
                         last = now
                         fe = now - ft0
-                        spd = (got / 1024 / 1024) / fe if fe > 0 else 0
+                        spd = ((got - base) / 1024 / 1024) / fe if fe > 0 else 0
                         pct = (got / clen * 100) if clen else 50.0
-                        self._mark(fp, "downloading", pct, spd)
-        if clen and got != clen:
-            raise IOError(self.tr("log_short", got=got, want=clen))
-        # Re-hash as a git blob (needs the size prefix, so hash the file).
-        # A mirror that lags behind fails here and the next host is tried.
-        if want_sha and git_blob_sha(part) != want_sha:
-            raise IOError(self.tr("log_sha_mismatch"))
+                        with self._lock:             # one lock take per tick, not per chunk
+                            self.bytes_total += pending
+                            self._dirty[fp] = ("downloading", pct, spd)
+                        pending = 0
+            if pending:
+                with self._lock:
+                    self.bytes_total += pending
+        try:
+            if clen and got != clen:
+                raise IOError(self.tr("log_short", got=got, want=clen))
+            # Re-hash as a git blob (needs the size prefix, so hash the file).
+            # A mirror that lags behind fails here and the next host is tried.
+            if want_sha and git_blob_sha(part) != want_sha:
+                raise IOError(self.tr("log_sha_mismatch"))
+        except IOError:
+            try:                    # a bad (possibly resumed) part must not be reused
+                os.remove(part)
+            except OSError:
+                pass
+            raise
         return got
 
     def _fetch_boxdefs(self, sess):
