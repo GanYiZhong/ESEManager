@@ -255,6 +255,18 @@ class DownloadModel(QAbstractTableModel):
             self.rows.append([f["filename"], song["song_name"], "", 0.0, 0.0])
         self.endResetModel()
 
+    def append(self, files):
+        """Add rows for (song, file) pairs not shown yet (queueing)."""
+        files = [(s, f) for s, f in files if f["file_path"] not in self.index_of]
+        if not files:
+            return
+        first = len(self.rows)
+        self.beginInsertRows(QModelIndex(), first, first + len(files) - 1)
+        for song, f in files:
+            self.index_of[f["file_path"]] = len(self.rows)
+            self.rows.append([f["filename"], song["song_name"], "", 0.0, 0.0])
+        self.endInsertRows()
+
     def update(self, file_path, status, pct, speed):
         r = self.index_of.get(file_path)
         if r is None:

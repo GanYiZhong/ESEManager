@@ -13,6 +13,7 @@ import logging
 import logging.handlers
 import os
 import pathlib
+import queue
 import re
 import shutil
 import sqlite3
@@ -867,6 +868,11 @@ class Downloader:
         self._lock = threading.Lock()
         self._dirty = {}               # file_path -> (status, pct, speed) since last pull
         self.total = len(files)
+        self._initial = list(files)
+        self._known = {f["file_path"] for _, f in files}   # queued or already run
+        self._queue = queue.Queue()
+        self._outstanding = 0          # queued + running items (and box.def jobs)
+        self._closed = False           # run() has drained the queue; add() refused
         self.done = 0
         self.dl = self.skip = self.fail = 0
         self.bytes_total = 0
@@ -925,6 +931,62 @@ class Downloader:
             self.done += 1
             setattr(self, kind, getattr(self, kind) + 1)
 
+    @staticmethod
+    def _ordered(files):
+        # Small files (charts) before LFS audio: the list fills quickly and a
+        # stop leaves complete charts rather than half an .ogg.
+        return sorted(files, key=lambda it: is_lfs_path(it[1]["file_path"]))
+
+    def add(self, files):
+        """Append (song, file) pairs to the running job (thread-safe). Files
+        already queued, running or finished in this job are skipped. Returns
+        the list of pairs added, or None when the job has already drained (the
+        caller should start a new one)."""
+        with self._lock:
+            if self._closed:
+                return None
+            new = []
+            for song, f in files:
+                fp = f["file_path"]
+                if fp not in self._known:
+                    self._known.add(fp)
+                    new.append((song, f))
+            if not new:
+                return []
+            new = self._ordered(new)
+            self.files.extend(new)
+            self.total += len(new)
+            self._outstanding += len(new) + 1
+            self._queue.put(("boxdef", new))
+            for item in new:
+                self._queue.put(("file", item))
+        return new
+
+    def _finish_item(self):
+        with self._lock:
+            self._outstanding -= 1
+            if self._outstanding > 0 or self._closed:
+                return
+            self._closed = True
+        for _ in range(self.workers):
+            self._queue.put(None)
+
+    def _worker(self, sess, sha_map):
+        while True:
+            job = self._queue.get()
+            if job is None:
+                return
+            try:
+                kind, payload = job
+                if kind == "boxdef":
+                    self._fetch_boxdefs(sess, payload)
+                else:
+                    self._one(sess, sha_map, payload)
+            except Exception:
+                log.warning("download worker error", exc_info=True)
+            finally:
+                self._finish_item()
+
     def run(self):
         sess = new_session(self.workers + 2)
         try:
@@ -933,13 +995,24 @@ class Downloader:
             sha_map = {}
         try:
             # On first download into a category folder, also fetch ESE's box.def.
-            self._fetch_boxdefs(sess)
-            with ThreadPoolExecutor(max_workers=self.workers) as ex:
-                # Small files (charts) before LFS audio: the list fills quickly
-                # and a stop leaves complete charts rather than half an .ogg.
-                order = sorted(self.files, key=lambda it: is_lfs_path(it[1]["file_path"]))
-                list(ex.map(lambda item: self._one(sess, sha_map, item), order))
+            self._fetch_boxdefs(sess, self._initial)
+            with self._lock:
+                initial = self._ordered(self._initial)
+                self._outstanding += len(initial)
+                for item in initial:
+                    self._queue.put(("file", item))
+            if not initial:
+                self._outstanding += 1
+                self._finish_item()
+            threads = [threading.Thread(target=self._worker, args=(sess, sha_map),
+                                        daemon=True) for _ in range(self.workers)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         finally:
+            with self._lock:
+                self._closed = True
             sess.close()
         return self.dl, self.skip, self.fail, self.total
 
@@ -1104,7 +1177,7 @@ class Downloader:
             raise
         return got
 
-    def _fetch_boxdefs(self, sess):
+    def _fetch_boxdefs(self, sess, files):
         """Create box.def for each category folder touched by this download."""
         try:
             conn = connect_ro(DB_PATH)
@@ -1115,7 +1188,7 @@ class Downloader:
                 conn.close()
         except Exception:
             return
-        cats = {f["file_path"].split("/")[0] for _, f in self.files if "/" in f["file_path"]}
+        cats = {f["file_path"].split("/")[0] for _, f in files if "/" in f["file_path"]}
         for cat in sorted(cats):
             if self._stop:
                 break

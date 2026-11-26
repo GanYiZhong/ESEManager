@@ -150,6 +150,8 @@ TR["zh_TW"].update({
     "welcome_dir": "歌曲會下載到：{d}",
     "no_selection": "請先勾選要下載的歌曲。",
     "dl_busy": "下載進行中，請等目前的下載完成或先停止。",
+    "dl_queued": "已加入佇列：{n} 首歌曲（{f} 個檔案）",
+    "dl_queued_none": "所選檔案都已在佇列中",
     "dl_confirm_many": "即將下載 {n} 首歌曲（{f} 個檔案），可能需要很長時間與大量磁碟空間。\n是否繼續？",
     "log_dl_start": "——— 開始下載 {n} 個檔案 ———",
     "log_dl_stopping": "——— 已要求停止，等待收尾… ———",
@@ -190,6 +192,8 @@ TR["en"].update({
     "welcome_dir": "Songs will be saved to: {d}",
     "no_selection": "Select the songs to download first.",
     "dl_busy": "A download is already running. Wait for it to finish or stop it first.",
+    "dl_queued": "Added {n} songs ({f} files) to the queue",
+    "dl_queued_none": "Those files are already in the queue",
     "dl_confirm_many": "About to download {n} songs ({f} files). This can take a long time "
                        "and a lot of disk space.\nContinue?",
     "log_dl_start": "——— Downloading {n} files ———",
@@ -233,6 +237,8 @@ TR["ja"].update({
     "welcome_dir": "保存先：{d}",
     "no_selection": "先にダウンロードする曲を選択してください。",
     "dl_busy": "ダウンロード中です。完了するか停止してから実行してください。",
+    "dl_queued": "{n} 曲（{f} ファイル）をキューに追加しました",
+    "dl_queued_none": "選択したファイルはすべてキューに入っています",
     "dl_confirm_many": "{n} 曲（{f} ファイル）をダウンロードします。時間とディスク容量が"
                        "多く必要になる場合があります。\n続行しますか？",
     "log_dl_start": "——— {n} ファイルのダウンロードを開始 ———",

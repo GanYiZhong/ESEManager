@@ -1139,13 +1139,16 @@ class MainWindow(QMainWindow):
         self.start_download(files)
 
     def start_download(self, files, overwrite=False):
+        if not files:
+            return
+        if self.dl_thread and self.dl_thread.isRunning() and not self.dl_thread.stopped:
+            self._queue_download(files)
+            return
         if self.dl_thread and self.dl_thread.isRunning():
             QMessageBox.warning(self, self.tr("download"), self.tr("dl_busy"))
             return
-        if not files:
-            return
         self.save_config()
-        self.download_btn.setEnabled(False)
+        self._deferred_files = []
         self.fail_list.clear()
         self.retry_btn.setEnabled(False)
         self.dl_model.load(files)
@@ -1171,6 +1174,22 @@ class MainWindow(QMainWindow):
             self.dl_timer.setInterval(200)
             self.dl_timer.timeout.connect(self.refresh_progress)
         self.dl_timer.start()
+
+    def _queue_download(self, files):
+        """Append files to the running job (skipping ones already in it)."""
+        added = self.dl_thread.add(files)
+        if added is None:           # the job just drained: start these next
+            self._deferred_files = list(getattr(self, "_deferred_files", [])) + list(files)
+            return
+        if not added:
+            self.statusBar().showMessage(self.tr("dl_queued_none"), 4000)
+            return
+        self.dl_model.append(added)
+        self.overall_bar.setMaximum(self.dl_thread.total)
+        songs = len({s["song_name"] for s, _ in added})
+        msg = self.tr("dl_queued", n=songs, f=len(added))
+        self.log_view.appendPlainText(msg)
+        self.statusBar().showMessage(msg, 4000)
 
     def _set_busy(self, on):
         """Indeterminate bottom bar while a check or DB update runs (not while
@@ -1251,6 +1270,10 @@ class MainWindow(QMainWindow):
         text = self.tr(key, d=dl, s=skip, f=fail, t=total)
         self.notifier.notify(self.tr("title"), text)
         self._show_summary(text, fail)
+        deferred, self._deferred_files = getattr(self, "_deferred_files", []), []
+        if deferred:
+            self.dl_thread.wait(3000)
+            self.start_download(deferred)
 
     def _show_summary(self, text, fail):
         """Completion dialog with shortcuts: open the download folder / retry failures."""
