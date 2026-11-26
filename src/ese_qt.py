@@ -13,6 +13,7 @@ import html
 import os
 import re
 import sys
+import threading
 import time
 from collections import deque
 
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
     QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction, QCheckBox,
-    QSystemTrayIcon
+    QSystemTrayIcon, QInputDialog
 )
 
 from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
@@ -154,6 +155,8 @@ class _ClickLabel(QLabel):
 
 
 class MainWindow(QMainWindow):
+    folders_found = Signal(list)    # detected simulator song folders (worker thread -> GUI)
+
     def __init__(self):
         super().__init__()
         self.config = self.load_config()
@@ -210,6 +213,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(3000, self.check_app_update)
         QTimer.singleShot(500, self._report_failed_update)
         QTimer.singleShot(2000, self.check_whats_new)
+        self.folders_found.connect(self._on_folders_found)
+        QTimer.singleShot(800, self.detect_welcome_folder)
 
     SEARCH_DELAY_MS = 300
     FONT_SCALES = (90, 100, 115, 130)
@@ -939,6 +944,9 @@ class MainWindow(QMainWindow):
         dh.addWidget(self.dir_edit, 1)
         dh.addWidget(self.browse_btn)
         dh.addWidget(self.opendir_btn)
+        self.detect_btn = QPushButton(self.tr("detect_btn"))
+        self.detect_btn.clicked.connect(self.detect_dir)
+        dh.insertWidget(2, self.detect_btn)
         self.dir_row = dir_row
         self._settings_row(form, self.tr("dir"), dir_row, "dir_help")
         self.workers_spin = QSpinBox()
@@ -1291,6 +1299,19 @@ class MainWindow(QMainWindow):
             v.addWidget(wdg)
         v.addWidget(self.welcome_btn, 0, Qt.AlignLeft)
         v.addLayout(dir_row)
+        self.welcome_found = QLabel()
+        self.welcome_found.setWordWrap(True)
+        self.welcome_found.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.welcome_use_btn = QPushButton(self.tr("welcome_use"))
+        self.welcome_use_btn.clicked.connect(self.use_found_folder)
+        self._found_path = ""
+        self.welcome_found_row = QWidget()
+        fr = QHBoxLayout(self.welcome_found_row)
+        fr.setContentsMargins(0, 0, 0, 0)
+        fr.addWidget(self.welcome_found, 1)
+        fr.addWidget(self.welcome_use_btn)
+        self.welcome_found_row.setVisible(False)
+        v.addWidget(self.welcome_found_row)
         root.addWidget(self.welcome_panel)
         self.refresh_welcome_dir()
 
@@ -1303,6 +1324,47 @@ class MainWindow(QMainWindow):
         if hasattr(self, "welcome_dir"):
             d = self.dir_edit.text() if hasattr(self, "dir_edit") else self.download_dir
             self.welcome_dir.setText(self.tr("welcome_dir", d=os.path.abspath(d)))
+
+    def detect_welcome_folder(self):
+        """First run only: look for a simulator's song folder in the background.
+        Nothing is changed until the user clicks "Use it"."""
+        if self.welcome_panel.isHidden() or self.has_song_db():
+            return
+        threading.Thread(target=lambda: self.folders_found.emit(core.find_song_folders()),
+                         daemon=True).start()
+
+    def _on_folders_found(self, found):
+        if not found or not hasattr(self, "welcome_found"):
+            return
+        c = found[0]
+        self._found_path = c["path"]
+        self.welcome_found.setText(self.tr("welcome_found", p=c["path"],
+                                           info=core.describe_song_folder(c, self.tr)))
+        self.welcome_found_row.setVisible(not self.welcome_panel.isHidden())
+
+    def use_found_folder(self):
+        if self._found_path:
+            self._set_download_dir(self._found_path)
+            self.welcome_found_row.setVisible(False)
+
+    def _set_download_dir(self, d):
+        self.dir_edit.setText(d)
+        self.save_config()
+        self.refresh_download_status()
+        self.refresh_welcome_dir()
+
+    def detect_dir(self):
+        """Settings: list likely simulator song folders and let the user pick one."""
+        found = core.find_song_folders()
+        if not found:
+            QMessageBox.information(self.settings_dlg, self.tr("detect_title"),
+                                    self.tr("detect_none"))
+            return
+        labels = [f"{c['path']}  ({core.describe_song_folder(c, self.tr)})" for c in found]
+        label, ok = QInputDialog.getItem(self.settings_dlg, self.tr("detect_title"),
+                                         self.tr("detect_pick"), labels, 0, False)
+        if ok and label in labels:
+            self._set_download_dir(found[labels.index(label)]["path"])
 
     def refresh_empty_hint(self):
         has = self.has_song_db()

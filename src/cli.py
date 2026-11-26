@@ -274,6 +274,19 @@ def cmd_status(args, tr):
     return 0
 
 
+def cmd_detect_folders(args, tr):
+    found = core.find_song_folders()
+    out.data({"folders": found})
+    if out.json:
+        return 0
+    if not found:
+        out.msg(tr("cli_detect_none"))
+        return 0
+    for c in found:
+        out.msg(f"{c['path']}  ({core.describe_song_folder(c, tr)})")
+    return 0
+
+
 def cmd_update_db(args, tr):
     remote = core.fetch_remote_version()
     if not remote:
@@ -583,6 +596,10 @@ def build_parser():
     sp.add_argument("--offline", action="store_true",
                     help="do not ask GitHub Pages for the latest database version")
     sp.set_defaults(func=cmd_status)
+
+    sp = sub.add_parser("detect-folders", parents=[common],
+                        help="list likely Taiko simulator song folders")
+    sp.set_defaults(func=cmd_detect_folders)
 
     sp = sub.add_parser("update-db", parents=[common], help="download the latest song database")
     sp.add_argument("--force", action="store_true", help="download even if up to date")
