@@ -13,6 +13,7 @@ import logging
 import logging.handlers
 import os
 import pathlib
+import re
 import shutil
 import sqlite3
 import sys
@@ -349,7 +350,8 @@ class _SongIndex:
             conn.close()
         self.names = [norm_text(s["song_name"]) for s in self.songs]
         self.cats = [norm_text(s["category"]) for s in self.songs]
-        self._ja = None          # [(normalized title_ja, normalized title)], lazy
+        self.cnames = [_compact(n) for n in self.names]
+        self._ja = None          # [(title_ja, compact title_ja, title)] normalized, lazy
 
     def ja_titles(self):
         if self._ja is None:
@@ -362,7 +364,8 @@ class _SongIndex:
                                 "SELECT title, title_ja FROM local_songs "
                                 "WHERE title_ja IS NOT NULL AND title_ja != ''"):
                             if title and norm_text(title):
-                                pairs.add((norm_text(ja), norm_text(title)))
+                                nja = norm_text(ja)
+                                pairs.add((nja, _compact(nja), norm_text(title)))
                     finally:
                         lconn.close()
                 except sqlite3.Error:
@@ -392,28 +395,88 @@ def clear_search_cache():
         _index = _index_key = None
 
 
+def _compact(text):
+    """Letters and digits only (any script): 'a-b c' -> 'abc'."""
+    return "".join(c for c in text if c.isalnum())
+
+
+def _tier(text, kw):
+    """Match quality of normalized `kw` inside normalized `text`: 0 exact,
+    1 prefix, 2 word-boundary, 3 substring, None no match."""
+    pos = text.find(kw)
+    if pos < 0:
+        return None
+    if text == kw:
+        return 0
+    if pos == 0:
+        return 1
+    while pos >= 0:
+        if not text[pos - 1].isalnum():
+            return 2
+        pos = text.find(kw, pos + 1)
+    return 3
+
+
+def _score(text, ctext, kw, words, ckw):
+    """Rank of one normalized title for the query (lower is better, None = no
+    match). 0-3: whole query as a phrase (see _tier); 4/5: every word present
+    in any order (first word is a prefix / not); 6: equal once spaces and
+    punctuation are ignored ('365nichi' ~ '365 nichi no ...')."""
+    t = _tier(text, kw)
+    if t is not None:
+        return t
+    if len(words) > 1 and all(w in text for w in words):
+        return 4 if text.startswith(words[0]) else 5
+    if ckw and ckw in ctext:
+        return 6
+    return None
+
+
 def search_songs(keyword, category=None):
-    """Search the song database (width-, case- and kana-insensitive substring
-    match on the song name). A Japanese keyword also matches songs whose
-    Japanese title (from the local title database) contains it. Shared by the
-    GUI and the command line. The song list is cached until a database file
-    changes."""
+    """Search the song database. Matching is width-, case- and kana-insensitive
+    and ignores spaces/punctuation; several words must all match, in any
+    order. A Japanese keyword also matches songs whose Japanese title (from
+    the local title database) matches. With a keyword the results are ranked
+    (exact title > prefix > word boundary > substring > multi-word >
+    punctuation-insensitive), ties keep database order. Shared by the GUI and
+    the command line. The song list is cached until a database file changes."""
     idx = _song_index()
-    kw = norm_text(keyword).strip() if keyword else ""
+    kw = " ".join(norm_text(keyword).split()) if keyword else ""
     cat = norm_text(category).strip() if category else ""
-    rows = [i for i in range(len(idx.songs))
-            if (not cat or cat in idx.cats[i]) and (not kw or kw in idx.names[i])]
-    out = [i for i in rows]
-    if kw and has_cjk(keyword):
-        titles = {t for ja, t in idx.ja_titles() if kw in ja}
-        if titles:
-            seen = set(out)
-            for i in range(len(idx.songs)):
-                if i in seen or (cat and cat not in idx.cats[i]):
-                    continue
-                name = idx.names[i]
-                if any(t in name for t in titles):
-                    out.append(i)
+    cand = [i for i in range(len(idx.songs)) if not cat or cat in idx.cats[i]]
+    if not kw:
+        out = cand
+    else:
+        words = list(dict.fromkeys(kw.split()))
+        kw = " ".join(words)
+        ckw = _compact(kw)
+        best = {}
+        for i in cand:
+            sc = _score(idx.names[i], idx.cnames[i], kw, words, ckw)
+            if sc is not None:
+                best[i] = sc
+        if has_cjk(keyword):
+            by_title = {}
+            for ja, cja, t in idx.ja_titles():
+                sc = _score(ja, cja, kw, words, ckw)
+                if sc is not None and sc < by_title.get(t, 99):
+                    by_title[t] = sc
+            if by_title:
+                # this song's own Japanese title ranks as such; longer names
+                # merely containing it count as a substring hit (>= 3)
+                groups = {}
+                for t, sc in by_title.items():
+                    groups.setdefault(max(sc, 3), []).append(t)
+                pats = sorted(((sc, re.compile("|".join(map(re.escape, ts))))
+                              for sc, ts in groups.items()), key=lambda p: p[0])
+                for i in cand:
+                    name = idx.names[i]
+                    sc = by_title.get(name)
+                    if sc is None:
+                        sc = next((g for g, pat in pats if pat.search(name)), None)
+                    if sc is not None and sc < best.get(i, 99):
+                        best[i] = sc
+        out = sorted(best, key=lambda i: (best[i], i))
     # Callers get their own dicts, so mutating a result cannot corrupt the cache.
     return [dict(idx.songs[i], files=list(idx.songs[i]["files"])) for i in out]
 
