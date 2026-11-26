@@ -3,8 +3,8 @@ ESEManager command-line mode.
 
     ESEManager-cli status [--offline]
     ESEManager-cli update-db [--force]
-    ESEManager-cli search KEYWORD [-c CATEGORY] [--new] [--limit N]
-    ESEManager-cli download [KEYWORD] [-c CATEGORY] [--all] [-y]
+    ESEManager-cli search KEYWORD [-c CATEGORY]... [--new] [--favourites] [--limit N]
+    ESEManager-cli download [KEYWORD] [-c CATEGORY]... [--all] [--favourites] [-y]
     ESEManager-cli missing [--download] [-y] [--limit N]
     ESEManager-cli updates [--download] [-y] [--limit N]
     ESEManager-cli version-sorting [--force]
@@ -313,8 +313,8 @@ def cmd_search(args, tr):
         cmd = "ESEManager-cli download"
         if args.keyword:
             cmd += " " + quote_arg(args.keyword)
-        if args.category:
-            cmd += " -c " + quote_arg(args.category)
+        for c in args.category or ():
+            cmd += " -c " + quote_arg(c)
         out.msg(paint(tr("cli_next", cmd=cmd), "2"))
     return 0
 
@@ -468,7 +468,8 @@ def build_parser():
 
     sp = sub.add_parser("search", parents=[common], help="search songs")
     sp.add_argument("keyword", nargs="?", default="")
-    sp.add_argument("-c", "--category", help="category name or part of it, e.g. Anime")
+    sp.add_argument("-c", "--category", action="append",
+                    help="category name or part of it, e.g. Anime (repeat for several)")
     sp.add_argument("--new", action="store_true",
                     help="only songs added or changed by the last database update")
     sp.add_argument("--limit", type=int, default=50, help="max rows to print (0 = all)")
@@ -477,7 +478,8 @@ def build_parser():
 
     sp = sub.add_parser("download", parents=[common], help="download matching songs")
     sp.add_argument("keyword", nargs="?", default="")
-    sp.add_argument("-c", "--category", help="category name or part of it, e.g. Anime")
+    sp.add_argument("-c", "--category", action="append",
+                    help="category name or part of it, e.g. Anime (repeat for several)")
     sp.add_argument("--all", action="store_true", help="download every song")
     sp.add_argument("--favourites", action="store_true", help="download the starred songs")
     sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")

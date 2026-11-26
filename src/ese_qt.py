@@ -36,7 +36,8 @@ from PySide6.QtWidgets import (
 
 from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
                        DEFAULT_DOWNLOAD_DIR, resolve_dir)
-from i18n import TR, CATEGORY_NAMES, detect_system_lang
+from category_picker import CategoryPicker
+from i18n import TR, detect_system_lang
 import theme  # light/dark palette and style-sheet helpers
 import icons  # themed SVG icons
 import core
@@ -242,7 +243,7 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(row)
         self.dl_table.verticalHeader().setDefaultSectionSize(row)
         em = fm.horizontalAdvance("M")
-        self.cat_combo.setMinimumWidth(em * 9)
+        self.cat_picker.setMinimumWidth(em * 9)
         self.overall_bar.setMaximumWidth(em * 14)
         self.overall_bar.setMaximumHeight(max(18, fm.height() + 4))
         # Size the path field, not the whole row: the row also holds two
@@ -280,8 +281,8 @@ class MainWindow(QMainWindow):
             win_h = self._cfg_int(prev, "window_h", self.DEFAULT_WINDOW[1], 1)
         else:
             win_w, win_h = self.width(), self.height()
-        cat = self.cat_combo.currentData() if hasattr(self, "cat_combo") else None
-        display = {"page_size": 20, "category": cat or "", "ui_language": self.lang_pref,
+        cats = self.cat_picker.selected() if hasattr(self, "cat_picker") else []
+        display = {"page_size": 20, "categories": cats, "ui_language": self.lang_pref,
                    "last_seen_version": getattr(self, "_last_seen_version",
                                                 prev.get("last_seen_version", "")),
                    "theme": self.theme_pref, "font_scale": self.font_scale,
@@ -467,8 +468,9 @@ class MainWindow(QMainWindow):
         down = QShortcut(QKeySequence(Qt.Key_Down), self.search_edit)
         down.setContext(Qt.WidgetShortcut)
         down.activated.connect(self._search_down)
-        self.cat_combo = QComboBox()
-        self.cat_combo.currentIndexChanged.connect(self._on_category_changed)
+        self.cat_picker = CategoryPicker()
+        self.cat_picker.set_translator(self.tr)
+        self.cat_picker.changed.connect(self._on_category_changed)
         self.filter_btn = QToolButton()
         self.filter_btn.setPopupMode(QToolButton.InstantPopup)
         self.filter_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -478,7 +480,7 @@ class MainWindow(QMainWindow):
         filter_menu.addAction(fa)
         self.filter_btn.setMenu(filter_menu)
         top.addWidget(self.search_edit, 1)
-        top.addWidget(self.cat_combo)
+        top.addWidget(self.cat_picker)
         top.addWidget(self.filter_btn)
         top.addSpacing(12)
         # Most-used maintenance actions; everything else is in the menu bar.
@@ -656,7 +658,7 @@ class MainWindow(QMainWindow):
 
     def _setup_accessibility(self):
         """Logical Tab order, accessible names and shortcut-bearing tooltips."""
-        order = (self.search_edit, self.cat_combo, self.filter_btn, self.db_update_btn,
+        order = (self.search_edit, self.cat_picker, self.filter_btn, self.db_update_btn,
                  self.missing_btn, self.updates_btn, self.table, self.download_btn,
                  self.selall_btn, self.deselall_btn, self.sel_menu_btn, self.pause_btn,
                  self.stop_btn, self.monitor_btn)
@@ -665,7 +667,7 @@ class MainWindow(QMainWindow):
         t = self.tr
         for wdg, name, tip in (
                 (self.search_edit, t("ph"), t("search_tip")),
-                (self.cat_combo, t("acc_category"), t("acc_category_tip")),
+                (self.cat_picker, t("acc_category"), t("acc_category_tip")),
                 (self.filter_btn, t("f_filter"), t("acc_filter_tip")),
                 (self.table, t("acc_table"), t("acc_table_tip")),
                 (self.selall_btn, t("sel_all"), t("selall_tip")),
@@ -1161,20 +1163,31 @@ class MainWindow(QMainWindow):
 
     # ---- categories
     def load_categories(self):
-        self.cat_combo.blockSignals(True)
-        self.cat_combo.clear()
-        self.cat_combo.addItem(self.tr("all_cat"), None)
+        self.cat_picker.blockSignals(True)
+        counts = {}
         try:
-            for name in core.list_categories():
-                self.cat_combo.addItem(CATEGORY_NAMES.get(name, name), name)
+            known = core.list_categories()
+            try:
+                per_cat = core.category_counts()      # once per DB load
+            except Exception:
+                core.log.warning("category_counts failed", exc_info=True)
+                per_cat = {}
+            counts = {name: per_cat.get(name, 0) for name in known}
         except Exception:
             core.log.warning("load_categories failed", exc_info=True)
-        # Restore the category used last time (if it still exists).
-        last = self.config.get("display", {}).get("category")
-        i = self.cat_combo.findData(last) if isinstance(last, str) and last else -1
-        if i > 0:
-            self.cat_combo.setCurrentIndex(i)
-        self.cat_combo.blockSignals(False)
+        # Restore the categories used last time (old configs hold a single one).
+        self.cat_picker.set_categories(
+            counts, self.saved_categories(self.config.get("display", {})))
+        self.cat_picker.blockSignals(False)
+
+    @staticmethod
+    def saved_categories(display):
+        """display.categories (list), falling back to the old display.category."""
+        cats = display.get("categories")
+        if isinstance(cats, list):
+            return [c for c in cats if isinstance(c, str) and c]
+        last = display.get("category")
+        return [last] if isinstance(last, str) and last else []
 
     @staticmethod
     def has_song_db():
@@ -1253,23 +1266,22 @@ class MainWindow(QMainWindow):
 
     def do_search(self):
         kw = self.search_edit.text().strip()
-        cat = self.cat_combo.currentData()
-        self._run_search(kw, cat)
+        self._run_search(kw, self.cat_picker.selected() or None)
 
     def show_all(self):
         self.search_edit.clear()
         self._search_timer.stop()      # clearing the box must not queue a second search
-        self.cat_combo.blockSignals(True)
-        self.cat_combo.setCurrentIndex(0)
-        self.cat_combo.blockSignals(False)
+        self.cat_picker.blockSignals(True)
+        self.cat_picker.set_selected([])
+        self.cat_picker.blockSignals(False)
         self._run_search("", None)
 
     def clear_search(self):
         self.search_edit.clear()
         self._search_timer.stop()
-        self.cat_combo.blockSignals(True)
-        self.cat_combo.setCurrentIndex(0)
-        self.cat_combo.blockSignals(False)
+        self.cat_picker.blockSignals(True)
+        self.cat_picker.set_selected([])
+        self.cat_picker.blockSignals(False)
         self._search_seq += 1          # drop any search still in flight
         self.all_songs = []
         self.song_model.set_songs([])
@@ -1438,7 +1450,7 @@ class MainWindow(QMainWindow):
             self.empty_label.hide()
             return
         searching = (bool(self.search_edit.text().strip())
-                     or self.cat_combo.currentData() is not None
+                     or bool(self.cat_picker.selected())
                      or self.active_filter_count() > 0)
         text = self.tr("no_results" if searching else "no_songs")
         self._suggestions = []
@@ -1573,12 +1585,12 @@ class MainWindow(QMainWindow):
     def select_current_category(self):
         """Check every listed song in the category chosen in the combo (or, when
         showing all categories, the category of the current row)."""
-        cat = self.cat_combo.currentData()
-        if cat is None:
+        cats = set(self.cat_picker.selected())
+        if not cats:
             song = self._row_song(self.table.currentIndex().row())
-            cat = song["category"] if song else None
-        if cat is not None:
-            self.song_model.check_category(cat)
+            cats = {song["category"]} if song else set()
+        if cats:
+            self.song_model.check_where(lambda s: s["category"] in cats)
 
     def jump_to_next_checked(self):
         """Scroll to the next checked row after the current one (wraps around)."""
@@ -2026,6 +2038,7 @@ class MainWindow(QMainWindow):
             self._apply_icons(dark)
             self.log_view.rerender()                       # error colour
             self.song_model.layoutChanged.emit()          # category colours
+            self.cat_picker.refresh_icons(dark)
         except RuntimeError:  # widgets already deleted by Qt
             pass
 

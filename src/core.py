@@ -364,6 +364,22 @@ def list_categories():
         conn.close()
 
 
+def category_counts():
+    """{category name: number of songs with files} in one SQL query (box.def
+    rows excluded). {} when there is no database. Call once per DB load."""
+    if not os.path.exists(DB_PATH):
+        return {}
+    conn = connect_ro(DB_PATH)
+    try:
+        return {n: c for n, c in conn.execute(
+            "SELECT c.name, COUNT(DISTINCT s.id) FROM songs s "
+            "JOIN categories c ON s.category_id = c.id "
+            "JOIN song_files f ON f.song_id = s.id "
+            "WHERE lower(f.filename) != 'box.def' GROUP BY c.name")}
+    finally:
+        conn.close()
+
+
 def count_songs():
     """Number of songs that have files (box.def rows excluded)."""
     conn = connect_ro(DB_PATH)
@@ -524,6 +540,15 @@ def _score(text, ctext, kw, words, ckw):
     return None
 
 
+def _category_keys(category):
+    """Normalised category filters: a string, or a list/tuple of strings (a song
+    matches when its category contains any of them). Blank entries are ignored."""
+    if not category:
+        return []
+    items = [category] if isinstance(category, str) else list(category)
+    return [k for k in (norm_text(c).strip() for c in items if c) if k]
+
+
 def search_songs(keyword, category=None):
     """Search the song database. Matching is width-, case- and kana-insensitive
     and ignores spaces/punctuation; several words must all match, in any
@@ -531,11 +556,14 @@ def search_songs(keyword, category=None):
     the local title database) matches. With a keyword the results are ranked
     (exact title > prefix > word boundary > substring > multi-word >
     punctuation-insensitive), ties keep database order. Shared by the GUI and
-    the command line. The song list is cached until a database file changes."""
+    the command line. `category` is one name (part of it is enough) or a list of
+    names (songs of any of them). The song list is cached until a database file
+    changes."""
     idx = _song_index()
     kw = " ".join(norm_text(keyword).split()) if keyword else ""
-    cat = norm_text(category).strip() if category else ""
-    cand = [i for i in range(len(idx.songs)) if not cat or cat in idx.cats[i]]
+    cats = _category_keys(category)
+    cand = [i for i in range(len(idx.songs))
+            if not cats or any(c in idx.cats[i] for c in cats)]
     if not kw:
         out = cand
     else:

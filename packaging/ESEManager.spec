@@ -27,6 +27,7 @@ _common = dict(
         'models',
         'workers',
         'dialogs',
+        'category_picker',
         'notify',
         'power',
         'cli',

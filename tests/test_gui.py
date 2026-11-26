@@ -202,15 +202,82 @@ def test_empty_state_did_you_mean_links(window, monkeypatch):
     assert ran == ["Beta"]
 
 
-def test_last_category_is_remembered(window, tmp_path, monkeypatch):
+def _cats(monkeypatch, counts):
+    monkeypatch.setattr(core, "list_categories", lambda: sorted(counts))
+    monkeypatch.setattr(core, "category_counts", lambda: counts)
+
+
+def test_last_categories_are_remembered(window, tmp_path, monkeypatch):
     import tomllib
-    monkeypatch.setattr(core, "list_categories", lambda: ["01 Pop", "02 Anime"])
+    _cats(monkeypatch, {"01 Pop": 3, "02 Anime": 5, "03 Vocaloid": 2})
     window.load_categories()
-    window.cat_combo.setCurrentIndex(window.cat_combo.findData("02 Anime"))
+    window.cat_picker.set_selected(["02 Anime", "03 Vocaloid"])
     with open(tmp_path / "config.toml", "rb") as f:
-        assert tomllib.load(f)["display"]["category"] == "02 Anime"
+        assert tomllib.load(f)["display"]["categories"] == ["02 Anime", "03 Vocaloid"]
     window.load_categories()          # reload restores the saved choice
-    assert window.cat_combo.currentData() == "02 Anime"
+    assert window.cat_picker.selected() == ["02 Anime", "03 Vocaloid"]
+
+
+def test_old_single_category_config_is_read(window, monkeypatch):
+    _cats(monkeypatch, {"01 Pop": 3, "02 Anime": 5})
+    window.config["display"] = {"category": "02 Anime"}
+    window.load_categories()
+    assert window.cat_picker.selected() == ["02 Anime"]
+    assert window.saved_categories({"categories": ["x"], "category": "y"}) == ["x"]
+    assert window.saved_categories({}) == []
+
+
+def test_category_picker_counts_dots_and_summary(window, monkeypatch):
+    from PySide6.QtWidgets import QMenu
+    monkeypatch.setattr(QMenu, "exec", lambda *a, **k: None)
+    _cats(monkeypatch, {"01 Pop": 3, "02 Anime": 5, "03 Vocaloid": 2})
+    window.load_categories()
+    p = window.cat_picker
+    texts = [a.text() for _, a in p._items]
+    assert texts[1] == "Anime 動漫音樂 (5)"
+    assert all(not a.icon().isNull() for _, a in p._items)
+    assert p.text() == window.tr("all_cat")
+    p.set_selected(["02 Anime"])
+    assert p.text() == "Anime"
+    p.set_selected(["02 Anime", "03 Vocaloid"])
+    assert p.text() == "Anime + Vocaloid"
+    p.set_selected(["01 Pop", "02 Anime", "03 Vocaloid"][:3])
+    assert p.text() == window.tr("all_cat")      # everything checked = no filter
+    p._items[0][1].setChecked(False)
+    assert p.text() == "Anime + Vocaloid"
+    p._all_act.trigger()
+    assert p.selected() == [] and p.text() == window.tr("all_cat")
+
+
+def test_category_picker_search_and_signal(window, monkeypatch):
+    _cats(monkeypatch, {"01 Pop": 3, "02 Anime": 5, "03 Vocaloid": 2, "04 X": 1})
+    window.load_categories()
+    seen = []
+    monkeypatch.setattr(window, "_run_search", lambda kw, cat: seen.append(cat))
+    window.cat_picker._items[1][1].setChecked(True)
+    window.cat_picker._items[2][1].setChecked(True)
+    assert seen[-1] == ["02 Anime", "03 Vocaloid"]
+    window.cat_picker.set_selected([])
+    assert seen[-1] is None
+    window.cat_picker.setText("x")
+    window.cat_picker._refresh_text()
+    assert window.cat_picker.text() == window.tr("all_cat")
+    window.cat_picker.set_selected(["01 Pop", "02 Anime", "03 Vocaloid"])
+    window.cat_picker._items[3][1].setChecked(False)
+    assert window.cat_picker.text() == window.tr("cat_n", n=3)
+
+
+def test_category_picker_space_toggles_without_closing(window, monkeypatch):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    _cats(monkeypatch, {"01 Pop": 3})
+    window.load_categories()
+    menu = window.cat_picker._menu
+    act = window.cat_picker._items[0][1]
+    menu.setActiveAction(act)
+    menu.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.NoModifier, " "))
+    assert act.isChecked() and window.cat_picker.selected() == ["01 Pop"]
+    assert window.cat_picker.focusPolicy() == Qt.StrongFocus
 
 
 @pytest.mark.parametrize("lang", ["zh_TW", "en", "ja"])
@@ -330,12 +397,12 @@ def test_tab_order_runs_search_to_download(window):
     for i in range(300):
         pos.setdefault(w, i)
         w = w.nextInFocusChain()
-    assert pos[window.search_edit] < pos[window.cat_combo] < pos[window.filter_btn] \
+    assert pos[window.search_edit] < pos[window.cat_picker] < pos[window.filter_btn] \
         < pos[window.table] < pos[window.download_btn] < pos[window.selall_btn]
 
 
 def test_accessible_names_and_shortcut_tooltips(window):
-    for w in (window.search_edit, window.cat_combo, window.table, window.pause_btn,
+    for w in (window.search_edit, window.cat_picker, window.table, window.pause_btn,
               window.stop_btn, window.selall_btn, window.monitor_btn):
         assert w.accessibleName() and w.accessibleDescription()
     assert window.accessibleName() is not None

@@ -225,3 +225,40 @@ def test_filter_by_download():
     assert core.filter_by_download([a, b, c], st, "all") == [a, b, c]
     assert core.filter_by_download([a, b, c], st, "downloaded") == [a]
     assert core.filter_by_download([a, b, c], st, "missing") == [b, c]
+
+
+def _two_cats(db):
+    conn = sqlite3.connect(core.DB_PATH)
+    conn.execute("INSERT INTO categories(id, name, path) VALUES (2, '02 Anime', '02 Anime')")
+    conn.execute("INSERT INTO categories(id, name, path) VALUES (3, '03 Vocaloid', '03 Vocaloid')")
+    for sid, cid, name in ((2, 2, "Naruto"), (3, 2, "Bleach"), (4, 3, "Miku")):
+        conn.execute("INSERT INTO songs(id, category_id, song_name, base_path) "
+                     "VALUES (?, ?, ?, '')", (sid, cid, name))
+        conn.execute("INSERT INTO song_files(song_id, filename, file_path, file_type, size, "
+                     "download_url) VALUES (?, ?, ?, '.tja', 0, '')", (sid, name + ".tja", name))
+    conn.execute("INSERT INTO song_files(song_id, filename, file_path, file_type, size, "
+                 "download_url) VALUES (3, 'box.def', 'box.def', '.def', 0, '')")
+    conn.commit()
+    conn.close()
+
+
+def test_category_counts(db):
+    _two_cats(db)
+    assert core.category_counts() == {"01 Pop": 1, "02 Anime": 2, "03 Vocaloid": 1}
+
+
+def test_category_counts_without_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "none.db"))
+    assert core.category_counts() == {}
+
+
+def test_search_multiple_categories(db):
+    _two_cats(db)
+    names = lambda c: sorted(s["song_name"] for s in core.search_songs("", c))
+    assert names("anime") == ["Bleach", "Naruto"]                   # single string still works
+    assert names(["anime", "vocaloid"]) == ["Bleach", "Miku", "Naruto"]
+    assert names(("02 Anime", "01 Pop")) == ["Bleach", "Naruto", "Song"]
+    assert names([]) == names(None) == ["Bleach", "Miku", "Naruto", "Song"]
+    assert names(["", "pop"]) == ["Song"]                           # blanks ignored
+    assert [s["song_name"] for s in core.search_songs("miku", ["pop", "vocaloid"])] == ["Miku"]
+    assert core.search_songs("miku", ["pop"]) == []
