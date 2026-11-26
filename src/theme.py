@@ -326,11 +326,20 @@ QLineEdit, QComboBox {{
 QLineEdit:focus, QComboBox:focus, QComboBox:on {{
     border:1px solid {t['highlight']};
 }}
+QLabel#sectionHeader {{ font-weight:700; font-size:14px; color:{t['text']}; padding-top:2px; }}
+QFrame#sectionRule {{ background:{t['border']}; border:none; }}
+QLabel#helperText {{ color:{t['muted']}; font-size:12px; }}
 QComboBox::drop-down {{ border:none; width:24px; }}
 QComboBox::down-arrow {{ image:url({_chevron_icon(t['muted'])}); width:14px; height:14px; }}
 QComboBox QAbstractItemView {{ background:{t['base']}; border:1px solid {t['border']};
     selection-background-color:{t['highlight']}; selection-color:{t['highlight_text']}; outline:0; }}
 QLineEdit:disabled, QComboBox:disabled {{ background:{t['window']}; color:{t['disabled_text']}; }}
+QPlainTextEdit, QListWidget {{
+    background:{t['base']}; color:{t['text']};
+    border:1px solid {t['border']}; border-radius:6px; outline:0; padding:4px;
+    selection-background-color:{t['highlight']}; selection-color:{t['highlight_text']};
+}}
+QTabWidget::pane {{ border:none; border-top:1px solid {t['border']}; top:-1px; }}
 QTableView {{
     background:{t['base']}; alternate-background-color:{t['alt_base']};
     border:1px solid {t['border']}; border-radius:6px; outline:0;
