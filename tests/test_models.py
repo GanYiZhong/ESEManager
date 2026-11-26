@@ -1,9 +1,9 @@
 """Tests for SongModel sorting, checked-state tracking and tooltips."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPersistentModelIndex
 
 from i18n import CATEGORY_NAMES
-from models import SongModel
+from models import SongModel, DownloadModel, natural_key
 
 
 def tr(key, **kw):
@@ -154,10 +154,13 @@ def test_set_all_false_clears(qapp):
     assert m.selected_songs() == []
 
 
-def test_set_songs_resets_checked(qapp):
+def test_set_songs_keeps_checked_for_remaining_songs(qapp):
     m = make_model()
     check(m, "Bravo")
-    m.set_songs(list(SONGS))
+    check(m, "alpha")
+    m.set_songs([SONGS[0], SONGS[2]])            # alpha dropped, Bravo stays
+    assert m.checked == {("Bravo", "POPS")}
+    m.set_songs([])
     assert m.checked == set()
 
 
@@ -194,3 +197,77 @@ def test_level_tooltip_missing_value(qapp):
     m = make_model()
     r = row_of(m, "Charlie")
     assert m.data(m.index(r, 5), Qt.ToolTipRole) == "c_easy: −"
+
+
+# ------------------------------------------------------- natural sorting
+def test_natural_key_numbers_and_kana():
+    assert natural_key("Song 2") < natural_key("Song 10")
+    assert natural_key("ｱ") == natural_key("あ") == natural_key("ア")   # width + kana
+    assert natural_key("１０") > natural_key("９")                     # fullwidth digits
+    natural_key("")
+    natural_key(None)                                                  # never raises
+
+
+def test_sort_names_numerically(qapp):
+    songs = [{"song_name": n, "category": "POPS", "files": []}
+             for n in ("Song 10", "song 2", "Song 1")]
+    m = make_model(songs)
+    m.sort(1, Qt.AscendingOrder)
+    assert names(m) == ["Song 1", "song 2", "Song 10"]
+
+
+def test_sort_is_stable_for_ties(qapp):
+    songs = [{"song_name": f"S{i}", "category": "POPS", "files": []} for i in range(5)]
+    m = make_model(songs)
+    m.sort(10, Qt.AscendingOrder)      # all equal file counts
+    assert names(m) == ["S0", "S1", "S2", "S3", "S4"]
+    m.sort(10, Qt.DescendingOrder)
+    assert names(m) == ["S0", "S1", "S2", "S3", "S4"]
+
+
+def test_sort_keeps_persistent_index(qapp):
+    m = make_model()
+    pi = QPersistentModelIndex(m.index(0, 1))      # Bravo
+    m.sort(1, Qt.AscendingOrder)
+    assert pi.row() == 1 and m.data(m.index(pi.row(), 1)) == "Bravo"
+
+
+def test_meta_replacement_refreshes_cells_and_sort(qapp):
+    m = make_model()
+    m.sort(5, Qt.AscendingOrder)
+    m.meta_map = {"Charlie": {"level_easy": 0}}
+    m.sort(5, Qt.AscendingOrder)
+    assert names(m)[0] == "Charlie"
+    assert m.data(m.index(0, 5)) == "0"
+
+
+# ------------------------------------------------------ selection signals
+def test_set_all_emits_single_range(qapp):
+    m = make_model()
+    got = []
+    m.dataChanged.connect(lambda tl, br, roles: got.append((tl.row(), br.row(), tl.column(), br.column())))
+    m.set_all(True)
+    assert got == [(0, 2, 0, 0)]
+    m.set_all(True)                     # no change -> no signal
+    assert len(got) == 1
+
+
+# ------------------------------------------------------- download model
+def make_dl(n=10):
+    d = DownloadModel(tr)
+    d.load([({"song_name": "S"}, {"file_path": f"p{i}", "filename": f"f{i}"}) for i in range(n)])
+    return d
+
+
+def test_update_many_batches_adjacent_rows(qapp):
+    d = make_dl()
+    got = []
+    d.dataChanged.connect(lambda tl, br, roles: got.append((tl.row(), br.row(), tl.column(), br.column())))
+    d.update_many({"p5": ("downloading", 10, 1), "p1": ("done", 100, 0),
+                   "p2": ("done", 100, 0), "p3": ("failed", 0, 0), "nope": ("x", 0, 0)})
+    assert got == [(1, 3, 2, 4), (5, 5, 2, 4)]     # never touches file/song columns
+    assert d.data(d.index(5, 3)) == "10%"
+    assert d.data(d.index(1, 2)) == "st_done"
+    got.clear()
+    d.update_many({"zzz": ("x", 0, 0)})
+    assert got == []

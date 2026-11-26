@@ -812,8 +812,8 @@ class MainWindow(QMainWindow):
         else:
             self.overall_label.setText(
                 f"{done}/{total}  ·  {human_speed(spd)}  ·  ETA {human_eta(eta)}")
-        for fp, (status, pct, speed) in dirty.items():
-            self.dl_model.update(fp, status, pct, speed)
+        if dirty:
+            self.dl_model.update_many(dirty)
 
     def toggle_pause(self):
         if not (self.dl_thread and self.dl_thread.isRunning()):
