@@ -330,6 +330,8 @@ def cmd_self_update(args, tr):
 def build_parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--dir", help="download folder (default: config.toml or ./Downloads)")
+    common.add_argument("--source", help="download host: ese, taiko.ac or a base URL "
+                        "(default: config.toml or ese; the other host is the fallback)")
     common.add_argument("--workers", type=int, default=None,
                         help=f"parallel downloads, 1-{MAX_WORKERS} "
                              f"(default: config.toml or {DEFAULT_WORKERS})")
@@ -406,6 +408,7 @@ def main(argv=None):
     tr = make_tr(detect_system_lang() if pref in (None, "auto") else pref)
     args.dir = resolve_dir(args.dir or cfg.get("download", {}).get("directory")
                            or DEFAULT_DOWNLOAD_DIR)
+    core.set_download_source(args.source or cfg.get("download", {}).get("source"))
     if args.workers is None:
         args.workers = cfg.get("download", {}).get("workers", DEFAULT_WORKERS)
     try:

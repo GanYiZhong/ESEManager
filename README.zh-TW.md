@@ -14,6 +14,8 @@
 - 歌曲資料庫由 GitHub 每 6 小時從 ESE 自動重建；按「更新資料庫」即下載最新版，
   啟動時有新版也會詢問
 - 下載會驗證（TLS、檔案大小、譜面的 git blob 雜湊），並先寫到 `.part` 檔，中斷也不會留下壞檔
+- **鏡像站**：設定裡可選下載來源（ESE 官方或 [git.taiko.ac](https://git.taiko.ac/zdon/ESE) 鏡像），
+  選的來源連不上、找不到檔案或內容不符時，會自動改用另一個
 - 淺色／深色主題，介面語言自動偵測（English／繁體中文／日本語）
 - 一鍵下載 [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)（YataiDON 版本分類資料夾）
   到下載目錄：**檔案 → 下載版本分類**
@@ -53,6 +55,7 @@ ESEManager-cli self-update                 # 下載最新版 ESEManager 並覆�
 |---|---|---|
 | `--dir 資料夾` | 全部 | 下載目錄（預設讀 `config.toml`，否則為程式旁的 `Downloads`） |
 | `--workers N` | download、missing、updates | 並行下載數 1–8（預設讀 `config.toml`，否則 3） |
+| `--source S` | download、updates | 下載來源：`ese`、`taiko.ac` 或自訂網址（預設讀 `config.toml`，否則 `ese`；另一個自動當備援） |
 | `--lang zh_TW\|en\|ja` | 全部 | 訊息語言 |
 | `--json` | 全部 | stdout 每行輸出一個 JSON 物件，訊息改到 stderr |
 | `-c`, `--category 名稱` | search、download | 分類或分類名稱的一部分（`-c Anime`） |
@@ -165,3 +168,4 @@ packaging/   PyInstaller spec
 
 譜面來自 ESE 專案：<https://ese.tjadataba.se/ESE/ESE>
 （舊主機 `git.vanillaaaa.org` 已停用、無法訪問。）
+鏡像：<https://git.taiko.ac/zdon/ESE>（路徑相同，可能比官方晚一點同步；下載仍以資料庫記錄的雜湊驗證）

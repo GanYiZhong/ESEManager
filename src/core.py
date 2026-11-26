@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
+                       ESE_MIRROR_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
                        UnsafePathError, LATEST_RELEASE_API, is_newer,
                        APP_VERSION, parse_version,
@@ -440,6 +441,32 @@ def find_updates(download_dir, category=None, progress=None):
 
 
 # ---------------------------------------------------------------- downloads
+_download_source = "ese"
+
+
+def set_download_source(pref):
+    """Preferred download host from config (download.source): a name from
+    DOWNLOAD_SOURCES or an http(s) base URL. Unknown values mean "ese"."""
+    global _download_source
+    _download_source = pref if isinstance(pref, str) and pref.strip() else "ese"
+
+
+def source_bases(pref=None):
+    """Base URLs to try for a song file, preferred first; the other known
+    hosts follow as fallbacks (they serve the same repository paths)."""
+    pref = (pref or _download_source).strip()
+    known = {"ese": ESE_RAW_BASE, "taiko.ac": ESE_MIRROR_BASE}
+    first = known.get(pref)
+    if first is None and pref.lower().startswith(("http://", "https://")):
+        first = pref if pref.endswith("/") else pref + "/"
+    first = first or ESE_RAW_BASE
+    return [first] + [b for b in (ESE_RAW_BASE, ESE_MIRROR_BASE) if b != first]
+
+
+def _host(url):
+    return urllib.parse.urlsplit(url).netloc or url
+
+
 class Downloader:
     """Download (song, file) pairs in parallel into download_dir.
 
@@ -450,8 +477,13 @@ class Downloader:
     a callback per chunk.
     """
 
-    def __init__(self, files, download_dir, workers, overwrite=False, tr=None, log=None):
+    def __init__(self, files, download_dir, workers, overwrite=False, tr=None, log=None,
+                 bases=None):
         self.files = files
+        # Hosts tried in order for each file; a host that works after the
+        # first one failed moves to the front for the rest of the job.
+        self.bases = list(bases) if bases else source_bases()
+        self._switched = set()
         self.download_dir = download_dir
         self.workers = max(1, workers)
         self.overwrite = overwrite     # True = replace existing files (update mode)
@@ -520,6 +552,33 @@ class Downloader:
             sess.close()
         return self.dl, self.skip, self.fail, self.total
 
+    def _urls(self, f):
+        """Candidate URLs for one file: the known hosts (same repository paths)
+        in the current order. A recorded link to some other host (an old
+        database row, a test server) is tried first."""
+        fp = f["file_path"]
+        q = urllib.parse.quote(fp)
+        with self._lock:
+            bases = list(self.bases)
+        urls = [b + q for b in bases]
+        rec = live_url(f["download_url"] or "")
+        if rec and rec not in urls and not rec.startswith(ESE_RAW_BASE):
+            urls.insert(0, rec)
+        return urls
+
+    def _worked(self, url):
+        """Move the host that served `url` to the front (logged once)."""
+        with self._lock:
+            base = next((b for b in self.bases if url.startswith(b)), None)
+            if base is None or self.bases[0] == base:
+                return
+            self.bases.remove(base)
+            self.bases.insert(0, base)
+            first = base not in self._switched
+            self._switched.add(base)
+        if first:
+            self.log(self.tr("log_mirror", host=_host(base)))
+
     def _one(self, sess, sha_map, item):
         song, f = item
         self._pause.wait()             # wait here while paused (before a file starts)
@@ -535,45 +594,24 @@ class Downloader:
                 self._mark(fp, "skipped", 100.0, 0.0)
                 return
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            # Old databases may have rows with an empty download_url; the link
-            # follows from file_path, so derive it when missing.
-            dl_url = f["download_url"] or (ESE_RAW_BASE + urllib.parse.quote(fp))
             part = save_path + ".part"
-            with get_with_retry(sess, live_url(dl_url), stream=True, timeout=60,
-                                stop=lambda: self._stop) as r:
-                clen = int(r.headers.get("content-length", 0) or 0)
-                got = 0
-                ft0 = time.time()
-                last = 0.0
-                with open(part, "wb") as out:
-                    for chunk in r.iter_content(chunk_size=65536):
-                        if self._stop:
-                            raise InterruptedError(self.tr("log_cancelled"))
-                        if not self._pause.is_set():       # paused mid-file
-                            self._mark(fp, "paused", 0.0, 0.0)
-                            self._pause.wait()
-                            if self._stop:
-                                raise InterruptedError(self.tr("log_cancelled"))
-                        if not chunk:
-                            continue
-                        out.write(chunk)
-                        got += len(chunk)
-                        with self._lock:
-                            self.bytes_total += len(chunk)
-                        now = time.time()
-                        if now - last >= 0.2:            # at most 5 updates/s per file
-                            last = now
-                            fe = now - ft0
-                            spd = (got / 1024 / 1024) / fe if fe > 0 else 0
-                            pct = (got / clen * 100) if clen else 50.0
-                            self._mark(fp, "downloading", pct, spd)
-            if clen and got != clen:
-                raise IOError(self.tr("log_short", got=got, want=clen))
             want = sha_map.get(fp)
-            if want and not is_lfs_path(fp):
-                # Re-hash as a git blob (needs the size prefix, so hash the file).
-                if git_blob_sha(part) != want:
-                    raise IOError(self.tr("log_sha_mismatch"))
+            check = want if want and not is_lfs_path(fp) else None
+            err = None
+            for url in self._urls(f):
+                if self._stop:
+                    raise InterruptedError(self.tr("log_cancelled"))
+                try:
+                    got = self._fetch(sess, url, part, fp, check)
+                    self._worked(url)
+                    break
+                except InterruptedError:
+                    raise
+                except Exception as e:              # try the next host
+                    log.info("%s: %s", url, e)
+                    err = e
+            else:
+                raise err or IOError("no download source")
             os.replace(part, save_path)
             part = None
             forget_blob_sha(save_path)
@@ -592,6 +630,45 @@ class Downloader:
                     os.remove(part)
                 except OSError:
                     pass
+
+    def _fetch(self, sess, url, part, fp, want_sha):
+        """Download url into part and check its length and (non-LFS) git blob
+        sha. Returns the byte count; raises on any problem."""
+        got = 0
+        with get_with_retry(sess, url, stream=True, timeout=60,
+                            stop=lambda: self._stop) as r:
+            clen = int(r.headers.get("content-length", 0) or 0)
+            ft0 = time.time()
+            last = 0.0
+            with open(part, "wb") as out:
+                for chunk in r.iter_content(chunk_size=65536):
+                    if self._stop:
+                        raise InterruptedError(self.tr("log_cancelled"))
+                    if not self._pause.is_set():       # paused mid-file
+                        self._mark(fp, "paused", 0.0, 0.0)
+                        self._pause.wait()
+                        if self._stop:
+                            raise InterruptedError(self.tr("log_cancelled"))
+                    if not chunk:
+                        continue
+                    out.write(chunk)
+                    got += len(chunk)
+                    with self._lock:
+                        self.bytes_total += len(chunk)
+                    now = time.time()
+                    if now - last >= 0.2:            # at most 5 updates/s per file
+                        last = now
+                        fe = now - ft0
+                        spd = (got / 1024 / 1024) / fe if fe > 0 else 0
+                        pct = (got / clen * 100) if clen else 50.0
+                        self._mark(fp, "downloading", pct, spd)
+        if clen and got != clen:
+            raise IOError(self.tr("log_short", got=got, want=clen))
+        # Re-hash as a git blob (needs the size prefix, so hash the file).
+        # A mirror that lags behind fails here and the next host is tried.
+        if want_sha and git_blob_sha(part) != want_sha:
+            raise IOError(self.tr("log_sha_mismatch"))
+        return got
 
     def _fetch_boxdefs(self, sess):
         """Create box.def for each category folder touched by this download."""
@@ -616,9 +693,17 @@ class Downloader:
                 if os.path.exists(dest):
                     continue
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                r = get_with_retry(sess, ESE_RAW_BASE + urllib.parse.quote(fp), timeout=30,
-                                   stop=lambda: self._stop)
-                write_atomic(dest, r.content)
+                data, err = None, None
+                for url in self._urls({"file_path": fp, "download_url": ""}):
+                    try:
+                        data = get_with_retry(sess, url, timeout=30,
+                                              stop=lambda: self._stop).content
+                        break
+                    except Exception as e:
+                        err = e
+                if data is None:
+                    raise err
+                write_atomic(dest, data)
                 self.log(f"📦 box.def: {cat}")
             except Exception as e:
                 self.log(f"box.def {cat}: {e}")

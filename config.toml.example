@@ -7,6 +7,10 @@ directory = "Downloads"
 # Parallel downloads (1-8). Keep it low to be gentle with the ESE server.
 workers = 3
 
+# Where song files come from: "ese" (ese.tjadataba.se), "taiko.ac" (git.taiko.ac mirror)
+# or a base URL ending in /media/branch/master/. The other host is used when it fails.
+source = "ese"
+
 [display]
 # Kept for compatibility (not used by the current GUI)
 page_size = 20

@@ -17,6 +17,9 @@ from the **ESE (Every Song Ever)** project.
   latest one, and the app offers it on startup when a newer one exists
 - Downloads are verified (TLS, size and git blob hash for charts) and written to a `.part` file
   first, so an interrupted download never leaves a broken file behind
+- **Mirror**: choose the download source in Settings (ESE official or the
+  [git.taiko.ac](https://git.taiko.ac/zdon/ESE) mirror); when it is down, lacks a file or serves
+  outdated content, the other one is used automatically
 - Light / dark theme and UI language auto-detect (English / 繁體中文 / 日本語)
 - One-click download of [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)
   (YataiDON version folders) into the download folder: **File → Download version sorting**
@@ -60,6 +63,7 @@ ESEManager-cli self-update                 # install the latest ESEManager over 
 |---|---|---|
 | `--dir DIR` | all | download folder (default: `config.toml`, else `Downloads` next to the app) |
 | `--workers N` | download, missing, updates | parallel downloads, 1–8 (default: `config.toml`, else 3) |
+| `--source S` | download, updates | download host: `ese`, `taiko.ac` or a base URL (default: `config.toml`, else `ese`; the other is the fallback) |
 | `--lang zh_TW\|en\|ja` | all | message language |
 | `--json` | all | one JSON object per line on stdout; messages go to stderr |
 | `-c`, `--category NAME` | search, download | category, or part of its name (`-c Anime`) |
@@ -181,4 +185,6 @@ packaging/   PyInstaller spec
 ## Data source
 
 Charts come from the ESE project: <https://ese.tjadataba.se/ESE/ESE>
+Mirror: <https://git.taiko.ac/zdon/ESE> (same paths, may sync a little later; downloads are still
+checked against the hashes in the database)
 (The former host `git.vanillaaaa.org` is no longer available.)

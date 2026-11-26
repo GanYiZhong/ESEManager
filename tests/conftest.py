@@ -39,3 +39,12 @@ def http_dir(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_mirror(monkeypatch):
+    """Downloads fall back to the public mirror; keep tests off the network
+    (port 9 on localhost refuses at once)."""
+    import core
+    monkeypatch.setattr(core, "ESE_MIRROR_BASE", "http://127.0.0.1:9/mirror/")
+    monkeypatch.setattr(core, "_download_source", "ese")

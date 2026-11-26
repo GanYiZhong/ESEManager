@@ -129,7 +129,9 @@ class MainWindow(QMainWindow):
             display["splitter"] = prev["splitter"]
         cfg = {
             "download": {"directory": self.dir_edit.text(),
-                         "workers": self.workers_spin.value()},
+                         "workers": self.workers_spin.value(),
+                         "source": (self.source_combo.currentData()
+                                    if hasattr(self, "source_combo") else "ese")},
             "display": display,
         }
         self.config = {**self.config, "display": display}
@@ -468,6 +470,20 @@ class MainWindow(QMainWindow):
         self.workers_spin.setValue(self._cfg_int(self.config.get("download", {}), "workers", 3, 1))
         self.workers_spin.valueChanged.connect(lambda _: self.save_config())
         form.addRow(self.tr("workers"), self.workers_spin)
+        self.source_combo = QComboBox()
+        self.source_combo.setToolTip(self.tr("src_tip"))
+        self.source_combo.addItem(self.tr("src_ese"), "ese")
+        self.source_combo.addItem(self.tr("src_mirror"), "taiko.ac")
+        src = self.config.get("download", {}).get("source", "ese")
+        if isinstance(src, str) and src.lower().startswith(("http://", "https://")):
+            self.source_combo.addItem(self.tr("src_custom", u=src), src)
+        idx = self.source_combo.findData(src)
+        self.source_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        core.set_download_source(self.source_combo.currentData())
+        self.source_combo.currentIndexChanged.connect(self.change_source)
+        lbl = QLabel(self.tr("src_label"))
+        lbl.setToolTip(self.tr("src_tip"))
+        form.addRow(lbl, self.source_combo)
         self.lang_combo = QComboBox()
         for label, code in (("自動 Auto", "auto"), ("繁體中文", "zh_TW"),
                             ("English", "en"), ("日本語", "ja")):
@@ -489,6 +505,10 @@ class MainWindow(QMainWindow):
         close.clicked.connect(dlg.accept)
         form.addRow(close)
         dlg.finished.connect(lambda _=None: self.save_config())
+
+    def change_source(self, _=None):
+        core.set_download_source(self.source_combo.currentData())
+        self.save_config()
 
     def open_settings(self):
         self.settings_dlg.show()

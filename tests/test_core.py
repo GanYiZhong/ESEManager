@@ -106,3 +106,54 @@ def test_downloader_runs_without_qt(db, tmp_path, http_dir):
     assert job.run() == (1, 0, 0, 1)
     assert (tmp_path / "dl/01 Pop/Song/Song.tja").read_bytes() == b"x"
     assert any("Song.tja" in m for m in logs)
+
+
+def test_source_bases_order(monkeypatch):
+    monkeypatch.setattr(core, "ESE_RAW_BASE", "https://ese/")
+    monkeypatch.setattr(core, "ESE_MIRROR_BASE", "https://mirror/")
+    assert core.source_bases("ese") == ["https://ese/", "https://mirror/"]
+    assert core.source_bases("taiko.ac") == ["https://mirror/", "https://ese/"]
+    assert core.source_bases("https://my.site/x") == ["https://my.site/x/", "https://ese/",
+                                                      "https://mirror/"]
+    assert core.source_bases("nonsense") == ["https://ese/", "https://mirror/"]
+    core.set_download_source("taiko.ac")
+    assert core.source_bases()[0] == "https://mirror/"
+
+
+def test_download_falls_back_to_mirror(db, tmp_path, http_dir):
+    www, base = http_dir
+    # The "official" host serves outdated content (checksum mismatch) for A
+    # and nothing for B; the mirror has both.
+    for host, files in (("main", {"A.tja": b"old"}), ("mirror", {"A.tja": b"new", "B.tja": b"b"})):
+        d = www / host / "01 Pop" / "S"
+        d.mkdir(parents=True)
+        for n, data in files.items():
+            (d / n).write_bytes(data)
+    conn = sqlite3.connect(core.DB_PATH)
+    shas = {"A.tja": core.git_blob_sha_bytes(b"new"), "B.tja": core.git_blob_sha_bytes(b"b")}
+    files = []
+    for n, sha in shas.items():
+        fp = f"01 Pop/S/{n}"
+        conn.execute("INSERT INTO song_files (song_id, filename, file_path, blob_sha) "
+                     "VALUES (1, ?, ?, ?)", (n, fp, sha))
+        files.append(({"song_name": "S"}, {"filename": n, "file_path": fp, "download_url": ""}))
+    conn.commit()
+    conn.close()
+    logs = []
+    job = core.Downloader(files, str(tmp_path / "dl"), 1, log=logs.append,
+                          bases=[base + "main/", base + "mirror/"])
+    assert job.run() == (2, 0, 0, 2)
+    assert (tmp_path / "dl/01 Pop/S/A.tja").read_bytes() == b"new"
+    assert (tmp_path / "dl/01 Pop/S/B.tja").read_bytes() == b"b"
+    assert job.bases[0] == base + "mirror/"              # kept for the rest of the job
+    assert sum("log_mirror" in m for m in logs) == 1
+
+
+def test_download_fails_when_no_host_has_it(db, tmp_path, http_dir):
+    www, base = http_dir
+    files = [({"song_name": "S"}, {"filename": "X.tja", "file_path": "01 Pop/S/X.tja",
+                                   "download_url": ""})]
+    job = core.Downloader(files, str(tmp_path / "dl"), 1,
+                          bases=[base + "a/", base + "b/"])
+    assert job.run() == (0, 0, 1, 1)
+    assert not list((tmp_path / "dl").rglob("*.part"))

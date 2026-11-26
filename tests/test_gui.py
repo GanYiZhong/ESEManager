@@ -135,3 +135,11 @@ def test_update_button_from_source_opens_release_page(window, monkeypatch):
     assert not window.app_update_btn.isHidden()
     window.app_update_btn.click()
     assert opened == ["https://github.com/x/y/releases/tag/v2099.1.1"]
+
+
+def test_download_source_setting_is_saved(window, tmp_path):
+    import tomllib
+    window.source_combo.setCurrentIndex(window.source_combo.findData("taiko.ac"))
+    assert core._download_source == "taiko.ac"
+    with open(tmp_path / "config.toml", "rb") as f:
+        assert tomllib.load(f)["download"]["source"] == "taiko.ac"
