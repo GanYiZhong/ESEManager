@@ -356,21 +356,24 @@ TR["zh_TW"].update({
     "th_auto": "跟隨系統",
     "th_light": "淺色",
     "th_dark": "深色",
-    "th_tip": "切換淺色或深色外觀；「跟隨系統」會依作業系統設定自動切換。",
+    "th_hc": "高對比",
+    "th_tip": "切換淺色、深色或高對比外觀；「跟隨系統」會依作業系統設定（含 Windows 高對比模式）自動切換。",
 })
 TR["en"].update({
     "th_label": "Theme",
     "th_auto": "Auto (system)",
     "th_light": "Light",
     "th_dark": "Dark",
-    "th_tip": "Switch between light and dark appearance. Auto follows the operating system setting.",
+    "th_hc": "High contrast",
+    "th_tip": "Switch between light, dark and high-contrast appearance. Auto follows the operating system setting, including Windows high-contrast mode.",
 })
 TR["ja"].update({
     "th_label": "テーマ",
     "th_auto": "自動（システム）",
     "th_light": "ライト",
     "th_dark": "ダーク",
-    "th_tip": "外観をライトまたはダークに切り替えます。「自動」は OS の設定に合わせて切り替わります。",
+    "th_hc": "ハイコントラスト",
+    "th_tip": "外観をライト・ダーク・ハイコントラストに切り替えます。「自動」は OS の設定（Windows のハイコントラストを含む）に合わせて切り替わります。",
 })
 
 

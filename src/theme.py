@@ -17,7 +17,7 @@ import weakref
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QGuiApplication, QPalette
 
-MODES = ("auto", "light", "dark")
+MODES = ("auto", "light", "dark", "high_contrast")
 
 # Colour tokens per mode. Palette keys feed QPalette; the rest feed the helpers.
 _TOKENS = {
@@ -39,12 +39,14 @@ _TOKENS = {
         "header_bg": "#ECEEF1", "progress_track": "#DADDE1", "progress_chunk": "#90CAF9",
         "scroll_handle": "#B4B4B4", "check_border": "#8A8A8A",
         # status glyph / text colours (contrast >= 3:1 on white rows)
-        "st_done": "#2E7D32", "st_partial": "#B26A00", "st_none": "#8A8A8A",
-        "st_active": "#1565C0", "st_fail": "#C62828", "st_paused": "#B26A00",
+        # Colour-blind-safe (Okabe-Ito derived): blue / amber / red, never a
+        # red-green pair; glyphs and text labels back every colour up anyway.
+        "st_done": "#0072B2", "st_partial": "#B8860B", "st_none": "#767676",
+        "st_active": "#5E35B1", "st_fail": "#B3261E", "st_paused": "#B8860B",
         "st_skipped": "#6B6B6B",
-        # difficulty level bars: easy, normal, hard, oni, ura
-        "lv_easy": "#E53935", "lv_normal": "#43A047", "lv_hard": "#1E88E5",
-        "lv_oni": "#D81B60", "lv_ura": "#8E24AA",
+        # difficulty level bars: easy, normal, hard, oni, ura (Okabe-Ito derived)
+        "lv_easy": "#D55E00", "lv_normal": "#00896A", "lv_hard": "#0072B2",
+        "lv_oni": "#B34D86", "lv_ura": "#6B5B00",
         "lv_default": "#888888",
     },
     True: {  # dark
@@ -65,14 +67,42 @@ _TOKENS = {
         "border": "#4A4A4A", "button_hover": "#464646", "button_pressed": "#525252",
         "header_bg": "#323232", "progress_track": "#3A3A3A", "progress_chunk": "#1F6AB5",
         "scroll_handle": "#5E5E5E", "check_border": "#A0A0A0",
-        "st_done": "#66BB6A", "st_partial": "#FFA726", "st_none": "#7A7A7A",
-        "st_active": "#42A5F5", "st_fail": "#EF5350", "st_paused": "#FFA726",
+        "st_done": "#56B4E9", "st_partial": "#F0E442", "st_none": "#9A9A9A",
+        "st_active": "#B39DDB", "st_fail": "#FF8A50", "st_paused": "#F0E442",
         "st_skipped": "#9E9E9E",
-        "lv_easy": "#E53935", "lv_normal": "#43A047", "lv_hard": "#1E88E5",
-        "lv_oni": "#D81B60", "lv_ura": "#8E24AA",
+        "lv_easy": "#E69F00", "lv_normal": "#009E73", "lv_hard": "#56B4E9",
+        "lv_oni": "#CC79A7", "lv_ura": "#F0E442",
         "lv_default": "#888888",
     },
+    # High contrast: white on black, yellow selection/focus, text pairs >= 7:1
+    "hc": {
+        "window": "#000000", "window_text": "#FFFFFF",
+        "base": "#000000", "alt_base": "#141414", "text": "#FFFFFF",
+        "button": "#000000", "button_text": "#FFFFFF", "bright_text": "#FF9090",
+        "highlight": "#FFFF00", "highlight_text": "#000000",
+        "tooltip_base": "#000000", "tooltip_text": "#FFFFFF",
+        "link": "#6FD8FF", "placeholder": "#D0D0D0",
+        "mid": "#FFFFFF", "dark": "#FFFFFF", "light": "#FFFFFF",
+        "disabled_text": "#B8B8B8",
+        "accent": "#00FF7F", "accent_hover": "#FFFFFF", "accent_text": "#000000",
+        "disabled_bg": "#000000", "disabled_fg": "#B8B8B8",
+        "hint_bg": "#000000", "hint_fg": "#FFFF00", "hint_border": "#FFFF00",
+        "muted": "#D8D8D8", "success": "#00FF7F",
+        "border": "#FFFFFF", "button_hover": "#333333", "button_pressed": "#4D4D4D",
+        "header_bg": "#000000", "progress_track": "#000000", "progress_chunk": "#0040A0",
+        "scroll_handle": "#FFFFFF", "check_border": "#FFFFFF",
+        "st_done": "#5CC8FF", "st_partial": "#FFFF4D", "st_none": "#BFBFBF",
+        "st_active": "#D0B0FF", "st_fail": "#FF9A66", "st_paused": "#FFFF4D",
+        "st_skipped": "#C8C8C8",
+        "lv_easy": "#FFB000", "lv_normal": "#00E0A0", "lv_hard": "#5CC8FF",
+        "lv_oni": "#FF7AC8", "lv_ura": "#FFFF4D",
+        "lv_default": "#BFBFBF",
+        # layout tokens: 2px borders and focus rings in a bright colour
+        "hc": "1", "border_px": "2", "focus": "#FFFF00",
+    },
 }
+for _k in (False, True):
+    _TOKENS[_k].update(hc="", border_px="1", focus=_TOKENS[_k]["highlight"])
 
 # Palette role -> colour token.
 _ROLES = {
@@ -88,8 +118,8 @@ _ROLES = {
 _DISABLED_ROLES = (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
                    QPalette.HighlightedText)
 
-_state = {"app": None, "mode": "auto", "dark": False, "hooked": False,
-          "fusion": False}
+_state = {"app": None, "mode": "auto", "dark": False, "hc": False,
+          "hooked": False, "fusion": False}
 _listeners = []
 
 
@@ -102,9 +132,46 @@ def os_is_dark():
         return False
 
 
+def os_high_contrast():
+    """True when Windows high-contrast mode is on (SPI_GETHIGHCONTRAST).
+
+    Best effort: always False off Windows or if the call fails (Qt's
+    colorScheme() does not report high contrast)."""
+    import sys
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class HIGHCONTRASTW(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("dwFlags", wintypes.DWORD),
+                        ("lpszDefaultScheme", wintypes.LPWSTR)]
+        hc = HIGHCONTRASTW()
+        hc.cbSize = ctypes.sizeof(hc)
+        ok = ctypes.windll.user32.SystemParametersInfoW(
+            0x0042, hc.cbSize, ctypes.byref(hc), 0)  # SPI_GETHIGHCONTRAST
+        return bool(ok and hc.dwFlags & 0x1)  # HCF_HIGHCONTRASTON
+    except Exception:
+        return False
+
+
 def is_dark():
-    """Whether the theme last applied by apply_theme() is dark."""
+    """Whether the theme last applied by apply_theme() is dark (also true for
+    high contrast, which is light-on-dark)."""
     return _state["dark"]
+
+
+def is_high_contrast():
+    return _state["hc"]
+
+
+def _key(dark):
+    """Token-set key: "hc" if asked for, or when a dark palette is requested
+    while high contrast is active; else the bool."""
+    if dark == "hc":
+        return "hc"
+    return "hc" if dark and _state["hc"] else bool(dark)
 
 
 def current_mode():
@@ -115,12 +182,12 @@ def colours(dark=None):
     """Colour tokens for the given mode (default: the active mode)."""
     if dark is None:
         dark = _state["dark"]
-    return _TOKENS[bool(dark)]
+    return _TOKENS[_key(dark)]
 
 
 def build_palette(dark):
-    """Fusion QPalette for light (dark=False) or dark (dark=True) mode."""
-    t = _TOKENS[bool(dark)]
+    """Fusion QPalette for light (False), dark (True) or high contrast ("hc")."""
+    t = _TOKENS[_key(dark)]
     p = QPalette()
     for role, key in _ROLES.items():
         p.setColor(role, QColor(t[key]))
@@ -132,24 +199,30 @@ def build_palette(dark):
 
 # ---------------------------------------------------------------- apply
 def _resolve(mode):
+    """Theme key for a mode: False (light), True (dark) or "hc"."""
+    if mode == "high_contrast":
+        return "hc"
     if mode == "dark":
         return True
     if mode == "light":
         return False
-    return os_is_dark()
+    return "hc" if os_high_contrast() else os_is_dark()
 
 
-def _set_dark(dark):
+def _set_dark(key):
     app = _state["app"]
     if app is None:
         return
+    hc = key == "hc"
+    dark = hc or bool(key)
+    _state["hc"] = hc
     # Palettes are only honoured reliably in Fusion. Once an application style
     # sheet is installed style().name() is empty, so remember that we did this.
     if not _state["fusion"] and app.style().name().lower() != "fusion":
         app.setStyle("Fusion")
     _state["fusion"] = True
-    app.setPalette(build_palette(dark))
-    app.setStyleSheet(app_qss(dark))
+    app.setPalette(build_palette("hc" if hc else dark))
+    app.setStyleSheet(app_qss("hc" if hc else dark))
     _state["dark"] = bool(dark)
     for ref in list(_listeners):
         fn = ref()
@@ -169,7 +242,9 @@ def _on_os_scheme_changed(*_):
 def apply_theme(app, mode="auto"):
     """Apply the light, dark or auto (OS-following) theme to app.
 
-    Returns True when the dark palette is now active. Unknown modes act as "auto".
+    Modes: auto (OS dark scheme, or Windows high contrast), light, dark,
+    high_contrast. Returns True when a dark-based palette (dark or high
+    contrast) is now active. Unknown modes act as "auto".
     """
     if mode not in MODES:
         mode = "auto"
@@ -204,7 +279,7 @@ def primary_button_qss(dark=None, padding="8px 16px"):
             f"font-weight:bold;padding:{padding};border-radius:8px;"
             f"border:1px solid {t['accent']};}}"
             f"QPushButton:hover{{background:{t['accent_hover']};border-color:{t['accent_hover']};}}"
-            f"QPushButton:focus{{border:1px solid {t['highlight']};}}"
+            f"QPushButton:focus{{border:{t['border_px']}px solid {t['focus']};}}"
             f"QPushButton:disabled{{background:{t['disabled_bg']};color:{t['disabled_fg']};"
             f"border-color:{t['disabled_bg']};}}")
 
@@ -259,7 +334,8 @@ def category_colour(hex_colour, dark=None):
     against both row backgrounds of the active theme."""
     dark = is_dark() if dark is None else dark
     t = colours(dark)
-    return ensure_contrast(hex_colour, (t["base"], t["alt_base"]), 4.5, dark)
+    target = 7.0 if t["hc"] else 4.5
+    return ensure_contrast(hex_colour, (t["base"], t["alt_base"]), target, dark)
 
 
 def status_colour(key, dark=None):
@@ -328,29 +404,37 @@ def app_qss(dark=None):
     inputs, visible focus rings, flat table with a quiet header, slim progress
     bar, underlined tabs and thin scroll bars."""
     t = colours(dark)
+    bw, fc = t["border_px"], t["focus"]
+    extra = f"""
+QTableView:focus, QListWidget:focus, QPlainTextEdit:focus {{ border:2px solid {fc}; }}
+QTabBar::tab:focus {{ border:2px solid {fc}; }}
+QHeaderView::section {{ border-right:1px solid {t['border']}; }}
+QProgressBar {{ border:2px solid {t['border']}; }}
+QToolTip {{ background:{t['tooltip_base']}; color:{t['tooltip_text']}; border:2px solid {t['border']}; }}
+""" if t["hc"] else ""
     return f"""
 QPushButton, QToolButton {{
     background:{t['button']}; color:{t['button_text']};
-    border:1px solid {t['border']}; border-radius:6px;
+    border:{bw}px solid {t['border']}; border-radius:6px;
     padding:4px 12px; min-height:20px;
 }}
 QPushButton:hover, QToolButton:hover {{ background:{t['button_hover']}; }}
 QPushButton:pressed, QToolButton:pressed, QToolButton:checked {{
     background:{t['button_pressed']};
 }}
-QPushButton:focus, QToolButton:focus {{ border:1px solid {t['highlight']}; }}
+QPushButton:focus, QToolButton:focus {{ border:{bw}px solid {fc}; }}
 QPushButton:disabled, QToolButton:disabled {{
     color:{t['disabled_text']}; background:{t['window']};
 }}
 QToolButton::menu-indicator {{ subcontrol-position:right center; right:6px; }}
 QLineEdit, QComboBox {{
     background:{t['base']}; color:{t['text']};
-    border:1px solid {t['border']}; border-radius:6px;
+    border:{bw}px solid {t['border']}; border-radius:6px;
     padding:4px 8px; min-height:20px;
     selection-background-color:{t['highlight']}; selection-color:{t['highlight_text']};
 }}
 QLineEdit:focus, QComboBox:focus, QComboBox:on {{
-    border:1px solid {t['highlight']};
+    border:{bw}px solid {fc};
 }}
 QLabel#sectionHeader {{ font-weight:700; font-size:14px; color:{t['text']}; padding-top:2px; }}
 QFrame#sectionRule {{ background:{t['border']}; border:none; }}
@@ -397,7 +481,7 @@ QScrollBar::handle:horizontal {{ background:{t['scroll_handle']}; border-radius:
 QScrollBar::handle:hover {{ background:{t['dark']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width:0; height:0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background:transparent; }}
-"""
+{extra}"""
 
 
 def cell_padding_qss(px):
