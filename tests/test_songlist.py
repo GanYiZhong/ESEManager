@@ -70,7 +70,8 @@ def test_gui_import_checks_rows_and_reports(window, tmp_path, monkeypatch):
                                    ("", "nothing at all xyz")]), encoding="utf-8")
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(p), ""))
     shown = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a[2]))
+    monkeypatch.setattr(window, "toast", lambda text, kind="info", **k: shown.append(text))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: 1 / 0)
     window.act_sl_import.trigger()
     assert window.song_model.checked == {("Gamma", "02 Anime"), ("Alpha", "01 Pop")}
     assert "nothing at all xyz" in shown[0]
@@ -98,7 +99,8 @@ def test_gui_export_nothing_and_favourites(window, tmp_path, monkeypatch):
     window.all_songs = DB
     window.apply_filters()
     msgs = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: msgs.append(a[2]))
+    monkeypatch.setattr(window, "toast", lambda text, kind="info", **k: msgs.append(text))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: 1 / 0)
     window.act_sl_copy.trigger()
     assert msgs == [window.tr("sl_nothing")]
     monkeypatch.setattr(core, "FAVOURITES_FILE", str(tmp_path / "f.json"))
@@ -109,7 +111,8 @@ def test_gui_export_nothing_and_favourites(window, tmp_path, monkeypatch):
 
 def test_gui_import_bad_text(window, monkeypatch):
     msgs = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: msgs.append(a[2]))
+    monkeypatch.setattr(window, "toast", lambda text, kind="info", **k: msgs.append(text))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: 1 / 0)
     QGuiApplication.clipboard().setText('{"x": 1}')
     window.act_sl_paste.trigger()
     assert msgs == [window.tr("sl_bad")]

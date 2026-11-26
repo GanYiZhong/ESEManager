@@ -20,6 +20,7 @@ _common = dict(
         'crash',
         'core',
         'theme',
+        'toast',
         'icons',
         'responsive',
         'detail_panel',

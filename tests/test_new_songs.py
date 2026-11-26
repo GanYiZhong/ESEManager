@@ -158,12 +158,15 @@ def test_gui_db_updated_message_has_summary(window, monkeypatch, tmp_path):
     msg, show = got[0]
     assert window.tr("sn_summary", new=1, upd=1) in msg and show
     assert window.song_model.new_marks[("a", "01 Pop")] == "new"
-    # the box itself: a "Show them" button, never exec'd for real
-    boxes = []
-    monkeypatch.setattr(QMessageBox, "exec", lambda self: boxes.append(
-        [b.text() for b in self.buttons()]) or 0)
+    # the message itself: a toast with a "Show them" action, no modal
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: 1 / 0)
+    ran = []
+    monkeypatch.setattr(window, "show_new_songs", lambda: ran.append(1))
     window._db_done_box(msg, True)
-    assert window.tr("sn_show") in boxes[0]
+    t = window.toasts.toasts[-1]
+    assert [b.text() for b in t.action_buttons] == [window.tr("sn_show")]
+    t.action_buttons[0].click()
+    assert ran == [1] and t._closed
 
 
 def test_cli_search_new(cli_app):
