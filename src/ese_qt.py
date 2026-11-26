@@ -39,6 +39,7 @@ from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
 from category_picker import CategoryPicker
 from i18n import TR, detect_system_lang
 import theme  # light/dark palette and style-sheet helpers
+import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
 import core
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
@@ -165,6 +166,9 @@ class MainWindow(QMainWindow):
         # display.font_scale: UI font size in percent (90/100/115/130), app-wide
         self.font_scale = self._valid_font_scale(
             self.config.get("display", {}).get("font_scale", 100))
+        # display.density: "comfortable" | "compact" (row height and cell padding)
+        self.density = columns.valid_density(
+            self.config.get("display", {}).get("density", "comfortable"))
         self.apply_font_scale(self.font_scale)
         self.jp_map = load_jp_map()
         self.meta_map = load_meta_map()
@@ -233,15 +237,23 @@ class MainWindow(QMainWindow):
             child.setFont(f)
         self.update_font_metrics()
 
+    def _table_qss(self, dark=None):
+        return (theme.check_indicator_qss(dark)
+                + theme.cell_padding_qss(columns.DENSITY_METRICS[self.density][2]))
+
     def update_font_metrics(self):
         """Row heights, minimum widths and bar height follow the font, not fixed
         pixels, so text stays readable at 125%/150% OS scaling and larger fonts."""
         if not hasattr(self, "dir_row"):
             return
         fm = self.table.fontMetrics()
-        row = max(28, fm.height() + 14)
+        min_row, row_pad, cell_pad = columns.DENSITY_METRICS[self.density]
+        row = max(min_row, fm.height() + row_pad)
         self.table.verticalHeader().setDefaultSectionSize(row)
         self.dl_table.verticalHeader().setDefaultSectionSize(row)
+        self.table.setStyleSheet(self._table_qss())
+        if hasattr(self, "colmgr"):
+            self.colmgr.refit()
         em = fm.horizontalAdvance("M")
         self.cat_picker.setMinimumWidth(em * 9)
         self.overall_bar.setMaximumWidth(em * 14)
@@ -289,6 +301,9 @@ class MainWindow(QMainWindow):
                    "window_w": win_w, "window_h": win_h,
                    "monitor_open": bool(getattr(self, "monitor_btn", None)
                                         and self.monitor_btn.isChecked())}
+        display["density"] = self.density
+        if hasattr(self, "colmgr"):
+            display.update(self.colmgr.state())
         dp = getattr(self, "detail_panel", None)
         if dp is not None:
             if dp.isVisible() and self.hsplit.sizes()[1] >= 220:
@@ -537,11 +552,13 @@ class MainWindow(QMainWindow):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_row_menu)
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ✓
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)            # 歌名
-        hh.setSectionResizeMode(2, QHeaderView.Stretch)            # 日文
-        for c in range(3, len(SongModel.COLS)):                    # 分類/BPM/難度×5/檔案
-            hh.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        # Right-click header: show/hide columns; order/widths/hidden persist by key.
+        self.colmgr = columns.ColumnManager(
+            self.table, SongModel.COLS, lambda k: self.tr(k), self.tr)
+        self.colmgr.restore(self.config.get("display", {}))
+        self.colmgr.changed.connect(self.save_config)
+        self.song_model.modelReset.connect(self.colmgr.fit_once)
+        self.song_model.layoutChanged.connect(self.colmgr.fit_once)
         self.empty_label = QLabel(self.table.viewport())  # empty-state message over the table
         self.empty_label.setAlignment(Qt.AlignCenter)
         self.empty_label.setWordWrap(True)
@@ -580,7 +597,7 @@ class MainWindow(QMainWindow):
         bottom.setSpacing(8)
         self.download_btn = QPushButton(self.tr("download"))
         self.download_btn.setStyleSheet(theme.primary_button_qss(padding="5px 18px"))
-        self.table.setStyleSheet(theme.check_indicator_qss())
+        self.table.setStyleSheet(self._table_qss())
         theme.add_listener(self._restyle_theme)  # re-colour these on theme change
         self.download_btn.setToolTip(self.tr("download_tip"))
         self.download_btn.clicked.connect(self.start_download_selected)
@@ -948,6 +965,14 @@ class MainWindow(QMainWindow):
         self.font_combo.setCurrentIndex(self.font_combo.findData(self.font_scale))
         self.font_combo.currentIndexChanged.connect(self.change_font_scale)
         self._settings_row(form, self.tr("font_label"), self.font_combo, "font_tip")
+
+        self.density_combo = QComboBox()
+        self.density_combo.setToolTip(self.tr("density_tip"))
+        for code in columns.DENSITIES:
+            self.density_combo.addItem(self.tr("density_" + code), code)
+        self.density_combo.setCurrentIndex(self.density_combo.findData(self.density))
+        self.density_combo.currentIndexChanged.connect(self.change_density)
+        self._settings_row(form, self.tr("density_label"), self.density_combo, "density_tip")
 
         root.addSpacing(10)
         buttons = QHBoxLayout()
@@ -2017,6 +2042,14 @@ class MainWindow(QMainWindow):
         self.apply_font_scale(pct)     # applies immediately
         self.save_config()
 
+    def change_density(self, *_):
+        d = columns.valid_density(self.density_combo.currentData())
+        if d == self.density:
+            return
+        self.density = d
+        self.update_font_metrics()     # row height + cell padding; applies immediately
+        self.save_config()
+
     def change_theme(self, *_):
         mode = self.theme_combo.currentData() or "auto"
         if mode == self.theme_pref:
@@ -2032,7 +2065,7 @@ class MainWindow(QMainWindow):
             self.welcome_btn.setStyleSheet(theme.primary_button_qss(dark))
             self.view_label.setStyleSheet(theme.hint_qss(dark))
             self.empty_label.setStyleSheet(theme.empty_state_qss(dark))
-            self.table.setStyleSheet(theme.check_indicator_qss(dark))
+            self.table.setStyleSheet(self._table_qss(dark))
             self.detail_panel.restyle(dark)
             self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
             self._apply_icons(dark)

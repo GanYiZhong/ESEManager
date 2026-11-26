@@ -20,3 +20,8 @@ ui_language = "auto"
 
 # Theme: "auto" (follow system), "light", "dark"
 theme = "auto"
+
+# Row density: "comfortable" or "compact"
+density = "comfortable"
+# Song-table columns are saved by key (right-click the header to show/hide):
+# columns_hidden = ["c_bpm"]
