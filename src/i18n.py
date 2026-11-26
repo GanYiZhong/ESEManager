@@ -827,6 +827,7 @@ TR["ja"].update({
 
 # --- keyboard, accessibility and UI font size
 TR["zh_TW"].update({
+    "more_actions": "更多動作",
     "sel_menu": "選取 ▾", "sel_invert": "反向選取", "sel_notdl": "選取未下載的",
     "sel_partial": "選取部分下載的（補齊）", "sel_cat": "選取目前分類的歌曲",
     "sel_visible_only": "清除隱藏列的勾選（只留可見的）",
@@ -844,6 +845,7 @@ TR["zh_TW"].update({
     "font_label": "字型大小", "font_tip": "整個程式的文字大小，會立即套用。",
 })
 TR["en"].update({
+    "more_actions": "More actions",
     "sel_menu": "Select ▾", "sel_invert": "Invert selection", "sel_notdl": "Select not downloaded",
     "sel_partial": "Select partially downloaded (to complete)", "sel_cat": "Select songs in current category",
     "sel_visible_only": "Clear checks in hidden rows (keep visible only)",
@@ -861,6 +863,7 @@ TR["en"].update({
     "font_label": "Font size", "font_tip": "Text size for the whole app, applied immediately.",
 })
 TR["ja"].update({
+    "more_actions": "その他の操作",
     "sel_menu": "選択 ▾", "sel_invert": "選択を反転", "sel_notdl": "未ダウンロードを選択",
     "sel_partial": "一部ダウンロード済みを選択（補完）", "sel_cat": "現在のカテゴリーの曲を選択",
     "sel_visible_only": "非表示行のチェックを解除（表示中のみ残す）",
