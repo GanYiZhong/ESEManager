@@ -30,6 +30,7 @@ _common = dict(
         'dialogs',
         'category_picker',
         'columns',
+        'songlist',
         'notify',
         'power',
         'cli',

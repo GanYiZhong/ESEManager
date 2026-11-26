@@ -5,6 +5,8 @@ ESEManager command-line mode.
     ESEManager-cli update-db [--force]
     ESEManager-cli search KEYWORD [-c CATEGORY]... [--new] [--favourites] [--limit N]
     ESEManager-cli download [KEYWORD] [-c CATEGORY]... [--all] [--favourites] [-y]
+    ESEManager-cli export [KEYWORD] [-c CATEGORY]... [--favourites] [--text] [-o FILE]
+    ESEManager-cli download --from-list FILE
     ESEManager-cli missing [--download] [-y] [--limit N]
     ESEManager-cli updates [--download] [-y] [--limit N]
     ESEManager-cli version-sorting [--force]
@@ -36,6 +38,7 @@ except ImportError:          # Python < 3.11
     import tomli as tomllib
 
 import core
+import songlist
 from appconfig import (APP_DIR, APP_VERSION, CONFIG_FILE, DEFAULT_DOWNLOAD_DIR,
                        VSORT_FOLDER, resolve_dir)
 from i18n import TR, CATEGORY_NAMES, detect_system_lang
@@ -322,12 +325,17 @@ def cmd_search(args, tr):
 def cmd_download(args, tr):
     if not need_db(tr):
         return 2
-    if not args.keyword and not args.category and not args.all and not args.favourites:
+    if args.from_list:
+        songs = load_list_songs(args.from_list, tr)
+        if songs is None:
+            return 2
+    elif not args.keyword and not args.category and not args.all and not args.favourites:
         out.err(tr("cli_download_what"))
         return 2
-    songs = core.search_songs(args.keyword, args.category)
-    if args.favourites:
-        songs = core.filter_favourites(songs, core.load_favourites())
+    else:
+        songs = core.search_songs(args.keyword, args.category)
+        if args.favourites:
+            songs = core.filter_favourites(songs, core.load_favourites())
     if not songs:
         out.err(tr("total", n=0))
         return 2
@@ -336,6 +344,58 @@ def cmd_download(args, tr):
     if len(files) > 50 and not confirm(tr("cli_continue"), args.yes):
         return 2
     return run_download(files, args.dir, args.workers, tr)
+
+
+def load_list_songs(path, tr):
+    """Songs of a song-list file (JSON or text; '-' = stdin); None on error."""
+    try:
+        if path == "-":
+            text = sys.stdin.read()
+        else:
+            with open(path, encoding="utf-8-sig") as fh:
+                text = fh.read()
+        entries, _ = songlist.parse(text)
+    except (OSError, ValueError, UnicodeDecodeError) as e:
+        out.err(tr("sl_open_fail", e=e))
+        return None
+    if not entries:
+        out.err(tr("sl_bad"))
+        return None
+    res = songlist.match(entries, core.search_songs("", None))
+    out.msg(songlist.report(res, tr))
+    if not res.songs:
+        out.err(tr("cli_list_none"))
+        return None
+    return res.songs
+
+
+def cmd_export(args, tr):
+    if not need_db(tr):
+        return 2
+    if not args.keyword and not args.category and not args.favourites and not args.all:
+        out.err(tr("cli_export_what"))
+        return 2
+    songs = core.search_songs(args.keyword, args.category)
+    if args.favourites:
+        songs = core.filter_favourites(songs, core.load_favourites())
+    if not songs:
+        out.err(tr("total", n=0))
+        return 2
+    entries = songlist.entries_from_songs(songs)
+    as_text = args.text or bool(args.output and args.output.lower().endswith(".txt"))
+    data = songlist.to_text(entries) if as_text else songlist.to_json(entries, args.name or "")
+    if args.output:
+        try:
+            with open(args.output, "w", encoding="utf-8") as fh:
+                fh.write(data)
+        except OSError as e:
+            out.err(tr("sl_save_fail", e=e))
+            return 1
+        out.msg(tr("sl_saved", n=len(songs), p=args.output))
+    else:
+        sys.stdout.write(data)
+        sys.stdout.flush()
+    return 0
 
 
 def _report_found(songs, key, args, tr, overwrite):
@@ -482,8 +542,22 @@ def build_parser():
                     help="category name or part of it, e.g. Anime (repeat for several)")
     sp.add_argument("--all", action="store_true", help="download every song")
     sp.add_argument("--favourites", action="store_true", help="download the starred songs")
+    sp.add_argument("--from-list", metavar="FILE",
+                    help="download the songs of a song-list file (JSON or text, - = stdin)")
     sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     sp.set_defaults(func=cmd_download)
+
+    sp = sub.add_parser("export", parents=[common], help="write matching songs to a song-list file")
+    sp.add_argument("keyword", nargs="?", default="")
+    sp.add_argument("-c", "--category", action="append",
+                    help="category name or part of it (repeat for several)")
+    sp.add_argument("--all", action="store_true", help="every song")
+    sp.add_argument("--favourites", action="store_true", help="only starred songs")
+    sp.add_argument("--text", action="store_true", help="plain text (Category/Song per line)")
+    sp.add_argument("--name", help="list name stored in the JSON file")
+    sp.add_argument("-o", "--output", metavar="FILE",
+                    help="write to FILE (.txt = text format); default: stdout")
+    sp.set_defaults(func=cmd_export)
 
     for name, func, helptext in (("missing", cmd_missing, "songs not downloaded yet"),
                                  ("updates", cmd_updates, "downloaded charts changed upstream")):

@@ -42,6 +42,7 @@ import theme  # light/dark palette and style-sheet helpers
 import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
 import core
+import songlist  # shareable song lists
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
 from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
@@ -351,6 +352,13 @@ class MainWindow(QMainWindow):
         for a in (self.act_update_db, self.act_missing, self.act_updates, self.act_vsort):
             self.menu_file.addAction(a)
         self.menu_file.addSeparator()
+        self.act_sl_export = self._action(self.export_song_list)
+        self.act_sl_copy = self._action(self.copy_song_list)
+        self.act_sl_import = self._action(self.import_song_list)
+        self.act_sl_paste = self._action(self.paste_song_list)
+        for a in (self.act_sl_export, self.act_sl_copy, self.act_sl_import, self.act_sl_paste):
+            self.menu_file.addAction(a)
+        self.menu_file.addSeparator()
         self.menu_file.addAction(self.act_open_dir)
         self.menu_file.addAction(self.act_settings)
         self.menu_file.addSeparator()
@@ -449,6 +457,9 @@ class MainWindow(QMainWindow):
         self.act_updates.setText(self.tr("check_updates"))
         self.act_open_dir.setText(self.tr("mw_act_open_dir"))
         self.act_vsort.setText(self.tr("vsort_action"))
+        for a, k in ((self.act_sl_export, "sl_export"), (self.act_sl_copy, "sl_copy"),
+                     (self.act_sl_import, "sl_import"), (self.act_sl_paste, "sl_paste")):
+            a.setText(self.tr(k))
         self.act_vsort.setToolTip(self.tr("vsort_tip"))
         self.act_settings.setText(self.tr("mw_settings"))
         self.act_quit.setText(self.tr("mw_act_quit"))
@@ -1534,6 +1545,76 @@ class MainWindow(QMainWindow):
 
     def _row_song(self, row):
         return self.song_model._view[row] if 0 <= row < self.song_model.rowCount() else None
+
+    # ---- shareable song lists
+    def _list_songs_to_share(self):
+        """Checked songs, else the starred ones."""
+        songs = self.song_model.selected_songs()
+        if not songs:
+            songs = core.filter_favourites(self.all_songs, self.song_model.favourites)
+        return songs
+
+    def export_song_list(self):
+        songs = self._list_songs_to_share()
+        if not songs:
+            QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_nothing"))
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.tr("sl_export"), "songlist.json", self.tr("sl_filter"))
+        if not path:
+            return
+        entries = songlist.entries_from_songs(songs)
+        data = (songlist.to_text(entries) if path.lower().endswith(".txt")
+                else songlist.to_json(entries))
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(data)
+        except OSError as e:
+            QMessageBox.warning(self, self.tr("sl_title"), self.tr("sl_save_fail", e=e))
+            return
+        self.statusBar().showMessage(self.tr("sl_saved", n=len(songs), p=path), 8000)
+
+    def copy_song_list(self):
+        songs = self._list_songs_to_share()
+        if not songs:
+            QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_nothing"))
+            return
+        QGuiApplication.clipboard().setText(
+            songlist.to_text(songlist.entries_from_songs(songs)))
+        self.statusBar().showMessage(self.tr("sl_copied", n=len(songs)), 5000)
+
+    def import_song_list(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.tr("sl_import"), "", self.tr("sl_filter"))
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as e:
+            QMessageBox.warning(self, self.tr("sl_title"), self.tr("sl_open_fail", e=e))
+            return
+        self._apply_song_list(text)
+
+    def paste_song_list(self):
+        self._apply_song_list(QGuiApplication.clipboard().text())
+
+    def _apply_song_list(self, text):
+        try:
+            entries, _name = songlist.parse(text)
+        except ValueError:
+            entries = []
+        if not entries:
+            QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_bad"))
+            return
+        res = songlist.match(entries, self.all_songs)
+        keys = {(s["song_name"], s["category"]) for s in res.songs}
+        shown = {(s["song_name"], s["category"]) for s in self.song_model.songs}
+        if not keys <= shown:
+            self.reset_filters()          # matched songs hidden by a filter
+        self.song_model.check_keys(keys)
+        QMessageBox.information(self, self.tr("sl_title"),
+                                songlist.report(res, self.tr))
 
     # ---- favourites
     def on_cell_clicked(self, index):

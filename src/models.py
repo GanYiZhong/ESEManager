@@ -298,6 +298,12 @@ class SongModel(QAbstractTableModel):
         return self._apply_checked(
             self.checked | {key(s) for s in self._view if st.get(key(s)) == status})
 
+    def check_keys(self, keys):
+        """Add the listed songs whose (name, category) is in `keys` to the checks."""
+        key = self._key
+        return self._apply_checked(
+            self.checked | {key(s) for s in self._view if key(s) in keys})
+
     def check_category(self, category):
         return self.check_where(lambda s: s["category"] == category)
 

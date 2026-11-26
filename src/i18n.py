@@ -879,3 +879,46 @@ TR["ja"].update({
     "c_fav": "★", "fav_add": "お気に入りに追加", "fav_remove": "お気に入りから削除",
     "f_fav_only": "お気に入りのみ", "sel_fav": "お気に入りを選択",
 })
+
+
+# --- shareable song lists
+TR["zh_TW"].update({
+    "sl_export": "匯出歌單…", "sl_copy": "複製歌單為文字", "sl_import": "匯入歌單…",
+    "sl_paste": "從剪貼簿匯入歌單", "sl_title": "歌單",
+    "sl_nothing": "沒有可匯出的歌曲：請先勾選歌曲，或加入最愛。",
+    "sl_copied": "已複製 {n} 首歌曲到剪貼簿", "sl_saved": "已儲存 {n} 首歌曲：{p}",
+    "sl_save_fail": "無法儲存歌單：{e}", "sl_open_fail": "無法讀取歌單：{e}",
+    "sl_bad": "這不是有效的歌單，或內容是空的。",
+    "sl_report": "找到 {m} 首、近似比對 {f} 首、找不到 {x} 首",
+    "sl_filter": "歌單 (*.json);;文字 (*.txt);;全部 (*)",
+    "cli_list_none": "歌單中沒有可下載的歌曲。",
+    "cli_export_what": "請指定關鍵字、-c 分類或 --favourites。",
+})
+TR["en"].update({
+    "sl_export": "Export song list…", "sl_copy": "Copy song list as text",
+    "sl_import": "Import song list…", "sl_paste": "Import song list from clipboard",
+    "sl_title": "Song list",
+    "sl_nothing": "Nothing to export: check some songs or add favourites first.",
+    "sl_copied": "Copied {n} songs to the clipboard", "sl_saved": "Saved {n} songs: {p}",
+    "sl_save_fail": "Could not save the song list: {e}",
+    "sl_open_fail": "Could not read the song list: {e}",
+    "sl_bad": "This is not a valid song list, or it is empty.",
+    "sl_report": "{m} matched, {f} fuzzy-matched, {x} not found",
+    "sl_filter": "Song list (*.json);;Text (*.txt);;All (*)",
+    "cli_list_none": "No downloadable songs in the list.",
+    "cli_export_what": "Give a keyword, -c CATEGORY or --favourites.",
+})
+TR["ja"].update({
+    "sl_export": "曲リストを書き出し…", "sl_copy": "曲リストをテキストでコピー",
+    "sl_import": "曲リストを読み込み…", "sl_paste": "クリップボードから曲リストを読み込み",
+    "sl_title": "曲リスト",
+    "sl_nothing": "書き出す曲がありません。曲をチェックするかお気に入りに追加してください。",
+    "sl_copied": "{n} 曲をクリップボードにコピーしました", "sl_saved": "{n} 曲を保存しました：{p}",
+    "sl_save_fail": "曲リストを保存できません：{e}",
+    "sl_open_fail": "曲リストを読み込めません：{e}",
+    "sl_bad": "有効な曲リストではないか、空です。",
+    "sl_report": "一致 {m} 曲、あいまい一致 {f} 曲、見つからない {x} 曲",
+    "sl_filter": "曲リスト (*.json);;テキスト (*.txt);;すべて (*)",
+    "cli_list_none": "リストにダウンロードできる曲がありません。",
+    "cli_export_what": "キーワード、-c カテゴリ、または --favourites を指定してください。",
+})
