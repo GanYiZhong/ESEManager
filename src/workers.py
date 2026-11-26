@@ -230,9 +230,11 @@ class AppSelfUpdateThread(QThread):
 
     restart_exe = None               # program the Windows helper starts afterwards
 
-    def __init__(self, tr=None):
+    def __init__(self, tr=None, install=True):
         super().__init__()
         self.tr = tr
+        self.install = install           # False: download + verify only ("downloaded:<tag>")
+        self.root = None                 # unpacked new version (set when done)
         self._stop = False
 
     def stop(self):
@@ -243,6 +245,10 @@ class AppSelfUpdateThread(QThread):
             release = core.fetch_latest_release()
             root = core.download_app_update(release, progress=self.progress.emit,
                                             log=core.log.info, stop=lambda: self._stop)
+            self.root = root
+            if not self.install:
+                self.done.emit(True, f"downloaded:{release.get('tag_name') or ''}")
+                return
             how = core.install_app_update(root, restart_exe=self.restart_exe)
             self.done.emit(True, f"{how}:{release.get('tag_name') or ''}")
         except Exception as e:

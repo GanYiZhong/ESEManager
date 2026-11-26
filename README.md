@@ -24,9 +24,9 @@ from the **ESE (Every Song Ever)** project.
 - One-click download of [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)
   (YataiDON version folders) into the download folder: **File → Download version sorting**
 - Command-line mode (`ESEManager-cli`) for scripts and servers
-- Rolling releases with **one-click self-update**: when a newer version exists, click the notice
-  in the status bar; the app downloads it, checks its SHA-256, installs it over itself and
-  restarts (settings, databases and downloads are kept)
+- Rolling releases with **automatic updates**: a newer version is downloaded in the background,
+  its SHA-256 checked, and it replaces the app when you close it (or right away with "Restart now").
+  Settings, databases and downloads are kept. Turn it off in Settings to update manually instead
 
 ## Quick start
 

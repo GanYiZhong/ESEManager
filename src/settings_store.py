@@ -41,6 +41,7 @@ SCHEMA = {
     ("download", "workers"): ("int", (1, MAX_WORKERS), 3),
     ("download", "keep_awake"): ("bool", None, True),
     ("download", "auto_check_updates"): ("bool", None, True),
+    ("download", "auto_app_update"): ("bool", None, True),
     ("download", "last_full_check"): ("float", 0.0, 0.0),
     ("download", "source"): ("source", None, "auto"),
     ("display", "page_size"): ("int", (1, 1000), 20),

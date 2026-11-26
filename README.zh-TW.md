@@ -20,8 +20,8 @@
 - 一鍵下載 [ESE-Version-Sorting](https://ese.tjadataba.se/Yonokid/ESE-Version-Sorting)（YataiDON 版本分類資料夾）
   到下載目錄：**檔案 → 下載版本分類**
 - 命令列模式（`ESEManager-cli`），方便寫腳本或在伺服器上使用
-- Rolling release，**一鍵自動更新**：有新版本時按狀態列的提示，程式會下載新版、驗證 SHA-256、
-  直接覆蓋自己並重新啟動（設定、資料庫和下載的歌曲都保留）
+- Rolling release，**自動更新**：有新版本時會在背景下載並驗證 SHA-256，關閉程式時自動換成新版
+  （也可以按通知「立即重新啟動」）；設定、資料庫和下載的歌曲都保留。可在設定裡關閉，改回手動更新
 
 ## 快速開始
 

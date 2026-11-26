@@ -1205,3 +1205,30 @@ TR["ja"].update({
     "q_syntax_help": "検索構文（通常のキーワードと併用可）:\nbpm:>180  oni:>=8  hard:5..7  ura:any/none  files:>3\ncat:vocaloid（複数指定はOR）  fav  new  upd  dl:yes/no/partial\n\"love story\" フレーズ、-miku  -cat:anime  -fav で除外\n（fav/new/upd は他の key:value と併用するか +fav と書きます）",
     "q_invalid": "認識できない条件（無視しました）: {items}",
 })
+
+
+# --- automatic app update (download in the background, install on close)
+TR["zh_TW"].update({
+    "auto_app_setting": "自動下載並安裝程式更新",
+    "auto_app_help": "有新版本時在背景下載，關閉程式時自動換成新版；也可以按通知立即重新啟動。",
+    "upd_app_ready": "新版本 {v} 已下載完成，關閉程式時會自動更新。",
+    "upd_app_ready_btn": "{v} 已就緒，按此重新啟動以更新",
+    "upd_app_restart_now": "立即重新啟動",
+    "upd_app_auto_running": "正在背景下載新版本，完成後會通知你。",
+})
+TR["en"].update({
+    "auto_app_setting": "Download and install app updates automatically",
+    "auto_app_help": "New versions download in the background and are installed when you close the app. You can also restart right away from the notice.",
+    "upd_app_ready": "Version {v} is downloaded and will be installed when you close ESEManager.",
+    "upd_app_ready_btn": "{v} ready: click to restart and update",
+    "upd_app_restart_now": "Restart now",
+    "upd_app_auto_running": "The new version is downloading in the background. You will be notified when it is ready.",
+})
+TR["ja"].update({
+    "auto_app_setting": "アプリの更新を自動でダウンロード・インストールする",
+    "auto_app_help": "新しいバージョンをバックグラウンドでダウンロードし、アプリを閉じるときに自動で更新します。通知からすぐに再起動することもできます。",
+    "upd_app_ready": "バージョン {v} のダウンロードが完了しました。ESEManager を閉じるときに更新されます。",
+    "upd_app_ready_btn": "{v} の準備完了：クリックで再起動して更新",
+    "upd_app_restart_now": "今すぐ再起動",
+    "upd_app_auto_running": "新しいバージョンをバックグラウンドでダウンロード中です。完了したらお知らせします。",
+})

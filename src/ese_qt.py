@@ -434,6 +434,8 @@ class MainWindow(QMainWindow):
                          "workers": self.workers_spin.value(),
                          "keep_awake": self.keep_awake_chk.isChecked(),
                          "auto_check_updates": self.auto_upd_chk.isChecked(),
+                         "auto_app_update": (self.auto_app_chk.isChecked()
+                                             if hasattr(self, "auto_app_chk") else True),
                          "last_full_check": float(self._last_full_check),
                          "source": (self.source_combo.currentData()
                                     if hasattr(self, "source_combo") else "auto")},
@@ -1152,6 +1154,11 @@ class MainWindow(QMainWindow):
         self.auto_upd_chk.setChecked(au if isinstance(au, bool) else True)
         self.auto_upd_chk.toggled.connect(self._on_auto_upd_toggled)
         self._settings_row(form, "", self.auto_upd_chk, "auto_upd_help")
+        aa = self.config.get("download", {}).get("auto_app_update", True)
+        self.auto_app_chk = QCheckBox(self.tr("auto_app_setting"))
+        self.auto_app_chk.setChecked(aa if isinstance(aa, bool) else True)
+        self.auto_app_chk.toggled.connect(lambda _=None: self.save_config())
+        self._settings_row(form, "", self.auto_app_chk, "auto_app_help")
         self.source_combo = QComboBox()
         self.source_combo.setToolTip(self.tr("src_tip"))
         self.source_combo.addItem(self.tr("src_auto"), "auto")
@@ -2900,6 +2907,66 @@ class MainWindow(QMainWindow):
         t.loaded.connect(self._on_notes_loaded)
         self._upd_notes_thread = t
         t.start()
+        if self.auto_app_chk.isChecked() and core.can_self_update():
+            self._start_auto_update(tag)
+
+    # ---- automatic app update: download in the background, swap on close
+    def _start_auto_update(self, tag):
+        t = getattr(self, "_selfupd", None)
+        if (t and t.isRunning()) or getattr(self, "_pending_update", None):
+            return
+        core.log.info("auto-update: downloading %s", tag)
+        t = self._selfupd = self._track(AppSelfUpdateThread(tr=self.tr, install=False))
+        t.done.connect(self._on_auto_update_done)
+        t.start(QThread.LowPriority)
+
+    def _on_auto_update_done(self, ok, info):
+        if self._closing:
+            return
+        t = self._selfupd
+        if not ok or not t.root:
+            core.log.warning("auto-update download failed: %s", info)
+            return                       # the manual "click to update" button stays
+        tag = info.partition(":")[2]
+        self._pending_update = (t.root, tag)
+        self.app_update_btn.setText(self.tr("upd_app_ready_btn", v=tag))
+        self.app_update_btn.setToolTip(self.tr("upd_app_ready", v=tag))
+        self.toast(self.tr("upd_app_ready", v=tag),
+                   actions=[(self.tr("upd_app_restart_now"), self.apply_pending_update)],
+                   timeout=12000)
+
+    def apply_pending_update(self):
+        """Install the downloaded version now and restart into it."""
+        pending = getattr(self, "_pending_update", None)
+        if not pending:
+            return
+        if (self.dl_thread and self.dl_thread.isRunning()) or self._db_busy():
+            self.toast(self.tr("upd_app_busy"), "warning")
+            return
+        root, _tag = pending
+        try:
+            how = core.install_app_update(root, restart_exe=sys.executable)
+        except Exception as e:
+            core.log.warning("install of downloaded update failed", exc_info=True)
+            self.toast(self.tr("upd_app_fail", e=core.friendly_error(e, self.tr)), "error")
+            return
+        self._pending_update = None
+        if how == "applied":
+            self._restart()
+        else:                  # Windows helper waits for us to exit, then restarts
+            self.close()
+
+    def _install_pending_on_close(self):
+        """Closing with a downloaded update: swap it in after we exit (no restart)."""
+        pending = getattr(self, "_pending_update", None)
+        if not pending:
+            return
+        self._pending_update = None
+        try:
+            core.install_app_update(pending[0], restart_exe=None)
+            core.log.info("auto-update: %s installs after exit", pending[1])
+        except Exception:
+            core.log.warning("auto-update on close failed", exc_info=True)
 
     def install_app_update(self):
         """Download the new release over this folder and restart (release
@@ -2908,8 +2975,13 @@ class MainWindow(QMainWindow):
         if not core.can_self_update():
             webbrowser.open(url)
             return
+        if getattr(self, "_pending_update", None):
+            self.apply_pending_update()
+            return
         t = getattr(self, "_selfupd", None)
         if t and t.isRunning():
+            if not t.install:
+                self.toast(self.tr("upd_app_auto_running"))
             return
         if (self.dl_thread and self.dl_thread.isRunning()) or self._db_busy():
             self.toast(self.tr("upd_app_busy"), "warning")
@@ -3108,6 +3180,10 @@ class MainWindow(QMainWindow):
             self.notifier.tray.hide()
         if self.dl_thread and self.dl_thread.isRunning():
             self.dl_thread.stop()
+        su = getattr(self, "_selfupd", None)
+        if su is not None and su.isRunning() and not su.install:
+            su.stop()                    # background update download: resume next time
+        self._install_pending_on_close()
         if hasattr(self, "dl_timer"):
             self.dl_timer.stop()
         self.save_config()
