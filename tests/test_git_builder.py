@@ -96,12 +96,13 @@ def test_builds_from_batched_fetch(tmp_path, upstream, monkeypatch):
     assert n == 2
     assert rows(local) == {"01 Pop/Alpha/Alpha.tja": ("アルファ", 7),
                            "02 Anime/Beta/Beta.tja": ("ベータ", 8)}
-    # One batched request for exactly the two chart blobs; audio never fetched.
-    assert len(calls) == 1 and len(calls[0]) == 2
+    # One batched request for the two audio pointer blobs (scraper) and one for
+    # exactly the two chart blobs; the audio itself is never fetched.
+    assert [len(c) for c in calls] == [2, 2]
     missing = subprocess.run([GIT, "-C", clone, "rev-list", "--objects", "--missing=print",
                               "--no-object-names", "master"],
                              capture_output=True, text=True).stdout
-    assert sum(1 for line in missing.splitlines() if line.startswith("?")) == 3  # 2 ogg + box.def
+    assert sum(1 for line in missing.splitlines() if line.startswith("?")) == 1  # box.def only
 
 
 def test_incremental_only_changed_charts(tmp_path, upstream, monkeypatch):

@@ -120,3 +120,24 @@ def safe_join(base, rel):
     if os.path.commonpath([base_abs, full]) != base_abs:
         raise UnsafePathError(f"path escapes target folder: {rel!r}")
     return full
+
+
+def parse_lfs_pointer(data):
+    """(sha256 hex, size) from a Git LFS pointer file's bytes, or None when the
+    data is not a pointer (e.g. real content committed without LFS)."""
+    if not data or len(data) > 1024 or not data.startswith(b"version https://git-lfs"):
+        return None
+    oid = size = None
+    for line in data.decode("utf-8", "replace").splitlines():
+        key, _, val = line.partition(" ")
+        if key == "oid" and val.startswith("sha256:"):
+            oid = val[7:].strip().lower()
+        elif key == "size":
+            try:
+                size = int(val.strip())
+            except ValueError:
+                return None
+    if (oid is None or size is None or size < 0 or len(oid) != 64
+            or any(c not in "0123456789abcdef" for c in oid)):
+        return None
+    return oid, size
