@@ -143,3 +143,61 @@ def test_download_source_setting_is_saved(window, tmp_path):
     assert core._download_source == "taiko.ac"
     with open(tmp_path / "config.toml", "rb") as f:
         assert tomllib.load(f)["download"]["source"] == "taiko.ac"
+
+
+SONGS = [{"song_name": n, "category": "01 Pop", "files": [
+    {"filename": n + ".tja", "file_path": f"01 Pop/{n}/{n}.tja", "download_url": ""}]}
+    for n in ("Alpha", "Beta")]
+
+
+def test_space_toggles_current_row(window):
+    window.song_model.set_songs(SONGS)
+    window.table.setCurrentIndex(window.song_model.index(1, 1))
+    window.toggle_current_rows()
+    assert window.song_model.is_checked(1) and not window.song_model.is_checked(0)
+    window.toggle_current_rows()
+    assert not window.song_model.is_checked(1)
+
+
+def test_double_click_opens_folder_if_downloaded_else_toggles(window, tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(window, "_open_path", opened.append)
+    window.dir_edit.setText(str(tmp_path))
+    window.song_model.set_songs(SONGS)
+    window.on_row_double_clicked(window.song_model.index(0, 1))
+    assert not opened and window.song_model.is_checked(0)
+    (tmp_path / "01 Pop" / "Beta").mkdir(parents=True)
+    window.on_row_double_clicked(window.song_model.index(1, 1))
+    assert len(opened) == 1 and opened[0].endswith("Beta")
+    assert not window.song_model.is_checked(1)
+
+
+def test_empty_state_message(window, monkeypatch):
+    monkeypatch.setattr(window, "has_song_db", lambda: True)
+    window.search_edit.setText("zzz")
+    window.all_songs = []
+    window.apply_filters()
+    assert not window.empty_label.isHidden()
+    assert window.empty_label.text() == window.tr("no_results")
+    window.all_songs = SONGS
+    window.apply_filters()
+    assert window.empty_label.isHidden()
+
+
+def test_last_category_is_remembered(window, tmp_path, monkeypatch):
+    import tomllib
+    monkeypatch.setattr(core, "list_categories", lambda: ["01 Pop", "02 Anime"])
+    window.load_categories()
+    window.cat_combo.setCurrentIndex(window.cat_combo.findData("02 Anime"))
+    with open(tmp_path / "config.toml", "rb") as f:
+        assert tomllib.load(f)["display"]["category"] == "02 Anime"
+    window.load_categories()          # reload restores the saved choice
+    assert window.cat_combo.currentData() == "02 Anime"
+
+
+@pytest.mark.parametrize("lang", ["zh_TW", "en", "ja"])
+def test_new_strings_exist(lang):
+    from i18n import TR
+    for k in ("ctx_toggle", "ctx_download", "ctx_open_folder", "ctx_copy_title",
+              "no_results", "no_songs"):
+        assert TR[lang][k]
