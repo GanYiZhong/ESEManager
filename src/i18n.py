@@ -699,3 +699,29 @@ TR["ja"].update({
     "deselall_tip": "すべてのチェックを外す",
     "font_label": "文字サイズ", "font_tip": "アプリ全体の文字サイズ（すぐに反映）",
 })
+
+# --- download monitor: log toolbar and failed list
+TR["zh_TW"].update({
+    "tab_log_n": "Log（{n} 個錯誤）", "tab_fail_n": "失敗清單（{n}）",
+    "log_filter_ph": "篩選記錄…", "log_errors_only": "只看錯誤",
+    "log_copy": "全部複製", "log_save": "儲存…", "log_clear": "清除",
+    "log_save_title": "儲存記錄", "log_save_fail": "無法儲存記錄：{e}",
+    "fail_retry_sel": "重試選取項目", "fail_open_page": "開啟歌曲頁面",
+    "fail_copy_path": "複製路徑",
+})
+TR["en"].update({
+    "tab_log_n": "Log ({n} errors)", "tab_fail_n": "Failed ({n})",
+    "log_filter_ph": "Filter log…", "log_errors_only": "Errors only",
+    "log_copy": "Copy all", "log_save": "Save…", "log_clear": "Clear",
+    "log_save_title": "Save log", "log_save_fail": "Could not save the log: {e}",
+    "fail_retry_sel": "Retry selected", "fail_open_page": "Open song page",
+    "fail_copy_path": "Copy path",
+})
+TR["ja"].update({
+    "tab_log_n": "ログ（エラー {n} 件）", "tab_fail_n": "失敗（{n}）",
+    "log_filter_ph": "ログを絞り込み…", "log_errors_only": "エラーのみ",
+    "log_copy": "すべてコピー", "log_save": "保存…", "log_clear": "クリア",
+    "log_save_title": "ログを保存", "log_save_fail": "ログを保存できませんでした：{e}",
+    "fail_retry_sel": "選択を再試行", "fail_open_page": "曲のページを開く",
+    "fail_copy_path": "パスをコピー",
+})

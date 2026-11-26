@@ -69,7 +69,7 @@ class DownloadThread(QThread):
     finished_all = Signal(int, int, int, int)      # downloaded, skipped, failed, total
 
     _DELEGATE = {"stop", "pause", "resume", "is_paused", "snapshot", "stopped",
-                 "failed", "dl", "skip", "fail", "total", "done"}
+                 "failed", "fail_reasons", "dl", "skip", "fail", "total", "done"}
 
     def __init__(self, files, download_dir, workers, overwrite=False, tr=None):
         super().__init__()
