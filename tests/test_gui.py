@@ -463,3 +463,79 @@ def test_detail_panel_strings_exist(lang):
     for k in ("dp_title", "dp_files", "dp_download", "dp_copy", "dp_empty",
               "mw_menu_view", "dp_toggle", "dp_toggle_tip"):
         assert ese_qt.TR[lang].get(k)
+
+
+# ---- download monitor: log toolbar and failed list
+def test_log_filter_errors_only_and_counts(window):
+    lv = window.log_view
+    lv.clear_log()
+    lv.appendPlainText("hello world")
+    lv.appendPlainText(window.tr("log_fail", f="a.tja", e="boom"))
+    assert lv.error_count == 1
+    assert "(1" in window.tabs.tabText(1) or "1" in window.tabs.tabText(1)
+    assert lv.toPlainText().count("[") == 2          # timestamps on every line
+    window.log_filter.setText("HELLO")
+    assert "hello world" in lv.toPlainText() and "boom" not in lv.toPlainText()
+    window.log_filter.setText("")
+    window.log_err_chk.setChecked(True)
+    assert "boom" in lv.toPlainText() and "hello" not in lv.toPlainText()
+    window.log_err_chk.setChecked(False)
+    window.copy_log()
+    assert "hello world" in QApplication.clipboard().text()
+
+
+def test_log_save_and_clear(window, tmp_path, monkeypatch):
+    out = tmp_path / "log.txt"
+    monkeypatch.setattr(ese_qt.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    window.log_view.clear_log()
+    window.log_view.appendPlainText("line one")
+    window.save_log()
+    assert "line one" in out.read_text(encoding="utf-8")
+    window.log_clear_btn.click()
+    assert window.log_view.toPlainText() == ""
+
+
+def test_failed_tab_reasons_and_selective_retry(window, monkeypatch):
+    s = {"song_name": "S"}
+    fa = {"filename": "a.tja", "file_path": "x/a.tja", "download_url": None}
+    fb = {"filename": "b.tja", "file_path": "x/b.tja",
+          "download_url": "https://h/ESE/media/branch/master/x/b.tja"}
+
+    class Job:
+        failed = [(s, fa), (s, fb)]
+        fail_reasons = {"x/a.tja": "no network", "x/b.tja": "disk full"}
+        stopped = False
+
+        def snapshot(self):
+            return 2, 2, 0.0, 0.0, []
+
+        def is_paused(self):
+            return False
+
+    window.dl_thread = Job()
+    monkeypatch.setattr(window, "_show_summary", lambda *a, **k: None)   # no modal
+    monkeypatch.setattr(window.notifier, "notify", lambda *a, **k: None)
+    window.on_download_done(0, 0, 2, 2)
+    assert window.fail_list.count() == 2
+    assert "no network" in window.fail_list.item(0).text()
+    assert "2" in window.tabs.tabText(2)
+    assert not window.retry_sel_btn.isEnabled()
+    started = []
+    monkeypatch.setattr(window, "start_download", lambda files, **k: started.append(files))
+    window.fail_list.item(1).setSelected(True)
+    assert window.retry_sel_btn.isEnabled()
+    window.retry_sel_btn.click()
+    assert started == [[(s, fb)]]
+    opened = []
+    monkeypatch.setattr(ese_qt.webbrowser, "open", lambda u: opened.append(u))
+    window.fail_page_btn.click()
+    assert opened == ["https://h/ESE/src/branch/master/x"]
+    window.copy_fail_paths()
+    assert QApplication.clipboard().text().endswith("b.tja")
+    window.dl_thread = None
+
+
+def test_downloader_remembers_failure_reason(tmp_path):
+    job = core.Downloader([], str(tmp_path), 1)
+    assert job.fail_reasons == {}

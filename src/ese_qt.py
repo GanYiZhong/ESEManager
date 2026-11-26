@@ -12,6 +12,8 @@ models (table models), workers (background threads) and theme/notify.
 import os
 import re
 import sys
+import time
+from collections import deque
 
 try:
     import tomllib
@@ -21,13 +23,13 @@ import tomli_w
 
 from PySide6.QtCore import Qt, QTimer, QProcess, QEvent
 from PySide6.QtGui import (QAction, QKeySequence, QShortcut, QGuiApplication, QFont,
-                           QFontDatabase)
+                           QFontDatabase, QTextCharFormat, QColor)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
-    QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction
+    QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction, QCheckBox
 )
 
 from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
@@ -49,6 +51,85 @@ webbrowser = core.LazyModule("webbrowser")   # ~60 ms we do not need at startup
 
 
 # ---------------------------------------------------------------- 主視窗
+class LogView(QPlainTextEdit):
+    """Read-only log: timestamped lines, live text filter, errors-only toggle,
+    error lines coloured from the theme. Every caller just uses
+    appendPlainText(); all log handling lives in that one method."""
+    MAX = 5000
+
+    def __init__(self):
+        super().__init__()
+        self.setReadOnly(True)
+        self.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self._entries = deque(maxlen=self.MAX)    # (hh:mm:ss, text, is_error)
+        self._filter = ""
+        self._errors_only = False
+        self.error_count = 0
+        self.on_change = None                     # called when error_count changes
+        self._err_prefixes = tuple(
+            p for p in (v.get("log_fail", "").split("{f}")[0] for v in TR.values()) if p)
+
+    def _is_error(self, text):
+        return text.startswith(self._err_prefixes) or "Traceback" in text
+
+    def _visible(self, entry):
+        _ts, text, err = entry
+        return (err or not self._errors_only) and self._filter in text.lower()
+
+    def _insert(self, entry):
+        ts, text, err = entry
+        fmt = QTextCharFormat()
+        if err:
+            fmt.setForeground(QColor(theme.colours()["bright_text"]))
+        cur = self.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        if not self.document().isEmpty():
+            cur.insertBlock()
+        cur.insertText(f"[{ts}] {text}", fmt)
+
+    def appendPlainText(self, text):          # noqa: N802 (Qt API name)
+        text = str(text)
+        entry = (time.strftime("%H:%M:%S"), text, self._is_error(text))
+        if len(self._entries) == self._entries.maxlen and self._entries[0][2]:
+            self.error_count -= 1
+        self._entries.append(entry)
+        if entry[2]:
+            self.error_count += 1
+            if self.on_change:
+                self.on_change()
+        if self._visible(entry):
+            self._insert(entry)
+            self.ensureCursorVisible()
+
+    def rerender(self):
+        """Redraw from the stored entries (filter or theme changed)."""
+        self.setUpdatesEnabled(False)
+        self.clear()
+        for e in self._entries:
+            if self._visible(e):
+                self._insert(e)
+        self.setUpdatesEnabled(True)
+        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+    def set_filter(self, text):
+        self._filter = (text or "").strip().lower()
+        self.rerender()
+
+    def set_errors_only(self, on):
+        self._errors_only = bool(on)
+        self.rerender()
+
+    def all_text(self):
+        return "\n".join(f"[{ts}] {t}" for ts, t, _e in self._entries)
+
+    def clear_log(self):
+        self._entries.clear()
+        self.error_count = 0
+        self.clear()
+        if self.on_change:
+            self.on_change()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -824,29 +905,113 @@ class MainWindow(QMainWindow):
         dh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         dh.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.tabs.addTab(self.dl_table, self.tr("tab_prog"))
-        # log tab
-        self.log_view = QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(5000)
-        self.log_view.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
-        self.tabs.addTab(self.log_view, self.tr("tab_log"))
+        # log tab: toolbar + view
+        log_w = QWidget()
+        lv = QVBoxLayout(log_w)
+        lv.setContentsMargins(0, 4, 0, 0)
+        lv.setSpacing(4)
+        self.log_view = LogView()
+        self.log_view.on_change = self._update_monitor_tabs
+        bar = QHBoxLayout()
+        self.log_filter = QLineEdit()
+        self.log_filter.setClearButtonEnabled(True)
+        self.log_filter.setPlaceholderText(self.tr("log_filter_ph"))
+        self.log_filter.textChanged.connect(self.log_view.set_filter)
+        self.log_err_chk = QCheckBox(self.tr("log_errors_only"))
+        self.log_err_chk.toggled.connect(self.log_view.set_errors_only)
+        self.log_copy_btn = QPushButton(self.tr("log_copy"))
+        self.log_copy_btn.clicked.connect(self.copy_log)
+        self.log_save_btn = QPushButton(self.tr("log_save"))
+        self.log_save_btn.clicked.connect(self.save_log)
+        self.log_clear_btn = QPushButton(self.tr("log_clear"))
+        self.log_clear_btn.clicked.connect(self.log_view.clear_log)
+        bar.addWidget(self.log_filter, 1)
+        for w in (self.log_err_chk, self.log_copy_btn, self.log_save_btn, self.log_clear_btn):
+            bar.addWidget(w)
+        lv.addLayout(bar)
+        lv.addWidget(self.log_view)
+        self.tabs.addTab(log_w, self.tr("tab_log"))
         # failed tab
         fail_w = QWidget()
         fv = QVBoxLayout(fail_w)
         fv.setContentsMargins(0, 6, 0, 0)
         fv.setSpacing(8)
         self.fail_list = QListWidget()
+        self.fail_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.fail_list.itemSelectionChanged.connect(self._update_fail_buttons)
         self.retry_btn = QPushButton(self.tr("retry"))
-        self.retry_btn.clicked.connect(self.retry_failed)
+        self.retry_btn.clicked.connect(lambda: self.retry_failed())
         self.retry_btn.setEnabled(False)
+        self.retry_sel_btn = QPushButton(self.tr("fail_retry_sel"))
+        self.retry_sel_btn.clicked.connect(lambda: self.retry_failed(selected_only=True))
+        self.fail_page_btn = QPushButton(self.tr("fail_open_page"))
+        self.fail_page_btn.clicked.connect(self.open_fail_page)
+        self.fail_copy_btn = QPushButton(self.tr("fail_copy_path"))
+        self.fail_copy_btn.clicked.connect(self.copy_fail_paths)
         fv.addWidget(self.fail_list)
         row = QHBoxLayout()
+        row.addWidget(self.fail_page_btn)
+        row.addWidget(self.fail_copy_btn)
         row.addStretch()
+        row.addWidget(self.retry_sel_btn)
         self.retry_btn.setMinimumWidth(140)
         row.addWidget(self.retry_btn)
         fv.addLayout(row)
         self.tabs.addTab(fail_w, self.tr("tab_fail"))
+        self._update_fail_buttons()
         return self.tabs
+
+    # ---- monitor: log toolbar / failed list helpers
+    def _update_monitor_tabs(self):
+        """Tab titles carry counts: Log (errors) and Failed (n)."""
+        errs = self.log_view.error_count
+        self.tabs.setTabText(1, self.tr("tab_log_n", n=errs) if errs else self.tr("tab_log"))
+        n = self.fail_list.count()
+        self.tabs.setTabText(2, self.tr("tab_fail_n", n=n) if n else self.tr("tab_fail"))
+
+    def _update_fail_buttons(self):
+        sel = bool(self.fail_list.selectedItems())
+        self.retry_sel_btn.setEnabled(sel)
+        self.fail_page_btn.setEnabled(sel)
+        self.fail_copy_btn.setEnabled(sel)
+
+    def copy_log(self):
+        QGuiApplication.clipboard().setText(self.log_view.all_text())
+
+    def save_log(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.tr("log_save_title"), "ese_log.txt", "Text (*.txt);;All (*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(self.log_view.all_text() + "\n")
+        except OSError as e:
+            QMessageBox.warning(self, self.tr("log_save_title"),
+                                self.tr("log_save_fail", e=str(e)))
+
+    def _fail_pairs(self, selected_only=False):
+        items = (self.fail_list.selectedItems() if selected_only else
+                 [self.fail_list.item(i) for i in range(self.fail_list.count())])
+        return [it.data(Qt.UserRole) for it in items]
+
+    @staticmethod
+    def _song_page_url(song, f):
+        """Folder of the song in the repository's web view (Gitea: /src/branch/)."""
+        url = f.get("download_url") or (core.ESE_RAW_BASE + f["file_path"])
+        url = url.replace("/media/branch/", "/src/branch/")
+        return url.rsplit("/", 1)[0] if "/" in url else url
+
+    def open_fail_page(self):
+        pairs = self._fail_pairs(True)
+        if pairs:
+            webbrowser.open(self._song_page_url(*pairs[0]))
+
+    def copy_fail_paths(self):
+        base = resolve_dir(self.dir_edit.text())
+        paths = [os.path.join(base, f["file_path"]) for _s, f in self._fail_pairs(True)]
+        if paths:
+            QGuiApplication.clipboard().setText("\n".join(paths))
 
     def set_monitor_open(self, on):
         """Show or hide the download monitor below the song table."""
@@ -1282,6 +1447,7 @@ class MainWindow(QMainWindow):
         self._deferred_files = []
         self.fail_list.clear()
         self.retry_btn.setEnabled(False)
+        self._update_monitor_tabs()
         self.dl_model.load(files)
         self.overall_bar.setRange(0, len(files))
         self.overall_bar.setValue(0)
@@ -1390,10 +1556,15 @@ class MainWindow(QMainWindow):
         self.log_view.appendPlainText(self.tr("log_dl_done", d=dl, s=skip, f=fail))
         # 填入失敗清單（停止時被取消的檔案也列入，可一鍵重試）
         self.fail_list.clear()
+        reasons = getattr(self.dl_thread, "fail_reasons", {})
         for song, f in self.dl_thread.failed:
-            it = QListWidgetItem(f"{f['filename']}  ({song['song_name']})")
+            why = reasons.get(f["file_path"], "")
+            it = QListWidgetItem(f"{f['filename']}  ({song['song_name']})"
+                                 + (f"\n    {why}" if why else ""))
+            it.setToolTip(why)
             it.setData(Qt.UserRole, (song, f))
             self.fail_list.addItem(it)
+        self._update_monitor_tabs()
         self.retry_btn.setEnabled(fail > 0)
         self.refresh_detail()      # "Open folder" may have become available
         if fail > 0:
@@ -1425,9 +1596,8 @@ class MainWindow(QMainWindow):
             self.dl_thread.wait(3000)   # finished_all fires just before the thread ends
             self.retry_failed()
 
-    def retry_failed(self):
-        files = [self.fail_list.item(i).data(Qt.UserRole)
-                 for i in range(self.fail_list.count())]
+    def retry_failed(self, selected_only=False):
+        files = self._fail_pairs(selected_only)
         if files:
             self.start_download(files)
 
@@ -1644,6 +1814,7 @@ class MainWindow(QMainWindow):
             self.detail_panel.restyle(dark)
             self.app_update_btn.setStyleSheet(theme.success_text_qss(dark))
             self._apply_icons(dark)
+            self.log_view.rerender()                       # error colour
             self.song_model.layoutChanged.emit()          # category colours
         except RuntimeError:  # widgets already deleted by Qt
             pass

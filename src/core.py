@@ -903,6 +903,7 @@ class Downloader:
         self._pause = threading.Event()
         self._pause.set()              # set = running, clear = paused
         self.failed = []               # [(song, file_info)]
+        self.fail_reasons = {}         # file_path -> friendly reason text
         self._lock = threading.Lock()
         self._dirty = {}               # file_path -> (status, pct, speed) since last pull
         self.total = len(files)
@@ -1125,12 +1126,14 @@ class Downloader:
             self._mark(fp, "done", 100.0, 0.0)
             self.log(f"✓ {disp} ({got/1024/1024:.2f} MB)")
         except Exception as e:
+            reason = friendly_error(e, self.tr)
             with self._lock:
                 self.failed.append((song, f))
+                self.fail_reasons[f["file_path"]] = reason
             self._count("fail")
             self._mark(fp, "failed", 0.0, 0.0)
             log.warning("download failed: %s", disp, exc_info=True)
-            self.log(self.tr("log_fail", f=disp, e=friendly_error(e, self.tr)))
+            self.log(self.tr("log_fail", f=disp, e=reason))
         finally:
             # A stopped download keeps its .part so the next run can resume it
             # with a Range request; any other failure discards it.
