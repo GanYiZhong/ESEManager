@@ -520,6 +520,7 @@ def find_updates(download_dir, category=None, progress=None):
 
 # ---------------------------------------------------------------- downloads
 _download_source = "ese"
+PART_MAX_AGE = 24 * 3600        # seconds a stopped download's .part may be resumed
 
 
 def set_download_source(pref):
@@ -737,6 +738,11 @@ class Downloader:
         is resumed with a Range request when the server honours it."""
         got = 0
         have = os.path.getsize(part) if os.path.exists(part) else 0
+        # Audio (LFS) has no hash to catch a resume onto a file that changed
+        # upstream since; only resume recent leftovers.
+        if have and time.time() - os.path.getmtime(part) > PART_MAX_AGE:
+            os.remove(part)
+            have = 0
         hdrs = {"Range": f"bytes={have}-"} if have > 0 else {}
         try:
             resp = get_with_retry(sess, url, stream=True, timeout=60, headers=hdrs,

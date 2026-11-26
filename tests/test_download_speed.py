@@ -137,3 +137,21 @@ def test_snapshot_uses_recent_window(monkeypatch):
     done, total, spd, eta, _ = job.snapshot()
     assert spd == pytest.approx(10.0)                # recent pace, not the 0.5 MB/s average
     assert eta == pytest.approx(50 / 10.0)           # 50 left at 10 files/s
+
+
+def test_old_part_is_not_resumed(range_server, tmp_path):
+    import os
+    import time
+    www, base = range_server
+    (www / "c").mkdir()
+    (www / "c/A.ogg").write_bytes(b"new audio data")
+    dest = tmp_path / "dl" / "c"
+    dest.mkdir(parents=True)
+    part = dest / "A.ogg.part"
+    part.write_bytes(b"old au")
+    old = time.time() - core.PART_MAX_AGE - 60
+    os.utime(part, (old, old))
+    job = core.Downloader(_files(["c/A.ogg"]), str(tmp_path / "dl"), 1, bases=[base])
+    assert job.run() == (1, 0, 0, 1)
+    assert (dest / "A.ogg").read_bytes() == b"new audio data"
+    assert all(r is None for r in RangeHandler.seen)
