@@ -64,21 +64,41 @@ class CheckUpdatesThread(QThread):
     done = Signal(object)           # list[song] with only the changed files
     fail = Signal(str)
 
-    def __init__(self, download_dir, category=None, tr=None):
+    def __init__(self, download_dir, category=None, tr=None, only=None):
         super().__init__()
         self.tr = tr
         self.download_dir = download_dir
         self.category = category
+        self.only = only
 
     def run(self):
         try:
             self.done.emit(core.find_updates(self.download_dir, self.category,
-                                             progress=self.progress.emit))
+                                             progress=self.progress.emit, only=self.only))
         except core.NoShaError:
             self.fail.emit("__NO_SHA__")
         except Exception as e:
             core.log.warning("update check failed", exc_info=True)
             self.fail.emit(core.friendly_error(e, self.tr))
+
+
+class AutoUpdateCheckThread(QThread):
+    """Quiet background check of downloaded songs (core.auto_check_updates).
+    Start it with QThread.LowPriority; failures are silent."""
+    done = Signal(object, bool)     # songs with changed files, was_full_check
+
+    def __init__(self, download_dir, last_full=0.0):
+        super().__init__()
+        self.download_dir = download_dir
+        self.last_full = last_full
+
+    def run(self):
+        try:
+            songs, full = core.auto_check_updates(self.download_dir, self.last_full)
+        except Exception:
+            core.log.info("auto update check skipped", exc_info=True)
+            return
+        self.done.emit(songs, full)
 
 
 class DownloadThread(QThread):

@@ -1195,14 +1195,17 @@ class NoShaError(Exception):
     """The song database predates blob_sha; update checks need a newer one."""
 
 
-def find_updates(download_dir, category=None, progress=None):
+def find_updates(download_dir, category=None, progress=None, only=None):
     """Downloaded files whose upstream content changed (git blob sha). Returns
     songs holding only the changed files, plus the song's LFS audio (an updated
     chart usually ships with new audio). LFS audio is compared through the
     pointer's sha256/size (databases without them skip audio): a different
-    size flags it at once, an equal size is confirmed by a cached sha256."""
+    size flags it at once, an equal size is confirmed by a cached sha256.
+    `only`: a set of (song_name, category) keys to restrict the check to."""
     progress = progress or (lambda done, total: None)
     songs = search_songs(None, category)
+    if only is not None:
+        songs = [s for s in songs if song_key(s) in only]
     sha_map = load_sha_map()
     if not sha_map:
         raise NoShaError()
@@ -1314,6 +1317,26 @@ def find_updates(download_dir, category=None, progress=None):
                            if is_lfs_path(f["file_path"]) and f["file_path"] not in have]
         out.append(entry)
     return out
+
+
+AUTO_FULL_CHECK_SECS = 24 * 3600
+
+
+def changed_song_keys():
+    """{(song_name, category)} the last DB update marked as changed."""
+    return {(n, c) for c, n in load_new_songs()["changed"]}
+
+
+def auto_check_updates(download_dir, last_full=0.0, now=None, progress=None):
+    """Background "are my downloaded songs current?" check. Fast path: only the
+    songs the last DB update changed; a full find_updates when the last full
+    check is over a day old. Returns (songs, was_full)."""
+    now = time.time() if now is None else now
+    full = not (0 <= now - (last_full or 0) < AUTO_FULL_CHECK_SECS)
+    only = None if full else changed_song_keys()
+    if only is not None and not only:
+        return [], False
+    return find_updates(download_dir, progress=progress, only=only), full
 
 
 # ---------------------------------------------------------------- downloads

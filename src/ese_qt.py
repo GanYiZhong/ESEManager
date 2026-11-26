@@ -22,7 +22,7 @@ except ImportError:
     import tomli as tomllib
 import tomli_w
 
-from PySide6.QtCore import Qt, QTimer, QProcess, QEvent, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, QProcess, QEvent, Signal
 from PySide6.QtGui import (QAction, QKeySequence, QShortcut, QGuiApplication, QFont,
                            QFontDatabase, QTextCharFormat, QColor)
 from PySide6.QtWidgets import (
@@ -45,7 +45,7 @@ import core
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
 from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
-from workers import (DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
+from workers import (AutoUpdateCheckThread, DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread, ReleaseNotesThread)
 from dialogs import AboutDialog, ReleaseNotesDialog, WhatsNewDialog
@@ -156,6 +156,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = self.load_config()
+        lf = self.config.get("download", {}).get("last_full_check", 0)
+        self._last_full_check = (float(lf) if isinstance(lf, (int, float))
+                                 and not isinstance(lf, bool) else 0.0)
         self.download_dir = resolve_dir(
             self.config.get("download", {}).get("directory", DEFAULT_DOWNLOAD_DIR))
         # ui_language 偏好可為 "auto"（依系統語言）或固定的 zh_TW/en/ja；新安裝預設 auto
@@ -319,6 +322,8 @@ class MainWindow(QMainWindow):
             "download": {"directory": self.dir_edit.text(),
                          "workers": self.workers_spin.value(),
                          "keep_awake": self.keep_awake_chk.isChecked(),
+                         "auto_check_updates": self.auto_upd_chk.isChecked(),
+                         "last_full_check": float(self._last_full_check),
                          "source": (self.source_combo.currentData()
                                     if hasattr(self, "source_combo") else "auto")},
             "display": display,
@@ -386,7 +391,15 @@ class MainWindow(QMainWindow):
         self.app_update_btn.setStyleSheet(theme.success_text_qss())
         self.app_update_btn.hide()
         self.app_update_btn.clicked.connect(self.install_app_update)
+        # Shown when downloaded songs have upstream changes; click downloads them.
+        self.auto_upd_btn = QPushButton()
+        self.auto_upd_btn.setFlat(True)
+        self.auto_upd_btn.setCursor(Qt.PointingHandCursor)
+        self.auto_upd_btn.setStyleSheet(theme.success_text_qss())
+        self.auto_upd_btn.hide()
+        self.auto_upd_btn.clicked.connect(self.apply_auto_updates)
         sb.addWidget(self.count_label)
+        sb.addWidget(self.auto_upd_btn)
         sb.addPermanentWidget(self.app_update_btn)
         sb.addPermanentWidget(self.db_ver_label)
 
@@ -928,6 +941,11 @@ class MainWindow(QMainWindow):
         self.keep_awake_chk.setChecked(ka if isinstance(ka, bool) else True)
         self.keep_awake_chk.toggled.connect(self._on_keep_awake_toggled)
         self._settings_row(form, "", self.keep_awake_chk, "keep_awake_help")
+        au = self.config.get("download", {}).get("auto_check_updates", True)
+        self.auto_upd_chk = QCheckBox(self.tr("auto_upd_setting"))
+        self.auto_upd_chk.setChecked(au if isinstance(au, bool) else True)
+        self.auto_upd_chk.toggled.connect(self._on_auto_upd_toggled)
+        self._settings_row(form, "", self.auto_upd_chk, "auto_upd_help")
         self.source_combo = QComboBox()
         self.source_combo.setToolTip(self.tr("src_tip"))
         self.source_combo.addItem(self.tr("src_auto"), "auto")
@@ -1381,6 +1399,65 @@ class MainWindow(QMainWindow):
         self.song_model.set_download_status(merged)
         if self.dl_combo.currentData() != "all":
             self.apply_filters()     # membership depends on status
+        if not self._auto_upd_started:      # list is shown: first background check
+            self._auto_upd_started = True
+            self._schedule_auto_check()
+
+    # ---- keep downloaded songs current: quiet background check, click to update
+    _auto_upd_started = False
+    _last_full_check = 0.0
+    _auto_upd_songs = ()
+
+    def _on_auto_upd_toggled(self, on):
+        self.save_config()
+        if on:
+            self._schedule_auto_check()
+        else:
+            self._clear_auto_updates()
+
+    def _schedule_auto_check(self):
+        if self.auto_upd_chk.isChecked():
+            QTimer.singleShot(1500, self.auto_check_updates)
+
+    def _clear_auto_updates(self):
+        self._auto_upd_songs = ()
+        self.auto_upd_btn.hide()
+        self.song_model.set_update_keys(())
+
+    def auto_check_updates(self):
+        """Low-priority background check of downloaded songs (fast path first)."""
+        t = getattr(self, "_auto_upd", None)
+        if (self._closing or not self.auto_upd_chk.isChecked() or (t and t.isRunning())
+                or not os.path.isfile(core.DB_PATH)):
+            return
+        ddir = resolve_dir(self.dir_edit.text())
+        if not os.path.isdir(ddir):
+            return
+        t = self._auto_upd = self._track(AutoUpdateCheckThread(ddir, self._last_full_check))
+        t.done.connect(self.on_auto_updates)
+        t.start(QThread.LowPriority)
+
+    def on_auto_updates(self, songs, was_full):
+        if self._closing:
+            return
+        if was_full:
+            self._last_full_check = time.time()
+            self.save_config()
+        self._auto_upd_songs = tuple(songs)
+        self.song_model.set_update_keys({core.song_key(s) for s in songs})
+        if songs:
+            self.auto_upd_btn.setText(self.tr("auto_upd_notice", n=len(songs)))
+            self.auto_upd_btn.show()
+        else:
+            self.auto_upd_btn.hide()
+
+    def apply_auto_updates(self):
+        songs = list(self._auto_upd_songs)
+        self._clear_auto_updates()
+        files = [(s, f) for s in songs for f in s["files"]]
+        if files:
+            self._show_view("view_updates", songs)
+            self.start_download(files, overwrite=True)
 
     DB_DAMAGED = ("malformed", "not a database", "no such table", "unable to open")
 
@@ -1902,6 +1979,8 @@ class MainWindow(QMainWindow):
         self.updates_btn.setEnabled(True)
         self._set_busy(False)
         self.count_label.setText(self.tr("total", n=self.song_model.rowCount()))
+        self._last_full_check = time.time()
+        self.on_auto_updates(songs, False)
         if not songs:
             QMessageBox.information(self, self.tr("check_updates"), self.tr("upd_none"))
             return
@@ -2259,6 +2338,8 @@ class MainWindow(QMainWindow):
             if first_run:
                 self.show_all()
                 self.search_edit.setFocus()
+            else:
+                self._schedule_auto_check()
         elif not self._closing:
             QMessageBox.critical(self, self.tr("dbv_title"), self.tr("db_fail", e=msg))
 

@@ -879,3 +879,24 @@ TR["ja"].update({
     "c_fav": "★", "fav_add": "お気に入りに追加", "fav_remove": "お気に入りから削除",
     "f_fav_only": "お気に入りのみ", "sel_fav": "お気に入りを選択",
 })
+
+
+# --- automatic update check of downloaded songs
+TR["zh_TW"].update({
+    "auto_upd_setting": "自動檢查已下載歌曲是否有更新",
+    "auto_upd_help": "啟動後與資料庫更新後，在背景檢查已下載的歌曲；只提示，不會自動下載。",
+    "auto_upd_notice": "{n} 首已下載歌曲有更新 — 更新",
+    "dl_update_avail": "已下載，但上游有更新（點狀態列的「更新」下載）",
+})
+TR["en"].update({
+    "auto_upd_setting": "Check my downloaded songs for updates automatically",
+    "auto_upd_help": "Checks in the background after start-up and after a database update. It only notifies; nothing is downloaded by itself.",
+    "auto_upd_notice": "{n} downloaded songs have updates — Update",
+    "dl_update_avail": "Downloaded, but updated upstream (click Update in the status bar)",
+})
+TR["ja"].update({
+    "auto_upd_setting": "ダウンロード済みの曲の更新を自動的に確認する",
+    "auto_upd_help": "起動後とデータベース更新後にバックグラウンドで確認します。通知のみで、自動ではダウンロードしません。",
+    "auto_upd_notice": "ダウンロード済みの {n} 曲に更新があります — 更新",
+    "dl_update_avail": "ダウンロード済みですが、上流で更新されています（ステータスバーの「更新」をクリック）",
+})

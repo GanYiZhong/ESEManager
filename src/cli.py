@@ -6,7 +6,7 @@ ESEManager command-line mode.
     ESEManager-cli search KEYWORD [-c CATEGORY]... [--new] [--favourites] [--limit N]
     ESEManager-cli download [KEYWORD] [-c CATEGORY]... [--all] [--favourites] [-y]
     ESEManager-cli missing [--download] [-y] [--limit N]
-    ESEManager-cli updates [--download] [-y] [--limit N]
+    ESEManager-cli updates [--changed-only] [--download] [-y] [--limit N]
     ESEManager-cli version-sorting [--force]
     ESEManager-cli self-update [--check] [-y]
 
@@ -367,7 +367,8 @@ def cmd_updates(args, tr):
         return 2
     out.msg(tr("upd_checking"))
     try:
-        songs = core.find_updates(args.dir)
+        songs = core.find_updates(
+            args.dir, only=core.changed_song_keys() if args.changed_only else None)
     except core.NoShaError:
         out.err(tr("upd_no_sha"))
         return 1
@@ -491,6 +492,9 @@ def build_parser():
         sp.add_argument("--download", action="store_true", help="download them")
         sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
         sp.add_argument("--limit", type=int, default=50, help="max rows to print (0 = all)")
+        if name == "updates":
+            sp.add_argument("--changed-only", action="store_true",
+                            help="only check songs changed by the last database update (fast)")
         sp.set_defaults(func=func)
 
     sp = sub.add_parser("version-sorting", parents=[common],
