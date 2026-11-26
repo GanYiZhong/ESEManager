@@ -808,3 +808,17 @@ TR["ja"].update({
 TR["zh_TW"].update({"did_you_mean": "你是不是要找：{items}？"})
 TR["en"].update({"did_you_mean": "Did you mean: {items}?"})
 TR["ja"].update({"did_you_mean": "もしかして：{items}？"})
+
+# --- favourites
+TR["zh_TW"].update({
+    "c_fav": "★", "fav_add": "加入最愛", "fav_remove": "移出最愛",
+    "f_fav_only": "只顯示最愛", "sel_fav": "選取最愛的歌曲",
+})
+TR["en"].update({
+    "c_fav": "★", "fav_add": "Add to favourites", "fav_remove": "Remove from favourites",
+    "f_fav_only": "Favourites only", "sel_fav": "Select favourites",
+})
+TR["ja"].update({
+    "c_fav": "★", "fav_add": "お気に入りに追加", "fav_remove": "お気に入りから削除",
+    "f_fav_only": "お気に入りのみ", "sel_fav": "お気に入りを選択",
+})

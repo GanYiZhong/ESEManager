@@ -294,6 +294,8 @@ def cmd_search(args, tr):
     if not need_db(tr):
         return 2
     songs = core.search_songs(args.keyword, args.category)
+    if args.favourites:
+        songs = core.filter_favourites(songs, core.load_favourites())
     print_songs(songs, args.limit)
     if not songs:
         out.err(tr("total", n=0))
@@ -315,10 +317,12 @@ def cmd_search(args, tr):
 def cmd_download(args, tr):
     if not need_db(tr):
         return 2
-    if not args.keyword and not args.category and not args.all:
+    if not args.keyword and not args.category and not args.all and not args.favourites:
         out.err(tr("cli_download_what"))
         return 2
     songs = core.search_songs(args.keyword, args.category)
+    if args.favourites:
+        songs = core.filter_favourites(songs, core.load_favourites())
     if not songs:
         out.err(tr("total", n=0))
         return 2
@@ -461,12 +465,14 @@ def build_parser():
     sp.add_argument("keyword", nargs="?", default="")
     sp.add_argument("-c", "--category", help="category name or part of it, e.g. Anime")
     sp.add_argument("--limit", type=int, default=50, help="max rows to print (0 = all)")
+    sp.add_argument("--favourites", action="store_true", help="only starred songs")
     sp.set_defaults(func=cmd_search)
 
     sp = sub.add_parser("download", parents=[common], help="download matching songs")
     sp.add_argument("keyword", nargs="?", default="")
     sp.add_argument("-c", "--category", help="category name or part of it, e.g. Anime")
     sp.add_argument("--all", action="store_true", help="download every song")
+    sp.add_argument("--favourites", action="store_true", help="download the starred songs")
     sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     sp.set_defaults(func=cmd_download)
 
