@@ -33,6 +33,8 @@ class SearchThread(QThread):
         self.seq = seq
 
     def run(self):
+        if self.isInterruptionRequested():     # superseded before it began
+            return
         try:
             self.done.emit(self.seq, core.search_songs(self.keyword, self.category))
         except Exception as e:
@@ -51,6 +53,8 @@ class DownloadStatusThread(QThread):
         self.seq = seq
 
     def run(self):
+        if self.isInterruptionRequested():     # superseded before it began
+            return
         try:
             self.done.emit(self.seq, core.download_status(self.songs, self.download_dir))
         except Exception:
