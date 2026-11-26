@@ -367,3 +367,15 @@ def test_new_i18n_keys_present(lang):
                 "font_label", "font_tip"):
         assert TR[lang][key]
     assert "F5" in TR[lang]["shortcuts_text"] and "Ctrl+A" in TR[lang]["shortcuts_text"]
+
+
+def test_settings_dialog_fits_its_rows(window):
+    """The folder row (field + two buttons) must not be wider than the dialog."""
+    dlg = window.settings_dlg
+    dlg.show()
+    QApplication.processEvents()
+    try:
+        assert window.opendir_btn.geometry().right() <= window.opendir_btn.parentWidget().width()
+        assert dlg.width() >= dlg.layout().minimumSize().width()
+    finally:
+        dlg.hide()

@@ -136,7 +136,9 @@ class MainWindow(QMainWindow):
         self.cat_combo.setMinimumWidth(em * 9)
         self.overall_bar.setMaximumWidth(em * 14)
         self.overall_bar.setMaximumHeight(max(18, fm.height() + 4))
-        self.dir_row.setMinimumWidth(em * 36)
+        # Size the path field, not the whole row: the row also holds two
+        # buttons, and the dialog grows to fit its layout.
+        self.dir_edit.setMinimumWidth(em * 22)
     DEFAULT_WINDOW = (1280, 860)
 
     # ---- i18n / config
@@ -655,7 +657,6 @@ class MainWindow(QMainWindow):
         belong to the main window (other code reads them), shown in a dialog."""
         dlg = self.settings_dlg = QDialog(self)
         dlg.setWindowTitle(self.tr("mw_settings_title"))
-        dlg.setMinimumWidth(560)
         root = QVBoxLayout(dlg)
         root.setContentsMargins(20, 16, 20, 14)
         root.setSpacing(6)
