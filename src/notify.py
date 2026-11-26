@@ -60,5 +60,11 @@ class Notifier:
             self.tray.showMessage(title, message,
                                   QSystemTrayIcon.MessageIcon.Information, BALLOON_MS)
             # Remove the tray icon again once the balloon is gone.
-            QTimer.singleShot(BALLOON_MS + 2000, self.tray.hide)
+            QTimer.singleShot(BALLOON_MS + 2000, self._hide_tray)
         return True
+
+    pinned = False      # True while the tray icon is the app's only visible handle
+
+    def _hide_tray(self):
+        if self.tray is not None and not self.pinned:
+            self.tray.hide()

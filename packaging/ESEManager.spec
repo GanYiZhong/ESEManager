@@ -27,6 +27,7 @@ _common = dict(
         'models',
         'workers',
         'notify',
+        'power',
         'cli',
     ],
     hookspath=[],
