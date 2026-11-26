@@ -463,6 +463,17 @@ class _SongIndex:
         self._ja = None          # [(title_ja, compact title_ja, title)] normalized, lazy
         self._sug = None         # typo-suggestion data, lazy (see _suggest_data)
         self._sug_ja = None
+        self._kana = None        # (_kana_key names, trigram index), lazy
+
+    def kana_keys(self):
+        if self._kana is None:
+            keys = [_kana_key(n) for n in self.names]
+            tri = {}
+            for i, k in enumerate(keys):
+                for g in _grams(k, 3):
+                    tri.setdefault(g, []).append(i)
+            self._kana = (keys, tri)
+        return self._kana
 
     def ja_titles(self):
         if self._ja is None:
@@ -552,6 +563,88 @@ def _category_keys(category):
     return [k for k in (norm_text(c).strip() for c in items if c) if k]
 
 
+# ---------------------------------------------------------------- kana -> romaji
+_KANA_BASE = dict(zip(*[iter((
+    "あ a い i う u え e お o か ka き ki く ku け ke こ ko さ sa し shi す su せ se そ so "
+    "た ta ち chi つ tsu て te と to な na に ni ぬ nu ね ne の no は ha ひ hi ふ fu へ he ほ ho "
+    "ま ma み mi む mu め me も mo や ya ゆ yu よ yo ら ra り ri る ru れ re ろ ro "
+    "わ wa ゐ i ゑ e を o が ga ぎ gi ぐ gu げ ge ご go ざ za じ ji ず zu ぜ ze ぞ zo "
+    "だ da ぢ ji づ zu で de ど do ば ba び bi ぶ bu べ be ぼ bo ぱ pa ぴ pi ぷ pu ぺ pe ぽ po "
+    "ゔ vu ぁ a ぃ i ぅ u ぇ e ぉ o ゃ ya ゅ yu ょ yo ゎ wa").split())] * 2))
+_KANA_SMALL_Y = {"ゃ": "a", "ゅ": "u", "ょ": "o"}
+_KANA_COMBO = {  # kana + small vowel kana -> romaji
+    "ふぁ": "fa", "ふぃ": "fi", "ふぇ": "fe", "ふぉ": "fo", "うぃ": "wi", "うぇ": "we",
+    "うぉ": "wo", "ゔぁ": "va", "ゔぃ": "vi", "ゔぇ": "ve", "ゔぉ": "vo", "てぃ": "ti",
+    "でぃ": "di", "とぅ": "tu", "どぅ": "du", "しぇ": "she", "じぇ": "je", "ちぇ": "che",
+    "つぁ": "tsa", "つぃ": "tsi", "つぇ": "tse", "つぉ": "tso", "いぇ": "ye"}
+_KANA_Y_BASE = {"し": "sh", "ち": "ch", "じ": "j", "ぢ": "j"}
+_VOWELS = "aiueo"
+
+
+def _kana_syllable(t, i):
+    """(romaji, chars consumed) of the kana syllable at t[i], or None."""
+    base = _KANA_BASE.get(t[i]) if i < len(t) else None
+    if base is None:
+        return None
+    nxt = t[i + 1] if i + 1 < len(t) else ""
+    if nxt in _KANA_SMALL_Y and base.endswith("i") and t[i] != "い":
+        return _KANA_Y_BASE.get(t[i], base[:-1] + "y") + _KANA_SMALL_Y[nxt], 2
+    combo = _KANA_COMBO.get(t[i:i + 2])
+    if combo:
+        return combo, 2
+    return base, 1
+
+
+def kana_to_romaji(text, apostrophe=True):
+    """Modified-Hepburn transliteration of the kana in `text` (katakana is
+    folded to hiragana first, other characters pass through): digraphs
+    (きゃ -> kya), small っ doubles the next consonant (っち -> tchi), ん is n
+    (n' before a vowel or y when `apostrophe`), ー repeats the previous vowel."""
+    t = norm_text(text)
+    out = []
+    i = 0
+    while i < len(t):
+        c = t[i]
+        if c in "っん":
+            nxt = _kana_syllable(t, i + 1)
+            if c == "ん":
+                vowelish = nxt and nxt[0][0] in _VOWELS + "y"
+                out.append("n'" if apostrophe and vowelish else "n")
+            elif nxt and nxt[0][0] not in _VOWELS + "n":
+                out.append("t" if nxt[0].startswith("ch") else nxt[0][0])
+            i += 1
+        elif c == "ー":
+            prev = "".join(out)[-1:]
+            out.append(prev if prev in _VOWELS else "")
+            i += 1
+        else:
+            syl = _kana_syllable(t, i)
+            out.append(syl[0] if syl else c)
+            i += syl[1] if syl else 1
+    return "".join(out)
+
+
+def _has_kana(text):
+    return any('぀' <= c <= 'ヿ' and c not in "゠・" for c in text or "")
+
+
+def _kana_key(text):
+    """Loose comparison key for kana-derived romaji: _romaji_key plus l/r and
+    long-vowel folding, spaces and punctuation dropped."""
+    k = _romaji_key(text).replace("l", "r")
+    k = "".join(c for c in k if c.isalnum()).replace("ngu", "ng")
+    return re.sub(r"(.)\1+", r"\1", k)
+
+
+def _kana_query(keyword):
+    """Romaji reading of a query that is kana (plus Latin/digits/spaces), else
+    None: a query still holding kanji cannot be transliterated."""
+    if not _has_kana(keyword):
+        return None
+    r = kana_to_romaji(keyword, apostrophe=False)
+    return None if has_cjk(r) else r
+
+
 def search_songs(keyword, category=None):
     """Search the song database. Matching is width-, case- and kana-insensitive
     and ignores spaces/punctuation; several words must all match, in any
@@ -599,6 +692,17 @@ def search_songs(keyword, category=None):
                         sc = next((g for g, pat in pats if pat.search(name)), None)
                     if sc is not None and sc < best.get(i, 99):
                         best[i] = sc
+        rom = _kana_query(keyword)
+        if rom and _kana_key(rom):
+            # kana typed for a romaji title: match the transliteration (loosely
+            # folded); Japanese-title hits (0-6) always rank before these (10+)
+            rkeys, _ = idx.kana_keys()
+            rk = _kana_key(rom)
+            for i in cand:
+                if i not in best:
+                    t = _tier(rkeys[i], rk)
+                    if t is not None:
+                        best[i] = 10 + t
         out = sorted(best, key=lambda i: (best[i], i))
     # Callers get their own dicts, so mutating a result cannot corrupt the cache.
     return [dict(idx.songs[i], files=list(idx.songs[i]["files"])) for i in out]
@@ -722,6 +826,28 @@ def _suggest_ja(idx, kw, limit):
     return [t[3] for t in scored[:limit]]
 
 
+def _suggest_kana(idx, rom, limit):
+    """Song titles close to a transliterated kana query (trigram containment
+    on loosely folded keys, so ろーりんぐがーる ~ 'Rolling Girl')."""
+    keys, tri = idx.kana_keys()
+    qk = _kana_key(rom)
+    qg = _grams(qk, 3)
+    if len(qk) < 4 or not qg:
+        return []
+    hits = collections.Counter()
+    for g in qg:
+        for i in tri.get(g, ()):
+            hits[i] += 1
+    scored = []
+    for i, n in hits.items():
+        cont = n / len(qg)
+        if cont >= 0.5:
+            dice = 2 * n / (len(qg) + max(1, len(keys[i]) - 2))
+            scored.append((-cont, -dice, i))
+    scored.sort()
+    return [idx.songs[i]["song_name"] for _, _, i in scored[:limit]]
+
+
 def suggest(keyword, limit=3):
     """'Did you mean' candidates for a query that found little or nothing:
     up to `limit` strings, each a corrected query or a song title that can be
@@ -735,7 +861,11 @@ def suggest(keyword, limit=3):
         return []
     idx = _song_index()
     if has_cjk(kw):
-        return _suggest_ja(idx, kw, limit)
+        out = _suggest_ja(idx, kw, limit)
+        rom = _kana_query(kw)
+        if rom and len(out) < limit:
+            out += [x for x in _suggest_kana(idx, rom, limit) if x not in out]
+        return out[:limit]
     words, shown, buckets, tri, tkeys, blob = _suggest_data(idx)
     tokens = list(dict.fromkeys(_WORD_RE.findall(kw)))
     if not tokens:
