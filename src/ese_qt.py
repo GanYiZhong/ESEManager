@@ -153,9 +153,40 @@ class _ClickLabel(QLabel):
         super().mouseReleaseEvent(ev)
 
 
+class _DirDropEdit(QLineEdit):
+    """Folder field: dropping a folder on it sets the path directly."""
+    dir_dropped = Signal(str)
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.setAcceptDrops(True)
+
+    @staticmethod
+    def _dir(mime):
+        for url in mime.urls():
+            if url.isLocalFile() and os.path.isdir(url.toLocalFile()):
+                return url.toLocalFile()
+        return None
+
+    def dragEnterEvent(self, ev):
+        if self._dir(ev.mimeData()):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    dragMoveEvent = dragEnterEvent
+
+    def dropEvent(self, ev):
+        d = self._dir(ev.mimeData())
+        if d:
+            ev.acceptProposedAction()
+            self.dir_dropped.emit(d)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setAcceptDrops(True)
         self.config = self.load_config()
         lf = self.config.get("download", {}).get("last_full_check", 0)
         self._last_full_check = (float(lf) if isinstance(lf, (int, float))
@@ -925,7 +956,8 @@ class MainWindow(QMainWindow):
 
         # ---- downloads
         form = self._settings_section(root, "set_sec_download")
-        self.dir_edit = QLineEdit(os.path.abspath(self.download_dir))
+        self.dir_edit = _DirDropEdit(os.path.abspath(self.download_dir))
+        self.dir_edit.dir_dropped.connect(self.set_download_dir)
         self.dir_edit.editingFinished.connect(self.save_config)
         self.dir_edit.editingFinished.connect(self.refresh_download_status)
         self.browse_btn = QPushButton(self.tr("browse"))
@@ -1393,6 +1425,9 @@ class MainWindow(QMainWindow):
             self._refresh_status()
         self.apply_filters()
         self.refresh_download_status()
+        if self._pending_import is not None:
+            text, self._pending_import = self._pending_import, None
+            self._apply_song_list(text)
 
     # ---- downloaded-status column: one folder scan on a worker thread
     _dl_seq = 0
@@ -1657,7 +1692,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.tr("sl_title"), self.tr("sl_nothing"))
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, self.tr("sl_export"), "songlist.json", self.tr("sl_filter"))
+            self, self.tr("sl_export"), "songlist.esesongs", self.tr("sl_filter"))
         if not path:
             return
         entries = songlist.entries_from_songs(songs)
@@ -1692,6 +1727,110 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, self.tr("sl_title"), self.tr("sl_open_fail", e=e))
             return
         self._apply_song_list(text)
+
+    def import_song_list_file(self, path):
+        """Import a song-list file given by path (drop / command line)."""
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as e:
+            QMessageBox.warning(self, self.tr("sl_title"), self.tr("sl_open_fail", e=e))
+            return
+        if not self.all_songs and self.has_song_db():
+            self._pending_import = text      # songs are still loading
+            return
+        self._apply_song_list(text)
+
+    # ---- drag and drop
+    _pending_import = None
+    LIST_EXTS = (".json", ".txt", ".esesongs")
+
+    @classmethod
+    def classify_drop(cls, mime):
+        """What was dropped: ("file", path) | ("dir", path) | ("text", text) | None."""
+        if mime.hasUrls():
+            for url in mime.urls():
+                if not url.isLocalFile():
+                    continue
+                path = url.toLocalFile()
+                if os.path.isdir(path):
+                    return ("dir", path)
+                if path.lower().endswith(cls.LIST_EXTS) and os.path.isfile(path):
+                    return ("file", path)
+            return None
+        if mime.hasText():
+            text = mime.text()
+            try:
+                entries, _n = songlist.parse(text)
+            except ValueError:
+                entries = []
+            # A lone word is more likely stray text than a list.
+            if entries and (len(entries) > 1 or entries[0][0]
+                            or text.lstrip().startswith("{")):
+                return ("text", text)
+        return None
+
+    def dragEnterEvent(self, ev):
+        if self.classify_drop(ev.mimeData()):
+            ev.acceptProposedAction()
+            self._show_drop_overlay(True)
+        else:
+            ev.ignore()
+
+    def dragMoveEvent(self, ev):
+        if self.classify_drop(ev.mimeData()):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    def dragLeaveEvent(self, ev):
+        self._show_drop_overlay(False)
+
+    def dropEvent(self, ev):
+        self._show_drop_overlay(False)
+        kind = self.classify_drop(ev.mimeData())
+        if not kind:
+            ev.ignore()
+            return
+        ev.acceptProposedAction()
+        what, value = kind
+        if what == "file":
+            self.import_song_list_file(value)
+        elif what == "text":
+            self._apply_song_list(value)
+        else:
+            self.offer_download_dir(value)
+
+    def offer_download_dir(self, path):
+        if QMessageBox.question(self, self.tr("dir"),
+                                self.tr("drop_dir_q", d=path)) == QMessageBox.Yes:
+            self.set_download_dir(path)
+
+    def set_download_dir(self, path):
+        path = os.path.normpath(path)
+        self.dir_edit.setText(path)
+        self.save_config()
+        self.refresh_download_status()
+        self.refresh_welcome_dir()
+        self.statusBar().showMessage(self.tr("drop_dir_saved", d=path), 6000)
+
+    def _show_drop_overlay(self, on):
+        ov = getattr(self, "_drop_overlay", None)
+        if ov is None:
+            if not on:
+                return
+            ov = self._drop_overlay = QLabel(self)
+            ov.setAlignment(Qt.AlignCenter)
+            ov.setAttribute(Qt.WA_TransparentForMouseEvents)
+        if on:
+            t = theme.colours()
+            ov.setText(self.tr("drop_import"))
+            ov.setStyleSheet(
+                f"QLabel{{background:{t['base']};color:{t['text']};font-size:18px;"
+                f"border:3px dashed {t['accent']};border-radius:10px;}}")
+            ov.setGeometry(self.centralWidget().geometry().adjusted(12, 12, -12, -12))
+            ov.raise_()
+        ov.setVisible(on)
 
     def paste_song_list(self):
         self._apply_song_list(QGuiApplication.clipboard().text())
@@ -2611,9 +2750,18 @@ def selftest():
     os._exit(0)
 
 
+def list_path_from_argv(args):
+    """Absolute path of the first existing file argument (open-with), else None."""
+    return next((os.path.abspath(a) for a in args
+                 if not a.startswith("-") and os.path.isfile(a)), None)
+
+
 def main():
     if "--selftest" in sys.argv:
         selftest()
+
+    # A song-list path given on the command line (resolved before the chdir).
+    list_path = list_path_from_argv(sys.argv[1:])
 
     # Relative paths (git clone, portable git, user-entered folders) resolve
     # next to the app no matter where it was launched from.
@@ -2629,6 +2777,8 @@ def main():
     w = MainWindow()
     theme.apply_theme(app, w.theme_pref)  # display.theme from config.toml
     w.show()
+    if list_path:
+        QTimer.singleShot(0, lambda: w.import_song_list_file(list_path))
     rc = app.exec()
     if any(t.isRunning() for t in w._threads):
         # A worker that ignored the shutdown wait: exit without running

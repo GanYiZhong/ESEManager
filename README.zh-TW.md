@@ -34,6 +34,13 @@
 Linux 若出現無法載入 Qt `xcb` 外掛的錯誤，請安裝 `libxcb-cursor0`（Debian/Ubuntu）或
 `xcb-util-cursor`（Fedora/Arch）。
 
+## 拖放與「開啟檔案」
+
+- 把歌單（`.esesongs`、`.json`、`.txt`）或從聊天軟體複製的文字拖進視窗，等同「檔案 > 匯入」；拖曳時會顯示提示。
+- 把資料夾拖進視窗會詢問是否設為下載資料夾；直接拖到資料夾欄位則立即設定。
+- `ESEManager.exe path	o\list.esesongs` 會開啟程式並匯入歌單。要從檔案總管「開啟檔案」：對 `.esesongs` 按右鍵 > 開啟檔案 > 選擇其他應用程式 > ESEManager.exe（可勾選「一律使用」）。程式不會自動註冊檔案關聯。
+- 匯出的歌單預設副檔名為 `.esesongs`（內容為 JSON），仍可使用 `.json` 與 `.txt`。
+
 ## 命令列模式
 
 Release 版在主程式旁附有 `ESEManager-cli`（Windows 為 `ESEManager-cli.exe`）；從原始碼執行則用
