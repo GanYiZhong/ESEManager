@@ -1783,12 +1783,14 @@ class MainWindow(QMainWindow):
                                 Qt.Unchecked if cur else Qt.Checked, Qt.CheckStateRole)
 
     def update_sel_count(self, *args):
-        n, nf, size = self.song_model.selection_stats()
+        n, nf, _ = self.song_model.selection_stats()
         if not n:
             self.sel_label.setText(self.tr("selected", n=0))
-        elif size > 0:
+            return
+        size, exact = self.song_model.selection_bytes()
+        if size > 0:
             self.sel_label.setText(self.tr("sel_detail_size", n=n, f=nf,
-                                           size=human_size(size)))
+                                           size=("" if exact else "~") + human_size(size)))
         else:
             self.sel_label.setText(self.tr("sel_detail", n=n, f=nf))
 
@@ -1837,14 +1839,17 @@ class MainWindow(QMainWindow):
         if self.dl_thread and self.dl_thread.isRunning():
             QMessageBox.warning(self, self.tr("download"), self.tr("dl_busy"))
             return
+        if not self._disk_ok(files, overwrite):
+            return
         self.save_config()
         self._deferred_files = []
         self.fail_list.clear()
         self.retry_btn.setEnabled(False)
         self._update_monitor_tabs()
         self.dl_model.load(files)
-        self.overall_bar.setRange(0, len(files))
+        self.overall_bar.setRange(0, self.BAR_STEPS)     # progress by bytes
         self.overall_bar.setValue(0)
+        self.overall_bar.setFormat("%p%")
         self.show_monitor(0)
         self.pause_btn.setText(self.tr("pause"))
         self._set_pause_icon(False)
@@ -1872,6 +1877,22 @@ class MainWindow(QMainWindow):
             self.dl_timer.timeout.connect(self.refresh_progress)
         self.dl_timer.start()
 
+    BAR_STEPS = 1000
+
+    def _disk_ok(self, files, overwrite):
+        """False when the user declines after a low-disk-space warning."""
+        try:
+            plan = core.plan_download(files, resolve_dir(self.dir_edit.text()), overwrite)
+        except Exception:
+            core.log.info("disk space check skipped", exc_info=True)
+            return True
+        if plan["ok"]:
+            return True
+        return QMessageBox.question(
+            self, self.tr("download"),
+            self.tr("dl_disk_short", free=core.human_bytes(plan["free"]),
+                    need=core.human_bytes(plan["need"]))) == QMessageBox.Yes
+
     def _queue_download(self, files):
         """Append files to the running job (skipping ones already in it)."""
         added = self.dl_thread.add(files)
@@ -1882,7 +1903,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.tr("dl_queued_none"), 4000)
             return
         self.dl_model.append(added)
-        self.overall_bar.setMaximum(self.dl_thread.total)
         songs = len({s["song_name"] for s, _ in added})
         msg = self.tr("dl_queued", n=songs, f=len(added))
         self.log_view.appendPlainText(msg)
@@ -1908,17 +1928,24 @@ class MainWindow(QMainWindow):
         flush = getattr(self.dl_thread, "flush_log", None)
         if flush:
             flush()         # batched log lines, one signal per tick
-        done, total, spd, eta, dirty = self.dl_thread.snapshot()
-        self.overall_bar.setValue(done)
+        info, dirty = self.dl_thread.snapshot_ex()
+        done, total = info["done"], info["total"]
+        bdone, btotal = info["bytes_done"], info["bytes_total"]
+        self.overall_bar.setValue(min(self.BAR_STEPS, bdone * self.BAR_STEPS // btotal)
+                                  if btotal else 0)
+        sizes = ("" if info["exact"] else "~") + core.human_bytes_pair(bdone, btotal)
+        files = self.tr("dl_files_count", done=done, total=total)
         if self.dl_thread.is_paused():
-            self.overall_label.setText(f"{done}/{total}  ·  {self.tr('paused_label')}")
+            self.overall_label.setText(
+                f"{sizes}  ·  {files}  ·  {self.tr('paused_label')}")
         else:
             self.overall_label.setText(
-                f"{done}/{total}  ·  {human_speed(spd)}  ·  ETA {human_eta(eta)}")
+                f"{sizes}  ·  {human_speed(info['speed'])}  ·  "
+                f"ETA {core.human_clock(info['eta'])}  ·  {files}")
         if dirty:
             self.dl_model.update_many(dirty)
-        if total:
-            self.setWindowTitle(f"{done * 100 // total}% – {self.tr('title')}")
+        if btotal:
+            self.setWindowTitle(f"{min(100, bdone * 100 // btotal)}% – {self.tr('title')}")
         if self._in_background and self.notifier.tray is not None:
             self.notifier.tray.setToolTip(f"{self.tr('title')}  {self.overall_label.text()}")
 

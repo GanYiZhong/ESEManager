@@ -1009,3 +1009,24 @@ TR["ja"].update({
     "auto_upd_notice": "ダウンロード済みの {n} 曲に更新があります — 更新",
     "dl_update_avail": "ダウンロード済みですが、上流で更新されています（ステータスバーの「更新」をクリック）",
 })
+
+
+# --- byte-based progress and free-space check
+TR["zh_TW"].update({
+    "dl_files_count": "{done}/{total} 個檔案",
+    "dl_disk_short": "磁碟剩餘空間 {free}，但這次下載預計需要約 {need}。仍要繼續嗎？",
+    "cli_expected": "預計下載大小：約 {size}（可用空間 {free}）",
+    "cli_disk_short": "磁碟空間不足：剩餘 {free}，預計需要約 {need}。加上 --force 可強制下載。",
+})
+TR["en"].update({
+    "dl_files_count": "{done}/{total} files",
+    "dl_disk_short": "Only {free} is free on the disk, but this download needs about {need}. Continue anyway?",
+    "cli_expected": "Expected download size: about {size} ({free} free)",
+    "cli_disk_short": "Not enough free disk space: {free} free, about {need} needed. Use --force to download anyway.",
+})
+TR["ja"].update({
+    "dl_files_count": "{done}/{total} ファイル",
+    "dl_disk_short": "ディスクの空き容量は {free} ですが、このダウンロードには約 {need} 必要です。続行しますか？",
+    "cli_expected": "ダウンロード予定サイズ: 約 {size}（空き容量 {free}）",
+    "cli_disk_short": "ディスクの空き容量が不足しています: 空き {free}、必要 約 {need}。--force で強制的にダウンロードできます。",
+})

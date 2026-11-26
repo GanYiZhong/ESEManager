@@ -8,7 +8,7 @@ from PySide6.QtCore import (Qt, QAbstractTableModel,
 
 from i18n import CATEGORY_NAMES, CATEGORY_COLORS
 import theme
-from core import human_speed
+from core import human_speed, file_size_hint, default_estimate, lfs_map_cached
 
 # ------------------------------------------------------------ sort keys
 _DIGITS = re.compile(r"(\d+)")
@@ -344,6 +344,27 @@ class SongModel(QAbstractTableModel):
                 for f in s["files"]:
                     total += f.get("size") or 0
         return n, nf, total
+
+    def selection_bytes(self):
+        """(expected bytes, exact) of the checked songs' files: audio sizes
+        from the database's LFS pointers, chart sizes where recorded, a
+        per-type guess for the rest (exact is then False)."""
+        ck = self.checked
+        if not ck:
+            return 0, True
+        lfs = lfs_map_cached()
+        total = 0
+        exact = True
+        key = self._key
+        for s in self._view:
+            if key(s) in ck:
+                for f in s["files"]:
+                    n = file_size_hint(f, lfs)
+                    if n <= 0:
+                        n = default_estimate(f["file_path"])
+                        exact = False
+                    total += n
+        return total, exact
 
     def checked_rows(self):
         ck, key = self.checked, self._key
