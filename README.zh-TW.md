@@ -58,6 +58,7 @@ ESEManager-cli self-update                 # 下載最新版 ESEManager 並覆�
 | `--source S` | download、updates | 下載來源：`ese`、`taiko.ac` 或自訂網址（預設讀 `config.toml`，否則 `ese`；另一個自動當備援） |
 | `--lang zh_TW\|en\|ja` | 全部 | 訊息語言 |
 | `--json` | 全部 | stdout 每行輸出一個 JSON 物件，訊息改到 stderr |
+| `-q`, `--quiet` | 全部 | 只輸出結果與錯誤；`search` 每行一個歌名 |
 | `-c`, `--category 名稱` | search、download | 分類或分類名稱的一部分（`-c Anime`） |
 | `--limit N` | search、missing、updates | 最多列出幾筆（預設 50，0＝全部） |
 | `--all` | download | 下載全部歌曲 |
@@ -66,6 +67,8 @@ ESEManager-cli self-update                 # 下載最新版 ESEManager 並覆�
 | `--force` | update-db、version-sorting | 已是最新也重新下載 |
 | `--offline` | status | 不向 GitHub Pages 查詢最新資料庫版本 |
 | `--check` | self-update | 只檢查有沒有新版本 |
+
+終端機上會顯示進度條（百分比、速度、剩餘時間）並用顏色標示結果；設定環境變數 `NO_COLOR` 可關閉顏色，導向到檔案或管線時不會有顏色。`search` 結尾會提示下一步的 `download` 指令。
 
 結束碼 0＝成功、1＝有失敗、2＝沒事可做或用法錯誤。沒有終端機時（腳本、排程）確認提示一律視為「否」，
 請加上 `-y`。
