@@ -164,6 +164,70 @@ def get_with_retry(sess, url, attempts=3, stop=None, **kw):
             delay *= 2
 
 
+class ChecksumError(RuntimeError):
+    """A downloaded file does not match its published checksum."""
+
+
+class AllHostsFailed(Exception):
+    """Every candidate host failed for one file; `hosts` lists the hosts tried
+    and `last` is the final underlying error."""
+
+    def __init__(self, hosts, last):
+        super().__init__(f"{', '.join(hosts)}: {last}")
+        self.hosts = hosts
+        self.last = last
+
+
+def _default_tr(key, **kw):
+    from i18n import TR
+    s = TR["en"].get(key, key)
+    return s.format(**kw) if kw else s
+
+
+def _error_key(exc):
+    """i18n key for the kind of failure `exc` is, or None when unknown."""
+    import errno
+    import ssl
+    if isinstance(exc, ChecksumError):
+        return "err_checksum"
+    if isinstance(exc, requests.HTTPError):
+        code = getattr(exc.response, "status_code", 0) or 0
+        if code in (403, 429):
+            return "err_rate_limit"
+        if code == 404:
+            return "err_not_found"
+        if code >= 500:
+            return "err_server"
+        return None
+    if isinstance(exc, (requests.exceptions.SSLError, ssl.SSLError)):
+        return "err_tls"
+    if isinstance(exc, (requests.Timeout, TimeoutError)):
+        return "err_timeout"
+    if isinstance(exc, requests.ConnectionError):
+        # Some timeouts surface as ConnectionError wrapping a read timeout.
+        return "err_timeout" if "timed out" in str(exc).lower() else "err_offline"
+    if isinstance(exc, OSError):
+        code = getattr(exc, "errno", None)
+        if code == errno.ENOSPC:
+            return "err_disk_full"
+        if code in (errno.EACCES, errno.EPERM) or isinstance(exc, PermissionError):
+            return "err_permission"
+    return None
+
+
+def friendly_error(exc, tr=None):
+    """Short localized message for a failure. Unknown errors fall back to the
+    exception's own text. Keep the technical detail in the log, not the UI."""
+    tr = tr or _default_tr
+    if isinstance(exc, AllHostsFailed):
+        msg = friendly_error(exc.last, tr)
+        return msg + tr("err_tried", hosts=", ".join(exc.hosts))
+    key = _error_key(exc)
+    if key:
+        return tr(key)
+    return str(exc) or exc.__class__.__name__
+
+
 def connect_ro(path):
     """Open a SQLite database read-only. Unlike sqlite3.connect(path) this never
     creates an empty file when the database is missing (it raises instead)."""
@@ -925,6 +989,7 @@ class Downloader:
             want = sha_map.get(fp)
             check = want if want and not is_lfs_path(fp) else None
             err = None
+            tried = []
             for url in self._urls(f):
                 if self._stop:
                     raise InterruptedError(self.tr("log_cancelled"))
@@ -937,8 +1002,11 @@ class Downloader:
                 except Exception as e:              # try the next host
                     log.info("%s: %s", url, e)
                     err = e
+                    tried.append(_host(url))
             else:
-                raise err or IOError("no download source")
+                if err is None:
+                    raise IOError("no download source")
+                raise AllHostsFailed(tried, err) from err
             os.replace(part, save_path)
             part = None
             forget_blob_sha(save_path)
@@ -950,7 +1018,8 @@ class Downloader:
                 self.failed.append((song, f))
             self._count("fail")
             self._mark(fp, "failed", 0.0, 0.0)
-            self.log(self.tr("log_fail", f=disp, e=e))
+            log.warning("download failed: %s", disp, exc_info=True)
+            self.log(self.tr("log_fail", f=disp, e=friendly_error(e, self.tr)))
         finally:
             # A stopped download keeps its .part so the next run can resume it
             # with a Range request; any other failure discards it.
@@ -1026,8 +1095,8 @@ class Downloader:
             # Re-hash as a git blob (needs the size prefix, so hash the file).
             # A mirror that lags behind fails here and the next host is tried.
             if want_sha and git_blob_sha(part) != want_sha:
-                raise IOError(self.tr("log_sha_mismatch"))
-        except IOError:
+                raise ChecksumError(self.tr("log_sha_mismatch"))
+        except (IOError, ChecksumError):
             try:                    # a bad (possibly resumed) part must not be reused
                 os.remove(part)
             except OSError:
@@ -1137,7 +1206,7 @@ def update_databases(version="", log=print, tr=None):
                 if f.read(16) != SQLITE_MAGIC:
                     raise ValueError(tr("log_db_bad", n=name))
             if h.hexdigest() != want:
-                raise ValueError(tr("log_db_sha", n=name))
+                raise ChecksumError(tr("log_db_sha", n=name))
             if not sqlite_ok(part):
                 raise ValueError(tr("log_db_bad", n=name))
         # Swap both in; keep backups so a failed second replace can roll back.
@@ -1262,7 +1331,7 @@ def download_app_update(release=None, app_dir=None, log=print, progress=None,
         want = get_with_retry(sess, sha_url, timeout=30).text.split()[0].lower()
         digest = (asset.get("digest") or "").lower()
         if digest.startswith("sha256:") and digest[7:] != want:
-            raise RuntimeError("release checksums disagree")
+            raise ChecksumError("release checksums disagree (SHA-256)")
 
         work = os.path.join(app_dir, UPDATE_WORK)
         shutil.rmtree(work, ignore_errors=True)
@@ -1284,7 +1353,7 @@ def download_app_update(release=None, app_dir=None, log=print, progress=None,
                         got += len(chunk)
                         progress(got, total)
         if h.hexdigest() != want:
-            raise RuntimeError("SHA-256 mismatch; the download is damaged")
+            raise ChecksumError("SHA-256 mismatch; the download is damaged")
 
         new = os.path.join(work, "new")
         os.makedirs(new)

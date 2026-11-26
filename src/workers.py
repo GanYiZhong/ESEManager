@@ -23,8 +23,9 @@ class SearchThread(QThread):
     done = Signal(int, object)       # seq, songs
     fail = Signal(int, str)          # seq, message
 
-    def __init__(self, keyword, category, seq=0):
+    def __init__(self, keyword, category, seq=0, tr=None):
         super().__init__()
+        self.tr = tr
         self.keyword = keyword
         self.category = category
         self.seq = seq
@@ -34,7 +35,7 @@ class SearchThread(QThread):
             self.done.emit(self.seq, core.search_songs(self.keyword, self.category))
         except Exception as e:
             core.log.warning("search failed: %s", e)
-            self.fail.emit(self.seq, str(e))
+            self.fail.emit(self.seq, core.friendly_error(e, self.tr))
 
 
 class CheckUpdatesThread(QThread):
@@ -44,8 +45,9 @@ class CheckUpdatesThread(QThread):
     done = Signal(object)           # list[song] with only the changed files
     fail = Signal(str)
 
-    def __init__(self, download_dir, category=None):
+    def __init__(self, download_dir, category=None, tr=None):
         super().__init__()
+        self.tr = tr
         self.download_dir = download_dir
         self.category = category
 
@@ -57,7 +59,7 @@ class CheckUpdatesThread(QThread):
             self.fail.emit("__NO_SHA__")
         except Exception as e:
             core.log.warning("update check failed", exc_info=True)
-            self.fail.emit(str(e))
+            self.fail.emit(core.friendly_error(e, self.tr))
 
 
 class DownloadThread(QThread):
@@ -105,7 +107,7 @@ class DBUpdateThread(QThread):
             self.done.emit(True, "ok")
         except Exception as e:
             core.log.warning("database update failed", exc_info=True)
-            self.done.emit(False, str(e))
+            self.done.emit(False, core.friendly_error(e, self.tr))
 
 
 class AppUpdateThread(QThread):
@@ -126,8 +128,9 @@ class VersionSortingThread(QThread):
     log = Signal(str)
     done = Signal(bool, str, str)    # ok, "updated"/"latest" or error, commit
 
-    def __init__(self, download_dir):
+    def __init__(self, download_dir, tr=None):
         super().__init__()
+        self.tr = tr
         self.download_dir = download_dir
 
     def run(self):
@@ -137,7 +140,7 @@ class VersionSortingThread(QThread):
             self.done.emit(True, status, commit)
         except Exception as e:
             core.log.warning("version sorting download failed", exc_info=True)
-            self.done.emit(False, str(e), "")
+            self.done.emit(False, core.friendly_error(e, self.tr), "")
 
 
 class AppSelfUpdateThread(QThread):
@@ -149,8 +152,9 @@ class AppSelfUpdateThread(QThread):
 
     restart_exe = None               # program the Windows helper starts afterwards
 
-    def __init__(self):
+    def __init__(self, tr=None):
         super().__init__()
+        self.tr = tr
         self._stop = False
 
     def stop(self):
@@ -165,4 +169,4 @@ class AppSelfUpdateThread(QThread):
             self.done.emit(True, f"{how}:{release.get('tag_name') or ''}")
         except Exception as e:
             core.log.warning("self-update failed", exc_info=True)
-            self.done.emit(False, str(e))
+            self.done.emit(False, core.friendly_error(e, self.tr))
