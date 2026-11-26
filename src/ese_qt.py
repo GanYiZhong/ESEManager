@@ -12,8 +12,6 @@ models (table models), workers (background threads) and theme/notify.
 import os
 import re
 import sys
-import subprocess
-import webbrowser
 
 try:
     import tomllib
@@ -42,6 +40,9 @@ from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread)
 from notify import Notifier, set_app_icon
+
+
+webbrowser = core.LazyModule("webbrowser")   # ~60 ms we do not need at startup
 
 
 # ---------------------------------------------------------------- 主視窗
@@ -785,10 +786,9 @@ class MainWindow(QMainWindow):
     def _open_path(d):
         if sys.platform == "win32":
             os.startfile(d)
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", d])
         else:
-            subprocess.Popen(["xdg-open", d])
+            import subprocess
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", d])
 
     def _row_song(self, row):
         return self.song_model._view[row] if 0 <= row < self.song_model.rowCount() else None

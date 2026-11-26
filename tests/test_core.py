@@ -1,5 +1,6 @@
 """core.py: the Qt-free logic shared by the GUI and the command line."""
 
+import os
 import sqlite3
 import time
 
@@ -178,3 +179,24 @@ def test_search_cache_follows_database_changes_and_isolates_results(db):
     st = os.stat(core.DB_PATH)
     os.utime(core.DB_PATH, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
     assert [f["filename"] for f in core.search_songs("song")[0]["files"]] == ["Other.tja"]
+
+
+def test_lazy_module_defers_import_and_passes_through():
+    import sys
+    sys.modules.pop("colorsys", None)
+    lazy = core.LazyModule("colorsys")
+    assert "colorsys" not in sys.modules          # nothing imported yet
+    assert lazy.rgb_to_hsv(0, 0, 0) == (0, 0, 0)
+    assert "colorsys" in sys.modules
+    lazy.marker = 7                               # writes reach the real module
+    assert sys.modules["colorsys"].marker == 7
+    del sys.modules["colorsys"].marker
+
+
+def test_core_import_does_not_load_requests():
+    import subprocess, sys
+    out = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.path.insert(0, 'src'); import core; "
+         "print('requests' in sys.modules)"],
+        capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
+    assert out.stdout.strip() == "False", out.stderr
