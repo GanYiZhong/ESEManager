@@ -17,7 +17,8 @@ def window(qapp, tmp_path, monkeypatch):
         for name, val in (("DB_PATH", tmp_path / "ese_songs.db"),
                           ("LOCAL_DB_PATH", tmp_path / "ese_local.db"),
                           ("CONFIG_FILE", tmp_path / "config.toml"),
-                          ("VERSION_FILE", tmp_path / "version.txt")):
+                          ("VERSION_FILE", tmp_path / "version.txt"),
+                          ("NEW_SONGS_FILE", tmp_path / "new_songs.json")):
             if hasattr(mod, name):
                 monkeypatch.setattr(mod, name, str(val))
     monkeypatch.setattr(ese_qt, "APP_DIR", str(tmp_path))

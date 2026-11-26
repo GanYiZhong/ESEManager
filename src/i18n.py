@@ -831,3 +831,18 @@ TR["ja"].update({
     "about_copied": "コピーしました", "about_close": "閉じる",
     "whatsnew_title": "{v} の新機能", "whatsnew_none": "（このバージョンのリリースノートはありません）",
 })
+
+
+TR["zh_TW"].update({"sn_summary": "{new} 首新歌、{upd} 首更新", "sn_show": "查看",
+                    "sn_none": "沒有新增或更新的歌曲", "c_new": "新", "f_new": "新增／更新",
+                    "sn_filter_new": "新增／更新", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
+                    "sn_tip_new": "上次資料庫更新新增的歌曲", "sn_tip_upd": "上次資料庫更新有檔案變更"})
+TR["en"].update({"sn_summary": "{new} new songs, {upd} updated", "sn_show": "Show them",
+                 "sn_none": "No new or updated songs", "c_new": "New", "f_new": "What's new",
+                 "sn_filter_new": "New / updated", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
+                 "sn_tip_new": "Added by the last database update",
+                 "sn_tip_upd": "Files changed in the last database update"})
+TR["ja"].update({"sn_summary": "新曲 {new} 件、更新 {upd} 件", "sn_show": "表示する",
+                 "sn_none": "新曲・更新はありません", "c_new": "新着", "f_new": "新着・更新",
+                 "sn_filter_new": "新着／更新", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
+                 "sn_tip_new": "前回のデータベース更新で追加", "sn_tip_upd": "前回のデータベース更新でファイル変更"})

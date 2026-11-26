@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
         self._search_timer.timeout.connect(self.do_search)
 
         self.song_model = SongModel(self.tr, self.jp_map, self.meta_map)
+        self.song_model.new_marks = core.new_song_marks()
         self.dl_model = DownloadModel(self.tr)
 
         self.build_menus()          # created once; texts refreshed in retranslate_chrome
@@ -756,6 +757,10 @@ class MainWindow(QMainWindow):
                           ("dl_have", "downloaded")):
             self.dl_combo.addItem(self.tr(key), mode)
         form.addRow(self.tr("f_dl"), self.dl_combo)
+        self.new_combo = QComboBox()
+        for key, mode in (("dl_all", "all"), ("sn_filter_new", "new")):
+            self.new_combo.addItem(self.tr(key), mode)
+        form.addRow(self.tr("f_new"), self.new_combo)
         self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
         self.lv_min.setSpecialValueText(self.tr("f_any"))
         self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
@@ -771,6 +776,7 @@ class MainWindow(QMainWindow):
             w.valueChanged.connect(lambda _=None: self.apply_filters())
         self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
         self.dl_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
+        self.new_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
         return panel
 
     @staticmethod
@@ -796,6 +802,8 @@ class MainWindow(QMainWindow):
         if self.lv_min.value() or self.lv_max.value():
             n += 1
         if self.dl_combo.currentData() != "all":
+            n += 1
+        if self.new_combo.currentData() != "all":
             n += 1
         return n
 
@@ -1347,6 +1355,9 @@ class MainWindow(QMainWindow):
         self.dl_combo.blockSignals(True)
         self.dl_combo.setCurrentIndex(0)
         self.dl_combo.blockSignals(False)
+        self.new_combo.blockSignals(True)
+        self.new_combo.setCurrentIndex(0)
+        self.new_combo.blockSignals(False)
         self.apply_filters()
 
     def apply_filters(self):
@@ -1387,6 +1398,8 @@ class MainWindow(QMainWindow):
 
         songs = core.filter_by_download(songs, self.song_model.dl_status,
                                         self.dl_combo.currentData())
+        if self.new_combo.currentData() == "new":
+            songs = core.filter_new_songs(songs, self.song_model.new_marks)
         self.song_model.set_songs(songs)
         self.count_label.setText(self.tr("total", n=len(songs)))
         self.update_sel_count()
@@ -1882,7 +1895,23 @@ class MainWindow(QMainWindow):
         self._dbu.done.connect(self.on_db_updated)
         self._dbu.start()
 
-    def reload_databases(self, done_msg=None):
+    def show_new_songs(self):
+        """Show every song added or changed by the last DB update."""
+        self.new_combo.blockSignals(True)
+        self.new_combo.setCurrentIndex(self.new_combo.findData("new"))
+        self.new_combo.blockSignals(False)
+        self.show_all()
+
+    def _db_done_box(self, msg, show_btn):
+        """Success message; with "Show them" when the update brought news."""
+        box = QMessageBox(QMessageBox.Information, self.tr("db_update"), msg, parent=self)
+        show = box.addButton(self.tr("sn_show"), QMessageBox.AcceptRole) if show_btn else None
+        box.addButton(QMessageBox.Ok)
+        box.exec()
+        if show is not None and box.clickedButton() is show:
+            self.show_new_songs()
+
+    def reload_databases(self, done_msg=None, show_btn=False):
         """Reload categories and the Japanese-title/level maps after a DB change.
         The maps load on a worker thread so the window stays responsive."""
         self.load_categories()
@@ -1904,7 +1933,7 @@ class MainWindow(QMainWindow):
             self.count_label.setText(self.tr("total", n=self.song_model.rowCount()))
             self.refresh_detail()
             if done_msg and not self._closing:
-                QMessageBox.information(self, self.tr("db_update"), done_msg)
+                self._db_done_box(done_msg, show_btn)
 
         t = self._track(MetaLoadThread())
         t.done.connect(apply)
@@ -2119,7 +2148,19 @@ class MainWindow(QMainWindow):
             self._db_version = read_local_version()
             self._refresh_status()
             # First database: no modal, just show the list and let them type.
-            self.reload_databases(None if first_run else self.tr("dbv_ok"))
+            marks = core.new_song_marks()
+            self.song_model.set_new_marks(marks)
+            n_new = sum(1 for v in marks.values() if v == "new")
+            n_upd = len(marks) - n_new
+            done = None
+            if not first_run:
+                done = self.tr("dbv_ok")
+                if marks:
+                    done += "\n" + self.tr("sn_summary", new=n_new, upd=n_upd)
+            if marks and not first_run:
+                self.reload_databases(done, show_btn=True)
+            else:
+                self.reload_databases(done)
             if first_run:
                 self.show_all()
                 self.search_edit.setFocus()

@@ -25,6 +25,7 @@ CONFIG_FILE = app_path("config.toml")
 DB_PATH = app_path("ese_songs.db")
 LOCAL_DB_PATH = app_path("ese_local.db")
 VERSION_FILE = app_path("version.txt")
+NEW_SONGS_FILE = app_path("new_songs.json")
 CLONE_DIR = app_path("ESE_clone")
 DEFAULT_DOWNLOAD_DIR = "Downloads"
 

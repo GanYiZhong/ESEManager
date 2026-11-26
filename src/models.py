@@ -38,11 +38,14 @@ _CHECK_ROLE = [Qt.CheckStateRole]
 
 class SongModel(QAbstractTableModel):
     COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_bpm",
-            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files", "c_dl"]
+            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files", "c_dl", "c_new"]
     LEVEL_COLS = {5: "level_easy", 6: "level_normal", 7: "level_hard",
                   8: "level_oni", 9: "level_ura"}
-    _CENTER_COLS = frozenset([4, 5, 6, 7, 8, 9, 10, 11])
+    _CENTER_COLS = frozenset([4, 5, 6, 7, 8, 9, 10, 11, 12])
     DL_COL = 11
+    NEW_COL = 12
+    _NEW_TEXT = {"new": "sn_badge_new", "updated": "sn_badge_upd"}
+    _NEW_TIP = {"new": "sn_tip_new", "updated": "sn_tip_upd"}
     _DL_TEXT = {2: "●", 1: "◐", 0: "○"}
     _DL_TIP = {2: "dl_complete", 1: "dl_partial", 0: "dl_none"}
 
@@ -60,6 +63,7 @@ class SongModel(QAbstractTableModel):
         self._cells = {}         # id(song) -> cached display strings
         self._skeys = {}         # column -> {id(song): sort value}
         self.dl_status = {}      # (song_name, category) -> 0 none / 1 partial / 2 complete
+        self.new_marks = {}      # (song_name, category) -> "new" / "updated" (last DB update)
 
     # jp/meta maps are replaced wholesale after a DB reload: drop derived caches
     @property
@@ -90,6 +94,17 @@ class SongModel(QAbstractTableModel):
         if self._view:
             self.dataChanged.emit(self.index(0, self.DL_COL),
                                   self.index(len(self._view) - 1, self.DL_COL))
+
+    def set_new_marks(self, marks):
+        """Install the {(name, category): "new"|"updated"} map from the last DB update."""
+        self.new_marks = marks or {}
+        self._skeys.pop(self.NEW_COL, None)
+        if self._sort_col == self.NEW_COL:
+            self.sort(self.NEW_COL, Qt.DescendingOrder if self._sort_desc
+                      else Qt.AscendingOrder)
+        if self._view:
+            self.dataChanged.emit(self.index(0, self.NEW_COL),
+                                  self.index(len(self._view) - 1, self.NEW_COL))
 
     def _invalidate(self):
         self._cells.clear()
@@ -160,6 +175,17 @@ class SongModel(QAbstractTableModel):
                 return int(Qt.AlignCenter)
             if role == Qt.ForegroundRole and st is not None:
                 return theme.status_colour({2: "done", 1: "partial", 0: "none"}[st])
+            return None
+        if col == self.NEW_COL:
+            mark = self.new_marks.get(self._key(song))
+            if role == Qt.DisplayRole:
+                return self.tr(self._NEW_TEXT[mark]) if mark else ""
+            if role == Qt.ToolTipRole and mark:
+                return self.tr(self._NEW_TIP[mark])
+            if role == Qt.TextAlignmentRole:
+                return int(Qt.AlignCenter)
+            if role == Qt.ForegroundRole and mark:
+                return theme.status_colour("done" if mark == "new" else "partial")
             return None
         if role == Qt.DisplayRole:
             return self._row_cells(song)[col - 1] if col else None
@@ -312,6 +338,8 @@ class SongModel(QAbstractTableModel):
             return len(song["files"])
         if col == self.DL_COL:
             return self.dl_status.get(self._key(song))            # unscanned last
+        if col == self.NEW_COL:
+            return {"new": 2, "updated": 1}.get(self.new_marks.get(self._key(song)))
         meta = self.meta_map.get(name) or {}
         if col == 4:
             m = re.search(r"\d+(?:\.\d+)?", str(meta.get("bpm") or ""))
