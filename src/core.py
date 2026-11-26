@@ -7,6 +7,7 @@ monkeypatch core.DB_PATH and friends.
 """
 
 import collections
+import gzip
 import hashlib
 import json
 import logging
@@ -1312,6 +1313,73 @@ def fetch_remote_version(timeout=10):
     return ""
 
 
+MAX_DB_BYTES = 64 * 1024 * 1024   # cap on a decompressed database (gzip-bomb guard)
+
+
+def _download_db_gz(sess, gz, want, part, log, max_out=None):
+    """Fetch the gzip copy of a database into `part`. Verifies the .gz sha256,
+    decompresses with a size cap, then the plain sha256. Raises on any problem
+    (the caller falls back to the plain file); `part` is removed on failure."""
+    max_out = max_out or MAX_DB_BYTES
+    gz_part = part + ".gz"
+    try:
+        hz = hashlib.sha256()
+        total = 0
+        with get_with_retry(sess, DB_RELEASE_URL + gz["name"], stream=True, timeout=120) as r:
+            with open(gz_part, "wb") as f:
+                for chunk in r.iter_content(1 << 16):
+                    if chunk:
+                        f.write(chunk)
+                        hz.update(chunk)
+                        total += len(chunk)
+        log(f"{gz['name']}: {total / 1048576:.2f} MB")
+        if hz.hexdigest() != gz["sha256"]:
+            raise ChecksumError(gz["name"])
+        h = hashlib.sha256()
+        out = 0
+        with gzip.open(gz_part, "rb") as src, open(part, "wb") as dst:
+            while True:
+                chunk = src.read(1 << 16)
+                if not chunk:
+                    break
+                out += len(chunk)
+                if out > max_out:
+                    raise ValueError("decompressed database too large")
+                dst.write(chunk)
+                h.update(chunk)
+        with open(part, "rb") as f:
+            if f.read(16) != SQLITE_MAGIC:
+                raise ValueError("not a SQLite file")
+        if h.hexdigest() != want:
+            raise ChecksumError(gz["name"])
+    except BaseException:
+        try:
+            os.remove(part)
+        except OSError:
+            pass
+        raise
+    finally:
+        try:
+            os.remove(gz_part)
+        except OSError:
+            pass
+
+
+def _download_db_plain(sess, name, want, part, tr):
+    h = hashlib.sha256()
+    with get_with_retry(sess, DB_RELEASE_URL + name, stream=True, timeout=120) as r:
+        with open(part, "wb") as f:
+            for chunk in r.iter_content(1 << 16):
+                if chunk:
+                    f.write(chunk)
+                    h.update(chunk)
+    with open(part, "rb") as f:
+        if f.read(16) != SQLITE_MAGIC:
+            raise ValueError(tr("log_db_bad", n=name))
+    if h.hexdigest() != want:
+        raise ChecksumError(tr("log_db_sha", n=name))
+
+
 def update_databases(version="", log=print, tr=None):
     """Download the prebuilt databases from GitHub Pages, verify them against
     manifest.json (sha256) and with SQLite's own check, then swap them in
@@ -1332,18 +1400,17 @@ def update_databases(version="", log=print, tr=None):
             want = (files.get(name) or {}).get("sha256")
             if not want:
                 raise ValueError(tr("log_db_bad", n=name))
-            h = hashlib.sha256()
-            with get_with_retry(sess, DB_RELEASE_URL + name, stream=True, timeout=120) as r:
-                with open(part, "wb") as f:
-                    for chunk in r.iter_content(1 << 16):
-                        if chunk:
-                            f.write(chunk)
-                            h.update(chunk)
-            with open(part, "rb") as f:
-                if f.read(16) != SQLITE_MAGIC:
-                    raise ValueError(tr("log_db_bad", n=name))
-            if h.hexdigest() != want:
-                raise ChecksumError(tr("log_db_sha", n=name))
+            info = files.get(name) or {}
+            got = False
+            gz = info.get("gz") or {}
+            if gz.get("name") and gz.get("sha256"):
+                try:
+                    _download_db_gz(sess, gz, want, part, log)
+                    got = True
+                except Exception as e:
+                    logging.getLogger("ESEManager").warning("%s: compressed download failed (%s); using plain file", name, e)
+            if not got:
+                _download_db_plain(sess, name, want, part, tr)
             if not sqlite_ok(part):
                 raise ValueError(tr("log_db_bad", n=name))
         # Swap both in; keep backups so a failed second replace can roll back.

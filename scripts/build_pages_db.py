@@ -18,6 +18,7 @@ Usage (from the repo root):
 
 import argparse
 import datetime as dt
+import gzip
 import hashlib
 import html
 import json
@@ -137,6 +138,16 @@ def sha256(path):
     return h.hexdigest()
 
 
+def write_gzip(src, dest):
+    """Deterministic gzip (level 9, mtime=0, no embedded file name): the same
+    input always yields the same bytes, so the sha256 is reproducible."""
+    with open(src, "rb") as fi, open(dest, "wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw,
+                           compresslevel=9, mtime=0) as gz:
+            for chunk in iter(lambda: fi.read(1 << 20), b""):
+                gz.write(chunk)
+
+
 def write_index(out, manifest):
     rows = "".join(
         f"<tr><td><a href='{html.escape(n)}'>{html.escape(n)}</a></td>"
@@ -222,7 +233,12 @@ def main():
         dest = os.path.join(args.out, name)
         with open(src, "rb") as fi, open(dest, "wb") as fo:
             fo.write(fi.read())
-        files[name] = {"size": os.path.getsize(dest), "sha256": sha256(dest)}
+        gz_dest = dest + ".gz"
+        write_gzip(dest, gz_dest)
+        # Old app versions read only size/sha256; "gz" is additive.
+        files[name] = {"size": os.path.getsize(dest), "sha256": sha256(dest),
+                       "gz": {"name": name + ".gz", "size": os.path.getsize(gz_dest),
+                              "sha256": sha256(gz_dest)}}
 
     manifest = {
         "version": version,
