@@ -19,7 +19,10 @@ def _contrast(a, b):
 @pytest.fixture(autouse=True)
 def _restore_theme(qapp):
     yield
-    theme.apply_theme(qapp, "light")
+    # Re-applying the app-wide style sheet restyles every live widget, which is
+    # slow; only do it when a test actually left a non-light theme behind.
+    if theme._state["mode"] != "light" or theme.is_dark():
+        theme.apply_theme(qapp, "light")
     theme._listeners.clear()
 
 
@@ -152,8 +155,8 @@ def test_theme_combo_applies_immediately_and_saves(qapp, tmp_path, monkeypatch):
         assert w.download_btn.styleSheet() == theme.primary_button_qss(True)
         assert 'theme = "dark"' in cfg.read_text(encoding="utf-8")
     finally:
-        w._closing = True
-        w.close()
+        from conftest import dispose_window
+        dispose_window(w)
 
 
 def test_helpers_differ_per_mode_and_are_readable():

@@ -29,8 +29,8 @@ def window(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
     w = ese_qt.MainWindow()
     yield w
-    w._closing = True
-    w.close()
+    from conftest import dispose_window
+    dispose_window(w)
 
 
 @pytest.mark.parametrize("lang", ["zh_TW", "en", "ja"])

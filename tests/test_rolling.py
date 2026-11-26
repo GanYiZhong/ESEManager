@@ -77,8 +77,8 @@ def window(qapp, tmp_path, monkeypatch):
     started = []
     monkeypatch.setattr(w, "start_db_download", lambda remote: started.append(remote))
     yield w, started, tmp_path
-    w._closing = True
-    w.close()
+    from conftest import dispose_window
+    dispose_window(w)
 
 
 def test_manual_update_downloads_without_asking(window, monkeypatch):

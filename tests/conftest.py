@@ -48,3 +48,21 @@ def _no_real_mirror(monkeypatch):
     import core
     monkeypatch.setattr(core, "ESE_MIRROR_BASE", "http://127.0.0.1:9/mirror/")
     monkeypatch.setattr(core, "_download_source", "ese")
+
+
+def dispose_window(w):
+    """Close a MainWindow and really destroy it. Parentless top-level widgets
+    otherwise live for the whole session and every later app-wide style-sheet
+    change (test_theme) has to restyle all of them."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    w._closing = True
+    w.close()
+    w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+@pytest.fixture(autouse=True)
+def _fast_retry_backoff(monkeypatch):
+    """Retry backoff is real wall time (1s, 2s, ...); shrink it for tests."""
+    import core
+    monkeypatch.setattr(core, "RETRY_BACKOFF", 0.01)

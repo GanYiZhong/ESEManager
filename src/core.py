@@ -165,9 +165,12 @@ def new_session(pool_size=10):
     return sess
 
 
+RETRY_BACKOFF = 1.0   # first backoff in seconds (doubles each retry); tests shrink it
+
+
 def get_with_retry(sess, url, attempts=3, stop=None, **kw):
     """GET with a short exponential backoff on connection errors and 5xx/429."""
-    delay = 1.0
+    delay = RETRY_BACKOFF
     for i in range(attempts):
         try:
             r = sess.get(url, **kw)
