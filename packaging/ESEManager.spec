@@ -18,6 +18,7 @@ _common = dict(
         'concurrent.futures',
         'appconfig',
         'crash',
+        'settings_store',
         'core',
         'theme',
         'toast',
