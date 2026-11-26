@@ -294,7 +294,9 @@ def test_progress_shows_in_window_title_and_resets(window, monkeypatch):
         stopped = False
         failed = []
         def isRunning(self): return False
-        def snapshot(self): return (3, 6, 0, 0, [])
+        def snapshot_ex(self):
+            return {"done": 3, "total": 6, "speed": 0, "eta": 0, "bytes_done": 3000,
+                    "bytes_total": 6000, "exact": True}, []
         def is_paused(self): return False
     window.dl_thread = T()
     window.refresh_progress()
@@ -592,8 +594,9 @@ def test_failed_tab_reasons_and_selective_retry(window, monkeypatch):
         fail_reasons = {"x/a.tja": "no network", "x/b.tja": "disk full"}
         stopped = False
 
-        def snapshot(self):
-            return 2, 2, 0.0, 0.0, []
+        def snapshot_ex(self):
+            return {"done": 2, "total": 2, "speed": 0.0, "eta": 0.0, "bytes_done": 2,
+                    "bytes_total": 2, "exact": True}, []
 
         def is_paused(self):
             return False
@@ -692,7 +695,8 @@ def test_selection_label_shows_files_and_size(window):
     window.update_sel_count()
     assert window.sel_label.text() == window.tr("selected", n=0)
     m.setData(m.index(10, 0), Qt.Checked, Qt.CheckStateRole)    # no sizes known
-    assert window.sel_label.text() == window.tr("sel_detail", n=1, f=2)
+    assert window.sel_label.text() == window.tr(      # sizes unknown: a guess, marked ~
+        "sel_detail_size", n=1, f=2, size="~24.0 KB")
     m.set_all(False)
     for r in range(4):
         m.setData(m.index(r, 0), Qt.Checked, Qt.CheckStateRole)

@@ -128,14 +128,28 @@ def fit(text, width):
     return cut + "…" + " " * (width - used - 1)
 
 
-def render_progress(done, total, spd, eta, cols):
-    """One progress line: bar, percent, count, speed, ETA; never wider than cols-1."""
-    pct = int(done * 100 / total) if total else 100
-    tail = f" {pct:3d}%  {done}/{total}  {core.human_speed(spd)}  ETA {core.human_eta(eta)}"
+def render_progress(done, total, spd, eta, cols, bytes_done=None, bytes_total=None,
+                    exact=True):
+    """One progress line: bar, percent, count, speed, ETA; never wider than cols-1.
+    With bytes_* the percentage and bar follow bytes and the line reads
+    '35%  120 / 340 MB  3.2 MB/s  ETA 1:05  42/120 files'."""
+    if bytes_total:
+        frac = min(1.0, (bytes_done or 0) / bytes_total)
+        pct = int(frac * 100)
+        size = ("" if exact else "~") + core.human_bytes_pair(bytes_done or 0, bytes_total)
+        tail = (f" {pct:3d}%  {size}  {core.human_speed(spd)}  "
+                f"ETA {core.human_clock(eta)}  {done}/{total} files")
+        if len(tail) > cols - 1 - 10:       # narrow terminal: drop the file count
+            tail = f" {pct:3d}%  {size}  {core.human_speed(spd)}  ETA {core.human_clock(eta)}"
+        done_f, total_f = frac, 1.0
+    else:
+        pct = int(done * 100 / total) if total else 100
+        tail = f" {pct:3d}%  {done}/{total}  {core.human_speed(spd)}  ETA {core.human_eta(eta)}"
+        done_f, total_f = done, total
     bar_w = max(0, min(30, cols - 1 - len(tail) - 2))
     if bar_w < 8:
         return tail.strip()[:max(0, cols - 1)]
-    fill = bar_w * done // total if total else bar_w
+    fill = int(bar_w * done_f / total_f) if total_f else bar_w
     return f"[{'#' * fill}{'-' * (bar_w - fill)}]{tail}"
 
 
@@ -163,8 +177,18 @@ def song_record(s, jp):
             "category": s["category"], "files": [f["file_path"] for f in s["files"]]}
 
 
-def run_download(files, ddir, workers, tr, overwrite=False):
-    """Download with a progress bar on a terminal (every 10 s otherwise)."""
+def run_download(files, ddir, workers, tr, overwrite=False, force=False):
+    """Download with a progress bar on a terminal (every 10 s otherwise).
+    Refuses (exit 2) when the expected size x 1.1 exceeds the free disk
+    space, unless force."""
+    plan = core.plan_download(files, ddir, overwrite)
+    if plan["expected"] > 0:
+        free = core.human_bytes(plan["free"]) if plan["free"] is not None else "?"
+        out.msg(tr("cli_expected", size=core.human_bytes(plan["expected"]), free=free))
+    if not plan["ok"] and not force:
+        out.err(tr("cli_disk_short", free=core.human_bytes(plan["free"]),
+                   need=core.human_bytes(plan["need"])))
+        return 2
     stream = out.stream()
     tty = stream.isatty() and not out.quiet
 
@@ -184,11 +208,14 @@ def run_download(files, ddir, workers, tr, overwrite=False):
     try:
         while runner.is_alive():
             runner.join(0.5)
-            done, total, spd, eta, _ = job.snapshot()
+            info, _ = job.snapshot_ex()
+            done, total = info["done"], info["total"]
             now = time.time()
             if tty:
                 cols = shutil.get_terminal_size((80, 24)).columns
-                line = render_progress(done, total, spd, eta, cols)
+                line = render_progress(done, total, info["speed"], info["eta"], cols,
+                                       info["bytes_done"], info["bytes_total"],
+                                       info["exact"])
                 stream.write("\r" + line + " " * max(0, cols - 1 - len(line)))
                 stream.flush()
             elif not out.quiet and now - last > 10:
@@ -358,7 +385,8 @@ def cmd_download(args, tr):
     out.msg(tr("cli_found", n=len(songs), f=len(files)))
     if len(files) > 50 and not confirm(tr("cli_continue"), args.yes):
         return 2
-    return run_download(files, args.dir, args.workers, tr)
+    return run_download(files, args.dir, args.workers, tr,
+                        force=getattr(args, "force", False))
 
 
 def load_list_songs(path, tr):
@@ -421,7 +449,8 @@ def _report_found(songs, key, args, tr, overwrite):
         return 0
     if not confirm(tr("cli_continue"), args.yes):
         return 2
-    return run_download(files, args.dir, args.workers, tr, overwrite=overwrite)
+    return run_download(files, args.dir, args.workers, tr, overwrite=overwrite,
+                        force=getattr(args, "force", False))
 
 
 def cmd_missing(args, tr):
@@ -624,6 +653,8 @@ def build_parser():
     sp.add_argument("--from-list", metavar="FILE",
                     help="download the songs of a song-list file (JSON or text, - = stdin)")
     sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    sp.add_argument("--force", action="store_true",
+                    help="download even if the free disk space looks too small")
     sp.set_defaults(func=cmd_download)
 
     sp = sub.add_parser("export", parents=[common], help="write matching songs to a song-list file")
@@ -642,6 +673,8 @@ def build_parser():
                                  ("updates", cmd_updates, "downloaded charts changed upstream")):
         sp = sub.add_parser(name, parents=[common], help=helptext)
         sp.add_argument("--download", action="store_true", help="download them")
+        sp.add_argument("--force", action="store_true",
+                        help="download even if the free disk space looks too small")
         sp.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
         sp.add_argument("--limit", type=int, default=50, help="max rows to print (0 = all)")
         if name == "updates":

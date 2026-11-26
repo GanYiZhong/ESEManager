@@ -111,7 +111,7 @@ class DownloadThread(QThread):
     log = Signal(str)       # one or more lines joined by newlines, batched
     finished_all = Signal(int, int, int, int)      # downloaded, skipped, failed, total
 
-    _DELEGATE = {"stop", "pause", "resume", "is_paused", "snapshot", "stopped",
+    _DELEGATE = {"stop", "pause", "resume", "is_paused", "snapshot", "snapshot_ex", "stopped",
                  "failed", "fail_reasons", "dl", "skip", "fail", "total", "done", "add"}
 
     def __init__(self, files, download_dir, workers, overwrite=False, tr=None):

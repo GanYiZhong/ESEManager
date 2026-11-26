@@ -18,6 +18,7 @@ import queue
 import re
 import shutil
 import sqlite3
+import statistics
 import sys
 import tempfile
 import threading
@@ -130,6 +131,121 @@ def human_eta(sec):
         return f"{m}m{s:02d}s"
     h, m = divmod(m, 60)
     return f"{h}h{m:02d}m"
+
+
+def human_clock(sec):
+    """ETA as m:ss (h:mm:ss from an hour up); an em dash when unknown."""
+    if sec is None or sec <= 0 or sec == float("inf"):
+        return "—"
+    sec = int(sec)
+    m, s = divmod(sec, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+_BYTE_UNITS = ("B", "KB", "MB", "GB", "TB")
+
+
+def human_bytes(n):
+    n = float(max(n, 0))
+    i = 0
+    while n >= 1024 and i < len(_BYTE_UNITS) - 1:
+        n /= 1024
+        i += 1
+    return f"{n:.0f} B" if i == 0 else f"{n:.1f} {_BYTE_UNITS[i]}"
+
+
+def human_bytes_pair(done, total):
+    """'120 / 340 MB': both numbers in the unit of the total."""
+    i = 0
+    t = float(max(total, 0))
+    while t >= 1024 and i < len(_BYTE_UNITS) - 1:
+        t /= 1024
+        i += 1
+    d = max(done, 0) / (1024 ** i)
+    prec = 0 if i == 0 or t >= 100 else 1
+    return f"{d:.{prec}f} / {t:.{prec}f} {_BYTE_UNITS[i]}"
+
+
+# Size guesses for files whose size is not in the database (charts mostly).
+EST_CHART = 12 * 1024
+EST_AUDIO = 4 * 1024 * 1024
+DISK_MARGIN = 1.1
+
+
+def default_estimate(path):
+    return EST_AUDIO if is_lfs_path(path) else EST_CHART
+
+
+def file_size_hint(f, lfs_map=None):
+    """Exact size in bytes of file record f when the database knows it, else 0.
+    Audio (LFS) sizes come from the pointer map; song_files.size of an audio
+    row is only the pointer's own size, so it is ignored."""
+    fp = f["file_path"]
+    if is_lfs_path(fp):
+        e = lfs_map.get(fp) if lfs_map else None
+        return int(e[1]) if e and e[1] else 0
+    return int(f.get("size") or 0)
+
+
+_lfs_cache = [None, {}]
+
+
+def lfs_map_cached():
+    """load_lfs_map() reloaded only when the database file changes ({} on any error)."""
+    try:
+        st = os.stat(DB_PATH)
+        key = (DB_PATH, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return {}
+    if _lfs_cache[0] != key:
+        try:
+            _lfs_cache[1] = load_lfs_map()
+        except Exception:
+            _lfs_cache[1] = {}
+        _lfs_cache[0] = key
+    return _lfs_cache[1]
+
+
+def free_space(path):
+    """Free bytes on the volume that holds (or would hold) path."""
+    p = os.path.abspath(path)
+    while p and not os.path.isdir(p):
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return shutil.disk_usage(p).free
+
+
+def plan_download(files, download_dir, overwrite=False, lfs_map=None):
+    """Before a batch: expected bytes (known sizes plus guesses for the rest;
+    files already on disk are skipped unless overwrite), free space and
+    whether free >= expected x 1.1. Returns a dict; free is None if unreadable."""
+    if lfs_map is None:
+        lfs_map = lfs_map_cached()
+    total = 0
+    exact = True
+    for _, f in files:
+        fp = f["file_path"]
+        if not overwrite:
+            try:
+                if os.path.exists(safe_join(download_dir, fp)):
+                    continue
+            except Exception:
+                pass
+        n = file_size_hint(f, lfs_map)
+        if n <= 0:
+            n = default_estimate(fp)
+            exact = False
+        total += n
+    need = int(total * DISK_MARGIN)
+    try:
+        free = free_space(download_dir)
+    except OSError:
+        free = None
+    return {"expected": total, "exact": exact, "need": need, "free": free,
+            "ok": free is None or free >= need}
 
 
 _env_proxy_cache = {}
@@ -1802,6 +1918,17 @@ class Downloader:
         self.bytes_total = 0
         self.t0 = time.time()
         self._samples = collections.deque()   # (time, bytes_total, done) for rates
+        # Byte accounting: expected transfer per file once known (database
+        # size, Content-Length, or the real count after it ran); files still
+        # unknown are counted by extension and guessed from the median of
+        # that extension's finished files.
+        self._fexp = {}                # file_path -> expected bytes (known)
+        self._fsum = 0
+        self._unk = collections.Counter()      # ext -> files of unknown size
+        self._ext_sizes = {}           # ext -> recent finished sizes
+        self._xfer = {}                # file_path -> bytes transferred so far
+        for _, f in files:
+            self._register(f)
 
     @property
     def stopped(self):
@@ -1820,31 +1947,96 @@ class Downloader:
     def is_paused(self):
         return not self._pause.is_set()
 
+    # ---- byte accounting (call with self._lock held, except in __init__)
+    @staticmethod
+    def _ext(fp):
+        return os.path.splitext(fp)[1].lower()
+
+    def _register(self, f):
+        fp = f["file_path"]
+        n = file_size_hint(f, self._lfs_map)
+        if n > 0:
+            self._fexp[fp] = n
+            self._fsum += n
+        else:
+            self._unk[self._ext(fp)] += 1
+
+    def _set_known(self, fp, n):
+        old = self._fexp.get(fp)
+        if old is None:
+            self._unk[self._ext(fp)] -= 1
+            old = 0
+        self._fexp[fp] = n
+        self._fsum += n - old
+
+    def _guess(self, ext):
+        sizes = self._ext_sizes.get(ext)
+        if sizes:
+            return statistics.median(sizes)
+        return EST_AUDIO if ext in LFS_EXTS else EST_CHART
+
+    def _expected_locked(self):
+        """(expected bytes of the whole job, True when no size is a guess)."""
+        total = self._fsum
+        exact = True
+        for ext, cnt in self._unk.items():
+            if cnt > 0:
+                total += cnt * self._guess(ext)
+                exact = False
+        return max(total, self.bytes_total), exact
+
+    def _rates_locked(self, now):
+        el = now - self.t0
+        # Rates over a sliding window (~8 s) so speed/ETA follow the
+        # current pace instead of the whole-job average.
+        sm = self._samples
+        sm.append((now, self.bytes_total, self.done))
+        while len(sm) > 2 and now - sm[0][0] > 8.0:
+            sm.popleft()
+        t_old, b_old, d_old = sm[0]
+        win = now - t_old
+        if win >= 1.0:
+            spd = (self.bytes_total - b_old) / 1024 / 1024 / win
+            rate = (self.done - d_old) / win
+        else:
+            spd = (self.bytes_total / 1024 / 1024) / el if el > 0 else 0
+            rate = self.done / el if el > 0 else 0
+        if rate <= 0 and self.done > 0 and el > 0:
+            rate = self.done / el
+        eta = (self.total - self.done) / rate if rate > 0 and self.done < self.total else 0
+        return spd, eta
+
     def snapshot(self):
-        """Counters plus the rows that changed since the previous call."""
+        """Counters plus the rows that changed since the previous call.
+        ETA here is by file count; see snapshot_ex() for the byte-based one."""
         with self._lock:
-            now = time.time()
-            el = now - self.t0
-            # Rates over a sliding window (~8 s) so speed/ETA follow the
-            # current pace instead of the whole-job average.
-            sm = self._samples
-            sm.append((now, self.bytes_total, self.done))
-            while len(sm) > 2 and now - sm[0][0] > 8.0:
-                sm.popleft()
-            t_old, b_old, d_old = sm[0]
-            win = now - t_old
-            if win >= 1.0:
-                spd = (self.bytes_total - b_old) / 1024 / 1024 / win
-                rate = (self.done - d_old) / win
-            else:
-                spd = (self.bytes_total / 1024 / 1024) / el if el > 0 else 0
-                rate = self.done / el if el > 0 else 0
-            if rate <= 0 and self.done > 0 and el > 0:
-                rate = self.done / el
-            eta = (self.total - self.done) / rate if rate > 0 and self.done < self.total else 0
+            spd, eta = self._rates_locked(time.time())
             dirty = self._dirty
             self._dirty = {}
             return (self.done, self.total, spd, eta, dirty)
+
+    def snapshot_ex(self):
+        """(info, dirty): like snapshot() but info is a dict with byte
+        progress: done/total (files), bytes_done, bytes_total (expected, grows
+        or shrinks as sizes become known), exact (False while some sizes are
+        still guesses), speed (MB/s over the recent window) and eta (remaining
+        bytes / windowed speed; by file count until a speed is measured)."""
+        with self._lock:
+            spd, eta_files = self._rates_locked(time.time())
+            expected, exact = self._expected_locked()
+            remaining = expected - self.bytes_total
+            if self.done >= self.total:
+                eta = 0
+            elif spd > 0:
+                eta = max(remaining, 0) / (spd * 1024 * 1024)
+            else:
+                eta = eta_files
+            info = {"done": self.done, "total": self.total, "speed": spd, "eta": eta,
+                    "bytes_done": self.bytes_total, "bytes_total": expected,
+                    "exact": exact}
+            dirty = self._dirty
+            self._dirty = {}
+            return info, dirty
 
     def _mark(self, file_path, status, pct, speed):
         with self._lock:
@@ -1879,6 +2071,8 @@ class Downloader:
                 return []
             new = self._ordered(new)
             self.files.extend(new)
+            for _, f in new:
+                self._register(f)
             self.total += len(new)
             self._outstanding += len(new) + 1
             self._queue.put(("boxdef", new))
@@ -1921,6 +2115,12 @@ class Downloader:
             self._lfs_map = load_lfs_map()
         except Exception:
             self._lfs_map = {}
+        with self._lock:
+            for _, f in self.files:
+                fp = f["file_path"]
+                n = file_size_hint(f, self._lfs_map)
+                if n > 0 and fp not in self._fexp:
+                    self._set_known(fp, n)
         try:
             # On first download into a category folder, also fetch ESE's box.def.
             self._fetch_boxdefs(sess, self._initial)
@@ -2011,6 +2211,8 @@ class Downloader:
         try:
             save_path = safe_join(self.download_dir, fp)
             if os.path.exists(save_path) and not self.overwrite:
+                with self._lock:
+                    self._set_known(fp, 0)
                 self._count("skip")
                 self._mark(fp, "skipped", 100.0, 0.0)
                 return
@@ -2051,12 +2253,16 @@ class Downloader:
             os.replace(part, save_path)
             part = None
             forget_blob_sha(save_path)
+            with self._lock:
+                self._set_known(fp, self._xfer.pop(fp, 0))
+                self._ext_sizes.setdefault(self._ext(fp), collections.deque(maxlen=200)).append(got)
             self._count("dl")
             self._mark(fp, "done", 100.0, 0.0)
             self.log(f"✓ {disp} ({got/1024/1024:.2f} MB)")
         except Exception as e:
             reason = friendly_error(e, self.tr)
             with self._lock:
+                self._set_known(fp, self._xfer.pop(fp, 0))
                 self.failed.append((song, f))
                 self.fail_reasons[f["file_path"]] = reason
             self._count("fail")
@@ -2104,6 +2310,9 @@ class Downloader:
                 got = have
                 clen += have
             base = got
+            if clen and not lfs:           # the real size beats a guess
+                with self._lock:
+                    self._set_known(fp, clen - got)
             h256 = hashlib.sha256() if lfs else None
             if h256 is not None and got:        # resumed: hash the kept prefix
                 with open(part, "rb") as old:
@@ -2141,11 +2350,13 @@ class Downloader:
                         pct = (got / clen * 100) if clen else 50.0
                         with self._lock:             # one lock take per tick, not per chunk
                             self.bytes_total += pending
+                            self._xfer[fp] = self._xfer.get(fp, 0) + pending
                             self._dirty[fp] = ("downloading", pct, spd)
                         pending = 0
             if pending:
                 with self._lock:
                     self.bytes_total += pending
+                    self._xfer[fp] = self._xfer.get(fp, 0) + pending
         try:
             if clen and got != clen:
                 raise IOError(self.tr("log_short", got=got, want=clen))
