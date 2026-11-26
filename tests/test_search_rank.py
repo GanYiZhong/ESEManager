@@ -94,3 +94,44 @@ def test_japanese_title_ranks(db):
     assert "Senbonzakura Sachiko Version" in names("千本桜")
     assert names("ミク") == ["Hatsune Miku no Gekishou"]
     assert names("みくの") == ["Hatsune Miku no Gekishou"]
+
+
+# ---------------------------------------------------------------- suggest()
+def test_suggest_typos(db):
+    assert core.suggest("senbonzakra")[0] == "Senbonzakura"
+    assert core.suggest("hatune miku")[0] == "Hatsune Miku"
+    assert core.suggest("lvoe story")[:1] == ["Love Story"]
+
+
+def test_suggest_romaji_variants_and_run_together(db):
+    assert core.suggest("hatsunee miku")[0] == "Hatsune Miku"
+    assert core.suggest("sweetheartbeat")[0] == "Sweet-Heart Beat"
+
+
+def test_suggest_edge_cases(db):
+    assert core.suggest("") == [] and core.suggest("   ") == []
+    assert core.suggest("qqqqqqqq") == []
+    assert core.suggest("senbonzakra", limit=0) == []
+    assert len(core.suggest("senbonzakra", limit=1)) == 1
+
+
+def test_suggest_japanese(db):
+    conn = sqlite3.connect(core.LOCAL_DB_PATH)
+    conn.execute("CREATE TABLE local_songs (title TEXT, title_ja TEXT)")
+    conn.execute("INSERT INTO local_songs VALUES ('Senbonzakura', '千本桜')")
+    conn.execute("INSERT INTO local_songs VALUES ('Love Story', 'ラブストーリー')")
+    conn.commit()
+    conn.close()
+    core.clear_search_cache()
+    assert core.suggest("ラブストリー")[0] == "ラブストーリー"
+    assert core.suggest("あ") == []
+
+
+def test_suggest_is_fast_and_does_not_change_search(db):
+    before = names("love")
+    core.suggest("senbonzakra")
+    import time
+    t = time.perf_counter()
+    core.suggest("hatune miku")
+    assert time.perf_counter() - t < 0.05
+    assert names("love") == before

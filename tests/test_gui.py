@@ -184,6 +184,22 @@ def test_empty_state_message(window, monkeypatch):
     assert window.empty_label.isHidden()
 
 
+def test_empty_state_did_you_mean_links(window, monkeypatch):
+    monkeypatch.setattr(window, "has_song_db", lambda: True)
+    monkeypatch.setattr(core, "suggest", lambda kw, limit=3: ["Alpha <b>", "Beta"])
+    window.search_edit.setText("alpah")
+    window.all_songs = []
+    window.apply_filters()
+    txt = window.empty_label.text()
+    assert 'href="sug:0"' in txt and "Alpha &lt;b&gt;" in txt and "Beta" in txt
+    ran = []
+    monkeypatch.setattr(window, "do_search", lambda: ran.append(window.search_edit.text()))
+    window._on_suggestion_link("sug:1")
+    assert window.search_edit.text() == "Beta" and ran == ["Beta"]
+    window._on_suggestion_link("sug:9")           # stale link: ignored
+    assert ran == ["Beta"]
+
+
 def test_last_category_is_remembered(window, tmp_path, monkeypatch):
     import tomllib
     monkeypatch.setattr(core, "list_categories", lambda: ["01 Pop", "02 Anime"])

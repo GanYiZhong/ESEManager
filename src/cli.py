@@ -297,6 +297,9 @@ def cmd_search(args, tr):
     print_songs(songs, args.limit)
     if not songs:
         out.err(tr("total", n=0))
+        sug = core.suggest(args.keyword, 3) if args.keyword else []
+        if sug:
+            out.msg(tr("did_you_mean", items=", ".join(sug)))
         return 2
     out.msg(tr("total", n=len(songs)))
     if args.keyword or args.category:

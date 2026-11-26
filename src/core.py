@@ -441,6 +441,8 @@ class _SongIndex:
         self.cats = [norm_text(s["category"]) for s in self.songs]
         self.cnames = [_compact(n) for n in self.names]
         self._ja = None          # [(title_ja, compact title_ja, title)] normalized, lazy
+        self._sug = None         # typo-suggestion data, lazy (see _suggest_data)
+        self._sug_ja = None
 
     def ja_titles(self):
         if self._ja is None:
@@ -568,6 +570,202 @@ def search_songs(keyword, category=None):
         out = sorted(best, key=lambda i: (best[i], i))
     # Callers get their own dicts, so mutating a result cannot corrupt the cache.
     return [dict(idx.songs[i], files=list(idx.songs[i]["files"])) for i in out]
+
+
+
+# ---------------------------------------------------------------- suggestions
+_ROMAJI_SUBS = (("sh", "s"), ("ch", "t"), ("ts", "t"), ("f", "h"), ("j", "z"),
+                ("ou", "o"), ("oo", "o"), ("uu", "u"), ("mb", "nb"), ("mp", "np"))
+
+
+def _romaji_key(word):
+    """Lossy key that folds common romanisation variants together (ou/oo/o,
+    uu/u, si/shi, tu/tsu, ti/chi, hu/fu, zi/ji, n/m before b/p) so 'hatune',
+    'hatsune' and 'yuugao'/'yugao' compare equal. Used only for suggestions."""
+    w = unicodedata.normalize("NFKD", word)
+    w = "".join(c for c in w if not unicodedata.combining(c))
+    for a, b in _ROMAJI_SUBS:
+        w = w.replace(a, b)
+    return w
+
+
+def _bounded_dl(a, b, limit):
+    """Damerau-Levenshtein (optimal string alignment) distance, or limit + 1
+    as soon as it must exceed `limit`."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > limit:
+        return limit + 1
+    prev2 = None
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        ca = a[i - 1]
+        for j in range(1, lb + 1):
+            cost = 0 if ca == b[j - 1] else 1
+            v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if (prev2 is not None and i > 1 and j > 1 and ca == b[j - 2]
+                    and a[i - 2] == b[j - 1]):
+                v = min(v, prev2[j - 2] + 1)
+            cur[j] = v
+        if min(cur) > limit:
+            return limit + 1
+        prev2, prev = prev, cur
+    return prev[lb]
+
+
+def _word_cutoff(n):
+    return 0 if n <= 3 else 1 if n <= 6 else 2
+
+
+def _grams(text, n):
+    return {text[i:i + n] for i in range(len(text) - n + 1)}
+
+
+_WORD_RE = re.compile(r"[^\W_]+")
+
+
+def _suggest_data(idx):
+    """Vocabulary and trigram index over the titles, built once per index."""
+    if idx._sug is not None:
+        return idx._sug
+    words = collections.Counter()
+    shown = {}
+    for s, name in zip(idx.songs, idx.names):
+        words.update(_WORD_RE.findall(name))
+        for raw in _WORD_RE.findall(s["song_name"]):
+            shown.setdefault(raw.casefold(), raw)
+    buckets = {}                      # romaji key length -> {key: [word, ...]}
+    for w in words:
+        k = _romaji_key(w)
+        buckets.setdefault(len(k), {}).setdefault(k, []).append(w)
+    tri = {}
+    tkeys = []
+    for i, name in enumerate(idx.names):
+        key = "".join(_romaji_key(w) for w in _WORD_RE.findall(name))
+        tkeys.append(key)
+        for g in _grams(key, 3):
+            tri.setdefault(g, []).append(i)
+    idx._sug = (words, shown, buckets, tri, tkeys, "\n".join(idx.names))
+    return idx._sug
+
+
+def _suggest_ja(idx, kw, limit):
+    if idx._sug_ja is None:
+        titles = {}
+        if os.path.exists(LOCAL_DB_PATH):
+            try:
+                lconn = connect_ro(LOCAL_DB_PATH)
+                try:
+                    for (ja,) in lconn.execute(
+                            "SELECT DISTINCT title_ja FROM local_songs "
+                            "WHERE title_ja IS NOT NULL AND title_ja != ''"):
+                        c = _compact(norm_text(ja))
+                        if len(c) >= 2:
+                            titles[ja] = c
+                finally:
+                    lconn.close()
+            except sqlite3.Error:
+                log.warning("title lookup failed", exc_info=True)
+        inv = {}
+        for ja, c in titles.items():
+            for g in _grams(c, 2):
+                inv.setdefault(g, []).append(ja)
+        idx._sug_ja = (titles, inv)
+    titles, inv = idx._sug_ja
+    ck = _compact(kw)
+    qg = _grams(ck, 2)
+    if len(ck) < 3 or not qg:
+        return []
+    hits = collections.Counter()
+    for g in qg:
+        for ja in inv.get(g, ()):
+            hits[ja] += 1
+    scored = []
+    for ja, n in hits.items():
+        cont = n / len(qg)
+        if cont >= 0.5:
+            dice = 2 * n / (len(qg) + len(_grams(titles[ja], 2)))
+            scored.append((-cont, -dice, len(ja), ja))
+    scored.sort()
+    return [t[3] for t in scored[:limit]]
+
+
+def suggest(keyword, limit=3):
+    """'Did you mean' candidates for a query that found little or nothing:
+    up to `limit` strings, each a corrected query or a song title that can be
+    searched directly. Latin keywords are corrected word by word (Damerau-
+    Levenshtein with a cutoff scaled to word length, on romaji-folded keys),
+    then matched against whole titles by trigram containment; Japanese
+    keywords use character bigrams against the Japanese titles. The index is
+    built once with the search cache."""
+    kw = " ".join(norm_text(keyword).split()) if keyword else ""
+    if not kw or limit <= 0:
+        return []
+    idx = _song_index()
+    if has_cjk(kw):
+        return _suggest_ja(idx, kw, limit)
+    words, shown, buckets, tri, tkeys, blob = _suggest_data(idx)
+    tokens = list(dict.fromkeys(_WORD_RE.findall(kw)))
+    if not tokens:
+        return []
+    options = []
+    for tok in tokens:
+        if tok in words:
+            options.append([(0, tok)])
+            continue
+        key = _romaji_key(tok)
+        cut = _word_cutoff(len(key))
+        found = []
+        for ln in range(len(key) - cut, len(key) + cut + 1):
+            for k, ws in buckets.get(ln, {}).items():
+                d = _bounded_dl(key, k, cut)
+                if d <= cut:
+                    found.extend((d, -words[w], w) for w in ws)
+        found.sort()
+        found = [(d, w) for d, _, w in found[:2]]
+        if tok in blob:          # a fragment of some word: keep it as an option
+            found.append((cut + 1, tok))
+        options.append(found)
+    out = []
+    seen = set()
+
+    def add(text):
+        k = norm_text(text)
+        if k not in seen and k != kw:
+            seen.add(k)
+            out.append(text)
+
+    if all(options):
+        combos = [(0, [])]
+        for o in options:
+            combos = [(d + d2, ws + [w]) for d, ws in combos for d2, w in o]
+        combos.sort(key=lambda c: c[0])
+        for d, ws in combos[:6]:
+            if ws == tokens or not any(all(w in n for w in ws) for n in idx.names):
+                continue
+            add(" ".join(shown.get(w, w) for w in ws))
+            if len(out) >= limit:
+                return out
+    # whole-title match on the run-together key ('dokidoki' ~ 'Doki Doki ...')
+    qkey = "".join(_romaji_key(t) for t in tokens)
+    qg = _grams(qkey, 3)
+    if len(qkey) >= 5 and qg:
+        hits = collections.Counter()
+        for g in qg:
+            for i in tri.get(g, ()):
+                hits[i] += 1
+        scored = []
+        for i, n in hits.items():
+            cont = n / len(qg)
+            if cont >= 0.6:
+                dice = 2 * n / (len(qg) + max(1, len(tkeys[i]) - 2))
+                scored.append((-cont, -dice, i))
+        scored.sort()
+        for _, _, i in scored:
+            add(idx.songs[i]["song_name"])
+            if len(out) >= limit:
+                break
+    return out
 
 
 def _rel_key(rel):

@@ -9,6 +9,7 @@ Other pieces live in sibling modules: appconfig (paths/URLs), i18n (strings),
 models (table models), workers (background threads) and theme/notify.
 """
 
+import html
 import os
 import re
 import sys
@@ -516,6 +517,9 @@ class MainWindow(QMainWindow):
         self.empty_label.setAlignment(Qt.AlignCenter)
         self.empty_label.setWordWrap(True)
         self.empty_label.setStyleSheet(theme.hint_qss())
+        self.empty_label.setOpenExternalLinks(False)
+        self.empty_label.linkActivated.connect(self._on_suggestion_link)
+        self._suggestions = []
         self.empty_label.hide()
         self.table.viewport().installEventFilter(self)
         # song table | detail panel (collapsible, on the right)
@@ -1358,9 +1362,36 @@ class MainWindow(QMainWindow):
         searching = (bool(self.search_edit.text().strip())
                      or self.cat_combo.currentData() is not None
                      or self.active_filter_count() > 0)
-        self.empty_label.setText(self.tr("no_results" if searching else "no_songs"))
+        text = self.tr("no_results" if searching else "no_songs")
+        self._suggestions = []
+        kw = self.search_edit.text().strip()
+        if searching and kw:
+            try:
+                self._suggestions = core.suggest(kw, 3)
+            except Exception:
+                core.log.warning("suggest failed", exc_info=True)
+        if self._suggestions:
+            links = ", ".join(f'<a href="sug:{i}">{html.escape(w)}</a>'
+                              for i, w in enumerate(self._suggestions))
+            self.empty_label.setTextFormat(Qt.RichText)
+            self.empty_label.setText(html.escape(text).replace("\n", "<br>") + "<br>"
+                                     + html.escape(self.tr("did_you_mean", items="@@")
+                                                   ).replace("@@", links))
+        else:
+            self.empty_label.setTextFormat(Qt.PlainText)
+            self.empty_label.setText(text)
         self.empty_label.setGeometry(self.table.viewport().rect().adjusted(20, 20, -20, -20))
         self.empty_label.show()
+
+    def _on_suggestion_link(self, href):
+        """A 'did you mean' link in the empty-result message: run that search."""
+        try:
+            word = self._suggestions[int(href.split(":", 1)[1])]
+        except (IndexError, ValueError):
+            return
+        self.search_edit.setText(word)
+        self._search_timer.stop()
+        self.do_search()
 
     def _song_dir(self, song):
         """Folder of a song inside the download directory, or None if not downloaded."""
