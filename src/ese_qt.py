@@ -38,6 +38,7 @@ import theme  # light/dark palette and style-sheet helpers
 from toast import ToastManager
 import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
+import fonts
 import core
 import crash  # crash reporter: hooks, dialog, startup marker
 import songlist  # shareable song lists
@@ -252,6 +253,7 @@ class MainWindow(QMainWindow):
         self.build_status_bar()
         self.build_shortcuts()
         self.build_ui()
+        self.apply_font_scale(self.font_scale)   # again: widgets built in build_ui
         self.notifier = Notifier(self)
         self.toasts = ToastManager(self, self.tr, self._toast_anchor)
         self.awake = KeepAwake()
@@ -283,7 +285,9 @@ class MainWindow(QMainWindow):
             return
         base = app.property("ese_base_font")
         if base is None:
-            base = app.font()
+            # Segoe UI (or the platform's UI face) for Latin, then the CJK font
+            # of the UI language; system point size kept.
+            base = fonts.ui_font(self.lang, app.font().pointSizeF())
             app.setProperty("ese_base_font", base)
         f = QFont(base)
         if base.pointSizeF() > 0:
@@ -296,6 +300,16 @@ class MainWindow(QMainWindow):
         self.setFont(f)
         for child in self.findChildren(QWidget):
             child.setFont(f)
+        # Japanese titles: a Japanese font, or their kanji get Chinese glyph shapes.
+        jf = fonts.japanese_font(f)
+        if hasattr(self, "song_model"):
+            self.song_model.jp_font = jf
+        if hasattr(self, "detail_panel"):
+            self.detail_panel.jp.setFont(jf)
+        if hasattr(self, "log_view"):
+            mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+            mono.setPointSizeF(f.pointSizeF())
+            self.log_view.setFont(mono)
         self.update_font_metrics()
 
     def _table_qss(self, dark=None):

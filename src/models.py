@@ -67,6 +67,7 @@ class SongModel(QAbstractTableModel):
         self.dl_status = {}      # (song_name, category) -> 0 none / 1 partial / 2 complete
         self.new_marks = {}      # (song_name, category) -> "new" / "updated" (last DB update)
         self.favourites = set()  # {(song_name, category), ...}
+        self.jp_font = None      # QFont for the Japanese title column (fonts.japanese_font)
 
     # jp/meta maps are replaced wholesale after a DB reload: drop derived caches
     @property
@@ -201,6 +202,8 @@ class SongModel(QAbstractTableModel):
         if not index.isValid():
             return None
         row, col = index.row(), index.column()
+        if role == Qt.FontRole:
+            return self.jp_font if col == 2 else None
         song = self._view[row]
         if col == self.FAV_COL:
             fav = self._key(song) in self.favourites

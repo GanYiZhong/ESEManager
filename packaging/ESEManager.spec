@@ -23,6 +23,7 @@ _common = dict(
         'theme',
         'toast',
         'icons',
+        'fonts',
         'responsive',
         'detail_panel',
         'command_palette',
