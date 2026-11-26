@@ -44,7 +44,7 @@ import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
 import core
 import songlist  # shareable song lists
-from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
+from core import load_jp_map, load_meta_map, read_local_version, human_speed
 from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
 from responsive import ResponsiveRow, ElasticLabel
