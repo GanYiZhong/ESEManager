@@ -338,10 +338,26 @@ def cmd_update_db(args, tr):
     return 0
 
 
+def search_with_query(keyword, category, download_dir=None):
+    """core.search_query with the user's favourites / new marks / download status
+    (the folder is only scanned when the query has dl:). -> (songs, Query)."""
+    q = core.parse_query(keyword)
+    ctx = {}
+    if q.needs("marks"):
+        ctx["favourites"] = core.load_favourites()
+        ctx["new_marks"] = core.new_song_marks()
+    if q.needs("dl") and download_dir:
+        ctx["dl_status"] = core.download_status(core.search_songs("", None),
+                                                download_dir)
+    return core.search_query(keyword, category, **ctx)
+
+
 def cmd_search(args, tr):
     if not need_db(tr):
         return 2
-    songs = core.search_songs(args.keyword, args.category)
+    songs, q = search_with_query(args.keyword, args.category, args.dir)
+    for bad in q.invalid:
+        out.err(tr("q_invalid", items=bad))
     if args.new:
         songs = core.filter_new_songs(songs, core.new_song_marks())
     if args.favourites:
@@ -349,7 +365,7 @@ def cmd_search(args, tr):
     print_songs(songs, args.limit)
     if not songs:
         out.err(tr("sn_none" if args.new else "total", n=0))
-        sug = core.suggest(args.keyword, 3) if args.keyword else []
+        sug = core.suggest(q.text, 3) if q.text else []
         if sug:
             out.msg(tr("did_you_mean", items=", ".join(sug)))
         return 2
@@ -375,7 +391,7 @@ def cmd_download(args, tr):
         out.err(tr("cli_download_what"))
         return 2
     else:
-        songs = core.search_songs(args.keyword, args.category)
+        songs, _q = search_with_query(args.keyword, args.category, args.dir)
         if args.favourites:
             songs = core.filter_favourites(songs, core.load_favourites())
     if not songs:
@@ -418,7 +434,7 @@ def cmd_export(args, tr):
     if not args.keyword and not args.category and not args.favourites and not args.all:
         out.err(tr("cli_export_what"))
         return 2
-    songs = core.search_songs(args.keyword, args.category)
+    songs, _q = search_with_query(args.keyword, args.category, args.dir)
     if args.favourites:
         songs = core.filter_favourites(songs, core.load_favourites())
     if not songs:
@@ -635,7 +651,10 @@ def build_parser():
     sp.set_defaults(func=cmd_update_db)
 
     sp = sub.add_parser("search", parents=[common], help="search songs")
-    sp.add_argument("keyword", nargs="?", default="")
+    sp.add_argument("keyword", nargs="?", default="",
+                    help="words and filters, e.g. 'miku bpm:>180 oni:>=9 cat:vocaloid "
+                         "fav dl:no -cat:anime \"love story\"' (keys: bpm easy normal "
+                         "hard oni ura files cat fav new upd dl)")
     sp.add_argument("-c", "--category", action="append",
                     help="category name or part of it, e.g. Anime (repeat for several)")
     sp.add_argument("--new", action="store_true",

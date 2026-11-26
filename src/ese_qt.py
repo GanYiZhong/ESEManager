@@ -212,6 +212,7 @@ class MainWindow(QMainWindow):
         self.jp_map = load_jp_map()
         self.meta_map = load_meta_map()
         self.all_songs = []          # 最近一次搜尋的完整結果（篩選前）
+        self._query = core.parse_query("")   # search-box tokens (bpm:>180 fav ...)
         self.dl_thread = None
         self._search = None
         self._search_seq = 0         # newest search wins; stale results are ignored
@@ -421,7 +422,7 @@ class MainWindow(QMainWindow):
         self.menu_help = mb.addMenu("")
         self.act_shortcuts = self._action(
             lambda: QMessageBox.information(self, self.tr("shortcuts"),
-                                            self.tr("shortcuts_text")))
+                                            self.tr("shortcuts_text") + "\n\n" + self.tr("q_syntax_help")))
         self.menu_help.addAction(self.act_shortcuts)
         self.act_official = self._action(lambda: webbrowser.open("https://taiko.ac"))
         self.menu_help.addAction(self.act_official)
@@ -830,7 +831,7 @@ class MainWindow(QMainWindow):
             QWidget.setTabOrder(a, b)
         t = self.tr
         for wdg, name, tip in (
-                (self.search_edit, t("ph"), t("search_tip")),
+                (self.search_edit, t("ph"), t("search_tip") + "\n\n" + t("q_syntax_help")),
                 (self.cat_picker, t("acc_category"), t("acc_category_tip")),
                 (self.filter_btn, t("f_filter"), t("acc_filter_tip")),
                 (self.table, t("acc_table"), t("acc_table_tip")),
@@ -1505,8 +1506,16 @@ class MainWindow(QMainWindow):
         self.do_search()
 
     def do_search(self):
-        kw = self.search_edit.text().strip()
-        self._run_search(kw, self.cat_picker.selected() or None)
+        self._query = core.parse_query(self.search_edit.text())
+        self._mark_invalid_tokens()
+        self._run_search(self._query.text, self.cat_picker.selected() or None)
+
+    def _mark_invalid_tokens(self):
+        """Red border on the search box while it holds a bad key:value token."""
+        bad = bool(self._query.invalid)
+        if bool(self.search_edit.property("badToken")) != bad:
+            self.search_edit.setProperty("badToken", bad)
+            self.search_edit.setStyleSheet(theme.bad_input_qss() if bad else "")
 
     def show_all(self):
         self.search_edit.clear()
@@ -1514,6 +1523,8 @@ class MainWindow(QMainWindow):
         self.cat_picker.blockSignals(True)
         self.cat_picker.set_selected([])
         self.cat_picker.blockSignals(False)
+        self._query = core.parse_query("")
+        self._mark_invalid_tokens()
         self._run_search("", None)
 
     def clear_search(self):
@@ -1605,7 +1616,7 @@ class MainWindow(QMainWindow):
         if merged == self.song_model.dl_status:
             return                   # nothing changed: no repaint, no re-sort
         self.song_model.set_download_status(merged)
-        if self.dl_combo.currentData() != "all":
+        if self.dl_combo.currentData() != "all" or self._query.needs("dl"):
             self.apply_filters()     # membership depends on status
         if not self._auto_upd_started:      # list is shown: first background check
             self._auto_upd_started = True
@@ -1740,6 +1751,11 @@ class MainWindow(QMainWindow):
                         continue
                 songs.append(s)
 
+        q = self._query
+        if q.active:
+            m = self.song_model
+            songs = core.apply_query(q, songs, self.meta_map, self.jp_map, m.dl_status,
+                                     m.favourites, m.new_marks, m.update_keys)
         songs = core.filter_by_download(songs, self.song_model.dl_status,
                                         self.dl_combo.currentData())
         if self.new_combo.currentData() == "new":
@@ -1766,12 +1782,15 @@ class MainWindow(QMainWindow):
         if self.song_model.rowCount() or not self.has_song_db() or self.view_bar.isVisible():
             self.empty_label.hide()
             return
+        q = core.parse_query(self.search_edit.text())    # what the box says now
         searching = (bool(self.search_edit.text().strip())
                      or bool(self.cat_picker.selected())
                      or self.active_filter_count() > 0)
         text = self.tr("no_results" if searching else "no_songs")
+        if q.invalid:
+            text += "\n" + self.tr("q_invalid", items=" ".join(q.invalid))
         self._suggestions = []
-        kw = self.search_edit.text().strip()
+        kw = q.text
         if searching and kw:
             try:
                 self._suggestions = core.suggest(kw, 3)
@@ -2008,7 +2027,7 @@ class MainWindow(QMainWindow):
             core.save_favourites(self.song_model.favourites)
         except OSError:
             core.log.warning("could not save favourites", exc_info=True)
-        if self.fav_only.isChecked():
+        if self.fav_only.isChecked() or self._query.needs("marks"):
             self.apply_filters()          # an unstarred song leaves the list
         self.refresh_detail()
 

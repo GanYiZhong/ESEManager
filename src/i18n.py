@@ -1076,3 +1076,17 @@ TR["ja"].update({
     "cli_expected": "ダウンロード予定サイズ: 約 {size}（空き容量 {free}）",
     "cli_disk_short": "ディスクの空き容量が不足しています: 空き {free}、必要 約 {need}。--force で強制的にダウンロードできます。",
 })
+
+# --- search-box filter syntax (bpm:>180 oni:>=8 cat:vocaloid fav ...)
+TR["zh_TW"].update({
+    "q_syntax_help": "進階搜尋語法（可與一般關鍵字混用）：\nbpm:>180　oni:>=8　hard:5..7　ura:any／none　files:>3\ncat:vocaloid（可重複＝或）　fav　new　upd　dl:yes／no／partial\n\"love story\"　片語；-miku　-cat:anime　-fav　排除\n（fav／new／upd 需搭配其他 key:value，或寫成 +fav）",
+    "q_invalid": "無法辨識的條件（已忽略）：{items}",
+})
+TR["en"].update({
+    "q_syntax_help": "Search syntax (mix with plain words):\nbpm:>180  oni:>=8  hard:5..7  ura:any/none  files:>3\ncat:vocaloid (repeat = OR)  fav  new  upd  dl:yes/no/partial\n\"love story\" phrase;  -miku  -cat:anime  -fav  exclude\n(fav/new/upd need another key:value in the query, or write +fav)",
+    "q_invalid": "Unrecognised filter (ignored): {items}",
+})
+TR["ja"].update({
+    "q_syntax_help": "検索構文（通常のキーワードと併用可）:\nbpm:>180  oni:>=8  hard:5..7  ura:any/none  files:>3\ncat:vocaloid（複数指定はOR）  fav  new  upd  dl:yes/no/partial\n\"love story\" フレーズ、-miku  -cat:anime  -fav で除外\n（fav/new/upd は他の key:value と併用するか +fav と書きます）",
+    "q_invalid": "認識できない条件（無視しました）: {items}",
+})

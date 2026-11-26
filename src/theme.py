@@ -298,6 +298,11 @@ def empty_state_qss(dark=None):
             f"font-size:14px;padding:8px;}}")
 
 
+def bad_input_qss(dark=None):
+    """Red outline for a line edit holding a token we could not parse."""
+    return f"QLineEdit{{border:1px solid {colours(dark)['st_fail']};}}"
+
+
 def success_text_qss(dark=None):
     """Bold "good news" text (e.g. the app-update notice in the status bar)."""
     return (f"QPushButton{{color:{colours(dark)['success']};font-weight:bold;"
