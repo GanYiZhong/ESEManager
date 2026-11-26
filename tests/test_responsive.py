@@ -111,3 +111,25 @@ def test_hysteresis_prevents_flicker(qapp):
     holder.resize(need[0] - 1 + 20, 60)
     assert row.mode == 1
     holder.close()
+
+
+def test_font_and_density_changes_do_not_recurse(window, monkeypatch):
+    """Regression: FontChange -> minimumSizeHint -> measure -> layout.activate()
+    -> minimumSizeHint ... raised RecursionError in the settings dialog."""
+    import sys
+    from PySide6.QtWidgets import QApplication
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda *a: errors.append(a[1]))
+    window.resize(1280, 800)
+    window.show()
+    QApplication.processEvents()
+    for i in range(window.font_combo.count()):
+        window.font_combo.setCurrentIndex(i)
+        QApplication.processEvents()
+    for i in range(window.density_combo.count()):
+        window.density_combo.setCurrentIndex(i)
+        QApplication.processEvents()
+    for width in (1400, 900, 760, 1300):
+        window.resize(width, 800)
+        QApplication.processEvents()
+    assert errors == []

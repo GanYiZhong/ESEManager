@@ -58,8 +58,9 @@ class ResponsiveRow(QWidget):
         self._mode = mode
         for i in range(self._lay.count()):   # drop cached per-item size hints
             self._lay.itemAt(i).invalidate()
+        # invalidate() only: activate() asks this widget for minimumSizeHint(),
+        # which would start another measurement while one is running.
         self._lay.invalidate()
-        self._lay.activate()
 
     def reapply(self):
         """Re-run every step for the current mode (after something reset a widget)."""
@@ -84,7 +85,11 @@ class ResponsiveRow(QWidget):
         self.updateGeometry()
 
     def needed_widths(self):
+        """Width each mode needs, or None while a measurement is running (a
+        size query from inside it must not start another one)."""
         if self._need is None:
+            if self._busy:
+                return None
             self._busy = True
             try:
                 self._measure()
@@ -102,6 +107,8 @@ class ResponsiveRow(QWidget):
         if self._busy or not self._steps:
             return
         need = self.needed_widths()
+        if not need:
+            return
         w = self.width() if width is None else width
         target = len(need) - 1
         for k, n in enumerate(need):
@@ -120,9 +127,10 @@ class ResponsiveRow(QWidget):
     # -- Qt hooks
     def minimumSizeHint(self):
         base = super().minimumSizeHint()
-        if not self._steps:
+        need = self.needed_widths() if self._steps else None
+        if not need:
             return base
-        return QSize(self.needed_widths()[-1], base.height())
+        return QSize(need[-1], base.height())
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
