@@ -1076,3 +1076,39 @@ TR["ja"].update({
     "cli_expected": "ダウンロード予定サイズ: 約 {size}（空き容量 {free}）",
     "cli_disk_short": "ディスクの空き容量が不足しています: 空き {free}、必要 約 {need}。--force で強制的にダウンロードできます。",
 })
+
+
+# --- crash reporter (crash.py)
+TR["zh_TW"].update({
+    "crash_title": "發生了非預期的錯誤",
+    "crash_text": "ESEManager 遇到問題，但多半可以繼續使用。詳細資訊已寫入記錄檔。\n\n{summary}",
+    "crash_text_fatal": "ESEManager 啟動時遇到問題，必須關閉。詳細資訊已寫入記錄檔。\n\n{summary}",
+    "crash_copy": "複製詳細資訊", "crash_copied": "已複製",
+    "crash_open_log": "開啟記錄資料夾", "crash_report": "在 GitHub 回報",
+    "crash_continue": "繼續", "crash_quit": "結束",
+    "crash_prev": "ESEManager 上次非預期關閉。要查看記錄檔嗎？",
+    "crash_prev_open": "開啟記錄檔",
+    "crash_cli": "錯誤：{err}（詳細資訊見 {log}；加上 --debug 可顯示完整追蹤）",
+})
+TR["en"].update({
+    "crash_title": "Something went wrong",
+    "crash_text": "ESEManager hit a problem, but you can most likely keep using it. Details were written to the log file.\n\n{summary}",
+    "crash_text_fatal": "ESEManager hit a problem while starting and has to close. Details were written to the log file.\n\n{summary}",
+    "crash_copy": "Copy details", "crash_copied": "Copied",
+    "crash_open_log": "Open log folder", "crash_report": "Report on GitHub",
+    "crash_continue": "Continue", "crash_quit": "Quit",
+    "crash_prev": "ESEManager closed unexpectedly last time. Open the log?",
+    "crash_prev_open": "Open log",
+    "crash_cli": "Error: {err} (details in {log}; use --debug for the full traceback)",
+})
+TR["ja"].update({
+    "crash_title": "予期しないエラーが発生しました",
+    "crash_text": "ESEManager で問題が発生しましたが、多くの場合そのまま使い続けられます。詳細はログファイルに記録されました。\n\n{summary}",
+    "crash_text_fatal": "ESEManager は起動中に問題が発生したため終了します。詳細はログファイルに記録されました。\n\n{summary}",
+    "crash_copy": "詳細をコピー", "crash_copied": "コピーしました",
+    "crash_open_log": "ログフォルダーを開く", "crash_report": "GitHub で報告",
+    "crash_continue": "続行", "crash_quit": "終了",
+    "crash_prev": "ESEManager は前回予期せず終了しました。ログを開きますか？",
+    "crash_prev_open": "ログを開く",
+    "crash_cli": "エラー: {err}（詳細は {log}。--debug で完全なトレースバックを表示）",
+})

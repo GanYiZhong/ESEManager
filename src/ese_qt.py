@@ -43,6 +43,7 @@ import theme  # light/dark palette and style-sheet helpers
 import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
 import core
+import crash  # crash reporter: hooks, dialog, startup marker
 import songlist  # shareable song lists
 from core import load_jp_map, load_meta_map, read_local_version, human_speed
 from models import SongModel, DownloadModel, human_size
@@ -2926,6 +2927,7 @@ def list_path_from_argv(args):
 
 
 def main():
+    crash.install()          # before anything can fail: startup errors get a dialog + log
     if "--selftest" in sys.argv:
         selftest()
 
@@ -2936,6 +2938,7 @@ def main():
     # next to the app no matter where it was launched from.
     os.chdir(APP_DIR)
     core.setup_logging()
+    crashed_last_time = crash.consume_marker()
     try:
         core.cleanup_app_update()      # .old files left by the last self-update
     except Exception:
@@ -2946,9 +2949,13 @@ def main():
     w = MainWindow()
     theme.apply_theme(app, w.theme_pref)  # display.theme from config.toml
     w.show()
+    crash.set_ready(True, lang=w.lang)   # from here on errors get Continue / Quit
+    if crashed_last_time:
+        QTimer.singleShot(500, lambda: crash.offer_previous_crash(w))
     if list_path:
         QTimer.singleShot(0, lambda: w.import_song_list_file(list_path))
     rc = app.exec()
+    crash.clear_marker()                 # clean exit
     if any(t.isRunning() for t in w._threads):
         # A worker that ignored the shutdown wait: exit without running
         # QThread destructors (which would abort on a running thread).

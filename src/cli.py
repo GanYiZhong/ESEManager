@@ -40,6 +40,7 @@ except ImportError:          # Python < 3.11
     import tomli as tomllib
 
 import core
+import crash
 import songlist
 from appconfig import (APP_DIR, APP_VERSION, CONFIG_FILE, DEFAULT_DOWNLOAD_DIR,
                        VSORT_FOLDER, resolve_dir)
@@ -612,6 +613,8 @@ def build_parser():
     common.add_argument("--json", action="store_true",
                         help="JSON lines on stdout (messages go to stderr)")
 
+    common.add_argument("--debug", action="store_true",
+                        help="show the full traceback on an unexpected error")
     common.add_argument("-q", "--quiet", action="store_true",
                         help="only results and errors (search prints one song name per line)")
 
@@ -709,7 +712,7 @@ def build_parser():
     return p
 
 
-def main(argv=None):
+def _main(argv=None):
     if sys.platform == "win32":
         for stream in (sys.stdout, sys.stderr):
             try:
@@ -738,6 +741,13 @@ def main(argv=None):
     except (TypeError, ValueError):
         args.workers = DEFAULT_WORKERS
     return args.func(args, tr)
+
+
+def main(argv=None):
+    try:
+        return _main(argv)
+    except Exception as e:      # SystemExit / KeyboardInterrupt pass through
+        return crash.cli_fail(e, argv if argv is not None else sys.argv)
 
 
 if __name__ == "__main__":
