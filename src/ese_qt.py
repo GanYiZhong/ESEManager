@@ -20,7 +20,7 @@ except ImportError:
 import tomli_w
 
 from PySide6.QtCore import Qt, QTimer, QProcess, QEvent
-from PySide6.QtGui import QAction, QKeySequence, QShortcut, QGuiApplication
+from PySide6.QtGui import QAction, QKeySequence, QShortcut, QGuiApplication, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
@@ -454,7 +454,10 @@ class MainWindow(QMainWindow):
         """BPM range + difficulty/level filter, shown in the filter button's popup."""
         panel = QWidget()
         form = QFormLayout(panel)
-        form.setContentsMargins(10, 8, 10, 8)
+        form.setContentsMargins(14, 12, 14, 12)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.bpm_min = QSpinBox(); self.bpm_min.setRange(0, 999)
         self.bpm_min.setSpecialValueText(self.tr("f_any"))   # 0 顯示為「不限」
         self.bpm_max = QSpinBox(); self.bpm_max.setRange(0, 999)
@@ -474,6 +477,9 @@ class MainWindow(QMainWindow):
         form.addRow(self.tr("f_level"), self._range_row(self.lv_min, self.lv_max))
         self.reset_filter_btn = QPushButton(self.tr("f_reset"))
         self.reset_filter_btn.clicked.connect(self.reset_filters)
+        for sp in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
+            sp.setFixedWidth(84)
+        self.diff_combo.setMinimumWidth(184)
         form.addRow(self.reset_filter_btn)
         for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
             w.valueChanged.connect(lambda _=None: self.apply_filters())
@@ -485,9 +491,13 @@ class MainWindow(QMainWindow):
         w = QWidget()
         h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
         h.addWidget(lo)
-        h.addWidget(QLabel("–"))
+        dash = QLabel("–")
+        dash.setAlignment(Qt.AlignCenter)
+        h.addWidget(dash)
         h.addWidget(hi)
+        h.addStretch()
         return w
 
     def active_filter_count(self):
@@ -505,12 +515,54 @@ class MainWindow(QMainWindow):
         self.filter_btn.setText((self.tr("f_filter"))
                                 + (f" ({n})" if n else "") + "  ")
 
+    def _settings_section(self, layout, title_key):
+        """Section header (bold caption + hairline) for the settings dialog."""
+        head = QLabel(self.tr(title_key))
+        head.setObjectName("sectionHeader")
+        layout.addWidget(head)
+        rule = QFrame()
+        rule.setObjectName("sectionRule")
+        rule.setFixedHeight(1)
+        layout.addWidget(rule)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(12)
+        form.setContentsMargins(0, 6, 0, 0)
+        layout.addLayout(form)
+        return form
+
+    def _settings_row(self, form, label, control, help_key):
+        """One form row: label, control and a small muted explanation below it."""
+        if isinstance(label, str):
+            label = QLabel(label)
+        label.setMinimumWidth(110)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        label.setContentsMargins(0, 6, 0, 0)   # line up with the control's text
+        box = QWidget()
+        v = QVBoxLayout(box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(4)
+        v.addWidget(control)
+        helper = QLabel(self.tr(help_key))
+        helper.setObjectName("helperText")
+        helper.setWordWrap(True)
+        v.addWidget(helper)
+        form.addRow(label, box)
+
     def build_settings_dialog(self):
         """Download folder, parallel downloads, language and theme. The widgets
         belong to the main window (other code reads them), shown in a dialog."""
         dlg = self.settings_dlg = QDialog(self)
         dlg.setWindowTitle(self.tr("mw_settings_title"))
-        form = QFormLayout(dlg)
+        dlg.setMinimumWidth(560)
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(20, 16, 20, 14)
+        root.setSpacing(6)
+
+        # ---- downloads
+        form = self._settings_section(root, "set_sec_download")
         self.dir_edit = QLineEdit(os.path.abspath(self.download_dir))
         self.dir_edit.editingFinished.connect(self.save_config)
         self.browse_btn = QPushButton(self.tr("browse"))
@@ -520,16 +572,22 @@ class MainWindow(QMainWindow):
         dir_row = QWidget()
         dh = QHBoxLayout(dir_row)
         dh.setContentsMargins(0, 0, 0, 0)
+        dh.setSpacing(8)
         dh.addWidget(self.dir_edit, 1)
         dh.addWidget(self.browse_btn)
         dh.addWidget(self.opendir_btn)
-        dir_row.setMinimumWidth(560)
-        form.addRow(self.tr("dir"), dir_row)
+        self._settings_row(form, self.tr("dir"), dir_row, "dir_help")
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(1, 8)       # be gentle with the ESE server
+        self.workers_spin.setFixedWidth(90)
         self.workers_spin.setValue(self._cfg_int(self.config.get("download", {}), "workers", 3, 1))
         self.workers_spin.valueChanged.connect(lambda _: self.save_config())
-        form.addRow(self.tr("workers"), self.workers_spin)
+        wbox = QWidget()
+        wh = QHBoxLayout(wbox)
+        wh.setContentsMargins(0, 0, 0, 0)
+        wh.addWidget(self.workers_spin)
+        wh.addStretch()
+        self._settings_row(form, self.tr("workers"), wbox, "workers_help")
         self.source_combo = QComboBox()
         self.source_combo.setToolTip(self.tr("src_tip"))
         self.source_combo.addItem(self.tr("src_ese"), "ese")
@@ -543,7 +601,12 @@ class MainWindow(QMainWindow):
         self.source_combo.currentIndexChanged.connect(self.change_source)
         lbl = QLabel(self.tr("src_label"))
         lbl.setToolTip(self.tr("src_tip"))
-        form.addRow(lbl, self.source_combo)
+        self._settings_row(form, lbl, self.source_combo, "src_help")
+
+        root.addSpacing(14)
+
+        # ---- appearance and language
+        form = self._settings_section(root, "set_sec_appearance")
         self.lang_combo = QComboBox()
         for label, code in (("自動 Auto", "auto"), ("繁體中文", "zh_TW"),
                             ("English", "en"), ("日本語", "ja")):
@@ -551,7 +614,7 @@ class MainWindow(QMainWindow):
         idx = self.lang_combo.findData(self.lang_pref)
         self.lang_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.lang_combo.currentIndexChanged.connect(self.change_lang)
-        form.addRow(self.tr("lang"), self.lang_combo)
+        self._settings_row(form, self.tr("lang"), self.lang_combo, "lang_help")
         self.theme_combo = QComboBox()
         self.theme_combo.setToolTip(self.tr("th_tip"))
         for label_key, code in (("th_auto", "auto"), ("th_light", "light"),
@@ -560,10 +623,17 @@ class MainWindow(QMainWindow):
         idx = self.theme_combo.findData(self.theme_pref)
         self.theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.theme_combo.currentIndexChanged.connect(self.change_theme)
-        form.addRow(self.tr("th_label"), self.theme_combo)
+        self._settings_row(form, self.tr("th_label"), self.theme_combo, "th_help")
+
+        root.addSpacing(10)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
         close = QPushButton(self.tr("mw_close"))
+        close.setMinimumWidth(96)
+        close.setDefault(True)
         close.clicked.connect(dlg.accept)
-        form.addRow(close)
+        buttons.addWidget(close)
+        root.addLayout(buttons)
         dlg.finished.connect(lambda _=None: self.save_config())
 
     def change_source(self, _=None):
@@ -595,17 +665,23 @@ class MainWindow(QMainWindow):
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(5000)
+        self.log_view.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
         self.tabs.addTab(self.log_view, self.tr("tab_log"))
         # failed tab
         fail_w = QWidget()
         fv = QVBoxLayout(fail_w)
-        fv.setContentsMargins(0, 4, 0, 0)
+        fv.setContentsMargins(0, 6, 0, 0)
+        fv.setSpacing(8)
         self.fail_list = QListWidget()
         self.retry_btn = QPushButton(self.tr("retry"))
         self.retry_btn.clicked.connect(self.retry_failed)
         self.retry_btn.setEnabled(False)
         fv.addWidget(self.fail_list)
-        fv.addWidget(self.retry_btn)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.retry_btn.setMinimumWidth(140)
+        row.addWidget(self.retry_btn)
+        fv.addLayout(row)
         self.tabs.addTab(fail_w, self.tr("tab_fail"))
         return self.tabs
 

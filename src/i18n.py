@@ -639,3 +639,33 @@ TR["ja"].update({
     "err_checksum": "チェックサムが一致しません。ダウンロードが破損している可能性があります。後でもう一度お試しください。",
     "err_tried": "（試行：{hosts}）",
 })
+
+
+# --- settings dialog sections and helper text
+TR["zh_TW"].update({
+    "set_sec_download": "下載",
+    "set_sec_appearance": "外觀與語言",
+    "dir_help": "歌曲會儲存在這個資料夾，每首歌一個子資料夾。",
+    "workers_help": "同時下載的檔案數（1–8）。數字越大越快，但對伺服器負擔也越大，建議 3。",
+    "src_help": "選擇歌曲檔的下載來源；失敗時會自動改用另一個。",
+    "lang_help": "介面語言。「自動」會依系統語言決定。",
+    "th_help": "淺色或深色外觀；「跟隨系統」會隨作業系統設定切換。",
+})
+TR["en"].update({
+    "set_sec_download": "Downloads",
+    "set_sec_appearance": "Appearance and language",
+    "dir_help": "Songs are saved in this folder, one sub-folder per song.",
+    "workers_help": "Files downloaded at the same time (1-8). More is faster but harder on the server; 3 is a good default.",
+    "src_help": "Where song files come from. If it fails, the other source is tried automatically.",
+    "lang_help": "Interface language. Auto follows your system language.",
+    "th_help": "Light or dark look. Auto follows the OS setting and switches with it.",
+})
+TR["ja"].update({
+    "set_sec_download": "ダウンロード",
+    "set_sec_appearance": "外観と言語",
+    "dir_help": "曲はこのフォルダに、1曲につき1つのサブフォルダで保存されます。",
+    "workers_help": "同時にダウンロードするファイル数（1～8）。多いほど速いですがサーバーへの負荷も増えます。標準は 3 です。",
+    "src_help": "曲ファイルのダウンロード元。失敗した場合は自動的にもう一方を使います。",
+    "lang_help": "表示言語。「自動」はシステムの言語に合わせます。",
+    "th_help": "ライトまたはダーク。「自動」は OS の設定に合わせて切り替わります。",
+})
