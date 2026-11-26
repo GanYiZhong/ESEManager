@@ -271,3 +271,18 @@ def test_update_many_batches_adjacent_rows(qapp):
     got.clear()
     d.update_many({"zzz": ("x", 0, 0)})
     assert got == []
+
+
+# ------------------------------------------------------- downloaded column
+def test_download_column_display_and_sort(qapp):
+    m = make_model()
+    col = SongModel.DL_COL
+    assert m.data(m.index(0, col)) == ""          # not scanned yet
+    m.set_download_status({("alpha", "ANIME"): 2, ("Bravo", "POPS"): 0, ("Charlie", "POPS"): 1})
+    shown = {n: m.data(m.index(row_of(m, n), col)) for n in names(m)}
+    assert len(set(shown.values())) == 3
+    m.sort(col, Qt.DescendingOrder)
+    assert names(m)[0] == "alpha" and names(m)[-1] == "Bravo"
+    # a fresh scan result re-sorts an already sorted column
+    m.set_download_status({("alpha", "ANIME"): 0, ("Bravo", "POPS"): 2, ("Charlie", "POPS"): 1})
+    assert names(m) == ["Bravo", "Charlie", "alpha"]

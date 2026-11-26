@@ -31,10 +31,13 @@ _CHECK_ROLE = [Qt.CheckStateRole]
 
 class SongModel(QAbstractTableModel):
     COLS = ["c_sel", "c_song", "c_jp", "c_cat", "c_bpm",
-            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files"]
+            "c_easy", "c_normal", "c_hard", "c_oni", "c_ura", "c_files", "c_dl"]
     LEVEL_COLS = {5: "level_easy", 6: "level_normal", 7: "level_hard",
                   8: "level_oni", 9: "level_ura"}
-    _CENTER_COLS = frozenset([4, 5, 6, 7, 8, 9, 10])
+    _CENTER_COLS = frozenset([4, 5, 6, 7, 8, 9, 10, 11])
+    DL_COL = 11
+    _DL_TEXT = {2: "●", 1: "◐", 0: "○"}
+    _DL_TIP = {2: "dl_complete", 1: "dl_partial", 0: "dl_none"}
 
     def __init__(self, tr, jp_map, meta_map=None):
         super().__init__()
@@ -49,6 +52,7 @@ class SongModel(QAbstractTableModel):
         self.checked = set()     # {(song_name, category), ...}
         self._cells = {}         # id(song) -> cached display strings
         self._skeys = {}         # column -> {id(song): sort value}
+        self.dl_status = {}      # (song_name, category) -> 0 none / 1 partial / 2 complete
 
     # jp/meta maps are replaced wholesale after a DB reload: drop derived caches
     @property
@@ -68,6 +72,17 @@ class SongModel(QAbstractTableModel):
     def meta_map(self, v):
         self._meta_map = v or {}
         self._invalidate()
+
+    def set_download_status(self, status):
+        """Install a {(name, category): 0|1|2} map from a folder scan."""
+        self.dl_status = status or {}
+        self._skeys.pop(self.DL_COL, None)
+        if self._sort_col == self.DL_COL:
+            self.sort(self.DL_COL, Qt.DescendingOrder if self._sort_desc
+                      else Qt.AscendingOrder)
+        if self._view:
+            self.dataChanged.emit(self.index(0, self.DL_COL),
+                                  self.index(len(self._view) - 1, self.DL_COL))
 
     def _invalidate(self):
         self._cells.clear()
@@ -128,6 +143,17 @@ class SongModel(QAbstractTableModel):
             return None
         row, col = index.row(), index.column()
         song = self._view[row]
+        if col == self.DL_COL:
+            st = self.dl_status.get(self._key(song))
+            if role == Qt.DisplayRole:
+                return self._DL_TEXT.get(st, "")
+            if role == Qt.ToolTipRole and st is not None:
+                return self.tr(self._DL_TIP[st])
+            if role == Qt.TextAlignmentRole:
+                return int(Qt.AlignCenter)
+            if role == Qt.ForegroundRole and st is not None:
+                return QColor({2: "#66BB6A", 1: "#FFA726", 0: "#9E9E9E"}[st])
+            return None
         if role == Qt.DisplayRole:
             return self._row_cells(song)[col - 1] if col else None
         if col == 0:
@@ -225,6 +251,8 @@ class SongModel(QAbstractTableModel):
             return natural_key(str(CATEGORY_NAMES.get(song["category"], song["category"])))
         if col == 10:
             return len(song["files"])
+        if col == self.DL_COL:
+            return self.dl_status.get(self._key(song))            # unscanned last
         meta = self.meta_map.get(name) or {}
         if col == 4:
             m = re.search(r"\d+(?:\.\d+)?", str(meta.get("bpm") or ""))

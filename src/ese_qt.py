@@ -38,7 +38,7 @@ import icons  # themed SVG icons
 import core
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
 from models import SongModel, DownloadModel
-from workers import (SearchThread, CheckUpdatesThread, DownloadThread,
+from workers import (DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
                      VersionSortingThread, AppSelfUpdateThread)
 from notify import Notifier, set_app_icon
@@ -571,6 +571,11 @@ class MainWindow(QMainWindow):
                          ("c_ura", "level_ura")):
             self.diff_combo.addItem(self.tr(key), col)
         form.addRow(self.tr("f_diff"), self.diff_combo)
+        self.dl_combo = QComboBox()
+        for key, mode in (("dl_all", "all"), ("dl_missing", "missing"),
+                          ("dl_have", "downloaded")):
+            self.dl_combo.addItem(self.tr(key), mode)
+        form.addRow(self.tr("f_dl"), self.dl_combo)
         self.lv_min = QSpinBox(); self.lv_min.setRange(0, 20)
         self.lv_min.setSpecialValueText(self.tr("f_any"))
         self.lv_max = QSpinBox(); self.lv_max.setRange(0, 20)
@@ -585,6 +590,7 @@ class MainWindow(QMainWindow):
         for w in (self.bpm_min, self.bpm_max, self.lv_min, self.lv_max):
             w.valueChanged.connect(lambda _=None: self.apply_filters())
         self.diff_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
+        self.dl_combo.currentIndexChanged.connect(lambda _=None: self.apply_filters())
         return panel
 
     @staticmethod
@@ -608,6 +614,8 @@ class MainWindow(QMainWindow):
         if self.diff_combo.currentData() is not None:
             n += 1
         if self.lv_min.value() or self.lv_max.value():
+            n += 1
+        if self.dl_combo.currentData() != "all":
             n += 1
         return n
 
@@ -665,6 +673,7 @@ class MainWindow(QMainWindow):
         form = self._settings_section(root, "set_sec_download")
         self.dir_edit = QLineEdit(os.path.abspath(self.download_dir))
         self.dir_edit.editingFinished.connect(self.save_config)
+        self.dir_edit.editingFinished.connect(self.refresh_download_status)
         self.browse_btn = QPushButton(self.tr("browse"))
         self.browse_btn.clicked.connect(self.browse_dir)
         self.opendir_btn = QPushButton(self.tr("open_dir"))
@@ -964,6 +973,30 @@ class MainWindow(QMainWindow):
             self._total_songs = len(songs)
             self._refresh_status()
         self.apply_filters()
+        self.refresh_download_status()
+
+    # ---- downloaded-status column: one folder scan on a worker thread
+    _dl_seq = 0
+
+    def refresh_download_status(self):
+        """Rescan the download folder for the songs currently loaded. Results
+        of an older scan are ignored (sequence number)."""
+        if not self.all_songs:
+            return
+        self._dl_seq += 1
+        t = self._track(DownloadStatusThread(
+            self.all_songs, resolve_dir(self.dir_edit.text()), seq=self._dl_seq))
+        t.done.connect(self.on_download_status)
+        t.start()
+
+    def on_download_status(self, seq, status):
+        if seq != self._dl_seq:
+            return
+        merged = dict(self.song_model.dl_status)
+        merged.update(status)
+        self.song_model.set_download_status(merged)
+        if self.dl_combo.currentData() != "all":
+            self.apply_filters()     # membership depends on status
 
     DB_DAMAGED = ("malformed", "not a database", "no such table", "unable to open")
 
@@ -991,6 +1024,9 @@ class MainWindow(QMainWindow):
         self.diff_combo.blockSignals(True)
         self.diff_combo.setCurrentIndex(0)
         self.diff_combo.blockSignals(False)
+        self.dl_combo.blockSignals(True)
+        self.dl_combo.setCurrentIndex(0)
+        self.dl_combo.blockSignals(False)
         self.apply_filters()
 
     def apply_filters(self):
@@ -1029,6 +1065,8 @@ class MainWindow(QMainWindow):
                         continue
                 songs.append(s)
 
+        songs = core.filter_by_download(songs, self.song_model.dl_status,
+                                        self.dl_combo.currentData())
         self.song_model.set_songs(songs)
         self.count_label.setText(self.tr("total", n=len(songs)))
         self.update_sel_count()
@@ -1247,6 +1285,8 @@ class MainWindow(QMainWindow):
             self.dl_timer.stop()
         self.refresh_progress()   # 最後一次刷新，確保畫面到位
         self._reset_window_title()
+        if not self._closing:
+            self.refresh_download_status()
         self.download_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
@@ -1378,6 +1418,7 @@ class MainWindow(QMainWindow):
         if d:
             self.dir_edit.setText(d)
             self.save_config()
+            self.refresh_download_status()
             self.refresh_welcome_dir()
 
     def open_dir(self):

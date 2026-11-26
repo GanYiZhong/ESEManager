@@ -38,6 +38,23 @@ class SearchThread(QThread):
             self.fail.emit(self.seq, core.friendly_error(e, self.tr))
 
 
+class DownloadStatusThread(QThread):
+    """core.download_status off the UI thread (one directory walk)."""
+    done = Signal(int, object)       # seq, {song_key: status}
+
+    def __init__(self, songs, download_dir, seq=0):
+        super().__init__()
+        self.songs = songs
+        self.download_dir = download_dir
+        self.seq = seq
+
+    def run(self):
+        try:
+            self.done.emit(self.seq, core.download_status(self.songs, self.download_dir))
+        except Exception:
+            core.log.warning("download status scan failed", exc_info=True)
+
+
 class CheckUpdatesThread(QThread):
     """core.find_updates on a worker thread. fail("__NO_SHA__") means the
     song database is too old to compare files."""
