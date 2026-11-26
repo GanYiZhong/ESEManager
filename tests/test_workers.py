@@ -258,3 +258,38 @@ def test_load_maps(tmp_path):
     assert jp["A"] == "エー" and jp["A title"] == "エー"
     assert meta["A"]["bpm"] == "120" and meta["A"]["level_oni"] == 8
     assert core.load_jp_map(str(tmp_path / "missing.db")) == {}
+
+
+# ---------------------------------------------------------------- batching / caches
+def test_download_log_lines_are_batched_into_one_signal():
+    t = workers.DownloadThread([], "unused", 1)
+    got = []
+    t.log.connect(got.append)
+    for i in range(1000):
+        t.job.log(f"line {i}")
+    assert got == []                       # nothing emitted per line
+    t.flush_log()
+    assert len(got) == 1 and got[0].split("\n") == [f"line {i}" for i in range(1000)]
+    t.flush_log()                          # empty buffer: no signal
+    assert len(got) == 1
+
+
+def test_run_flushes_remaining_log_lines():
+    t = workers.DownloadThread([], "unused", 1)
+    got = []
+    t.log.connect(got.append)
+    t.job.log("late")
+    t.run()
+    assert got == ["late"]
+
+
+def test_env_proxy_lookup_is_cached_per_host(monkeypatch):
+    calls = []
+    monkeypatch.setattr(core, "_orig_get_environ_proxies",
+                        lambda url, no_proxy=None: calls.append(url) or {"http": "p"})
+    core.new_session()
+    for i in range(50):
+        assert core._cached_environ_proxies(f"http://h/{i}") == {"http": "p"}
+    assert len(calls) == 1
+    core._cached_environ_proxies("http://other/x")
+    assert len(calls) == 2

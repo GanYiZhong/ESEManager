@@ -130,7 +130,30 @@ def human_eta(sec):
     return f"{h}h{m:02d}m"
 
 
+_env_proxy_cache = {}
+_orig_get_environ_proxies = None
+
+
+def _cached_environ_proxies(url, no_proxy=None):
+    """requests re-reads the proxy environment (the Windows registry, too) on
+    every request; for thousands of small files that dominates. Cache it per
+    host, until the next new_session()."""
+    parts = urllib.parse.urlsplit(url)
+    key = (parts.scheme, parts.netloc, no_proxy)
+    try:
+        return dict(_env_proxy_cache[key])
+    except KeyError:
+        val = _orig_get_environ_proxies(url, no_proxy=no_proxy)
+        _env_proxy_cache[key] = dict(val)
+        return val
+
+
 def new_session(pool_size=10):
+    global _orig_get_environ_proxies
+    _env_proxy_cache.clear()
+    if _orig_get_environ_proxies is None:       # first use: requests loads lazily
+        _orig_get_environ_proxies = requests.sessions.get_environ_proxies
+        requests.sessions.get_environ_proxies = _cached_environ_proxies
     sess = requests.Session()
     sess.headers["User-Agent"] = USER_AGENT
     if pool_size > 10:      # requests' default pool is 10 connections per host

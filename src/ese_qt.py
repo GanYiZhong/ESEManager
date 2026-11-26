@@ -904,6 +904,9 @@ class MainWindow(QMainWindow):
         dh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         dh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         dh.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        # ResizeToContents re-measures rows on every dataChanged; with thousands
+        # of rows only a sample is needed to size these narrow columns.
+        dh.setResizeContentsPrecision(40)
         self.tabs.addTab(self.dl_table, self.tr("tab_prog"))
         # log tab: toolbar + view
         log_w = QWidget()
@@ -1505,6 +1508,9 @@ class MainWindow(QMainWindow):
     def refresh_progress(self):
         if not self.dl_thread:
             return
+        flush = getattr(self.dl_thread, "flush_log", None)
+        if flush:
+            flush()         # batched log lines, one signal per tick
         done, total, spd, eta, dirty = self.dl_thread.snapshot()
         self.overall_bar.setValue(done)
         if self.dl_thread.is_paused():
