@@ -264,6 +264,8 @@ def cmd_status(args, tr):
     if songs is not None:
         out.msg(tr("total", n=songs))
     out.msg(f"{VSORT_FOLDER}: {vs[:7] if vs else tr('dbv_none')}")
+    if songs is None and not core.has_song_db():
+        out.msg(tr("cli_no_db"))
     return 0
 
 

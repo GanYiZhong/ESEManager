@@ -143,8 +143,11 @@ TR = {
 
 # Strings for first-run guidance, download/DB status and worker logs.
 TR["zh_TW"].update({
-    "empty_hint": "尚未下載歌曲資料庫。程式啟動時會詢問是否下載預先建好的資料庫；"
-                  "也可以隨時按上方「更新資料庫」下載。",
+    "empty_hint": "按下方按鈕下載預先建好的歌曲資料庫，完成後就能搜尋與下載。",
+    "welcome_title": "歡迎使用 ESEManager",
+    "welcome_download": "下載歌曲資料庫",
+    "welcome_change_dir": "變更…",
+    "welcome_dir": "歌曲會下載到：{d}",
     "no_selection": "請先勾選要下載的歌曲。",
     "dl_busy": "下載進行中，請等目前的下載完成或先停止。",
     "dl_confirm_many": "即將下載 {n} 首歌曲（{f} 個檔案），可能需要很長時間與大量磁碟空間。\n是否繼續？",
@@ -180,8 +183,11 @@ TR["zh_TW"].update({
 })
 
 TR["en"].update({
-    "empty_hint": "No song database yet. At startup the app offers to download the prebuilt "
-                  "database; you can also download it any time with \"Update DB\" above.",
+    "empty_hint": "Download the prebuilt song database with the button below, then search and download charts.",
+    "welcome_title": "Welcome to ESEManager",
+    "welcome_download": "Download song database",
+    "welcome_change_dir": "Change...",
+    "welcome_dir": "Songs will be saved to: {d}",
     "no_selection": "Select the songs to download first.",
     "dl_busy": "A download is already running. Wait for it to finish or stop it first.",
     "dl_confirm_many": "About to download {n} songs ({f} files). This can take a long time "
@@ -220,8 +226,11 @@ TR["en"].update({
 })
 
 TR["ja"].update({
-    "empty_hint": "曲データベースがまだありません。起動時にビルド済みデータベースのダウンロードを"
-                  "確認します。上の「データベース更新」からいつでもダウンロードできます。",
+    "empty_hint": "下のボタンでビルド済みの曲データベースをダウンロードすると、検索とダウンロードができます。",
+    "welcome_title": "ESEManager へようこそ",
+    "welcome_download": "曲データベースをダウンロード",
+    "welcome_change_dir": "変更…",
+    "welcome_dir": "保存先：{d}",
     "no_selection": "先にダウンロードする曲を選択してください。",
     "dl_busy": "ダウンロード中です。完了するか停止してから実行してください。",
     "dl_confirm_many": "{n} 曲（{f} ファイル）をダウンロードします。時間とディスク容量が"

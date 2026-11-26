@@ -35,7 +35,7 @@ def window(qapp, tmp_path, monkeypatch):
 def test_window_builds_in_each_language(window, lang):
     window.lang = lang
     window.build_ui()
-    assert window.count_label.text()
+    assert window.welcome_title.text() == ese_qt.TR[lang]["welcome_title"]
 
 
 def test_empty_database_shows_hint_and_does_not_create_db(window, tmp_path):
@@ -257,3 +257,45 @@ def test_pause_ignored_once_stopping(window):
 def test_download_summary_strings_exist(lang):
     from i18n import TR
     assert TR[lang]["dl_open_folder"] and TR[lang]["dl_retry_failed"]
+
+
+def test_first_run_welcome_panel(window):
+    assert not window.welcome_panel.isHidden()
+    assert window.welcome_btn.isEnabled()
+    assert window.count_label.text() == ""
+    assert not window.missing_btn.isEnabled()
+    assert window.download_dir in window.welcome_dir.text() or \
+        window.dir_edit.text() in window.welcome_dir.text()
+
+
+def test_welcome_button_runs_db_update(window, monkeypatch):
+    calls = []
+    monkeypatch.setattr(window, "update_database", lambda: calls.append(1))
+    window.welcome_btn.click()
+    assert calls == [1]
+
+
+def test_welcome_change_dir_updates_label(window, monkeypatch, tmp_path):
+    new = str(tmp_path / "songs_here")
+    monkeypatch.setattr(ese_qt.QFileDialog, "getExistingDirectory",
+                        staticmethod(lambda *a, **k: new))
+    window.browse_dir()
+    assert new in window.welcome_dir.text()
+
+
+def test_first_db_download_loads_list_and_focuses_search(window, monkeypatch):
+    shown = []
+    monkeypatch.setattr(window, "reload_databases", lambda m=None: shown.append(("reload", m)))
+    monkeypatch.setattr(window, "show_all", lambda: shown.append("all"))
+    focused = []
+    monkeypatch.setattr(window.search_edit, "setFocus", lambda *a: focused.append(1))
+    window.on_db_updated(True, "")
+    assert shown == [("reload", None), "all"]
+    assert focused
+
+
+def test_no_startup_prompt_dialog_without_db(window, monkeypatch):
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(1) or QMessageBox.No)
+    window.on_version("v9", "", manual=False)
+    assert not asked
