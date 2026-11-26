@@ -17,6 +17,7 @@ _common = dict(
         'tomli_w',
         'concurrent.futures',
         'appconfig',
+        'settings_store',
         'core',
         'theme',
         'icons',

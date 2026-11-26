@@ -66,3 +66,26 @@ def _fast_retry_backoff(monkeypatch):
     """Retry backoff is real wall time (1s, 2s, ...); shrink it for tests."""
     import core
     monkeypatch.setattr(core, "RETRY_BACKOFF", 0.01)
+
+
+@pytest.fixture(autouse=True)
+def _sync_config_writes(request, monkeypatch):
+    """The window debounces config writes (~300 ms); most tests read the file
+    right after a change, so write through unless the test is about the
+    debounce itself (mark it `real_debounce`)."""
+    if request.node.get_closest_marker("real_debounce"):
+        return
+    try:
+        import ese_qt
+    except Exception:
+        return
+    orig = ese_qt.MainWindow.save_config
+
+    def save_now(self):
+        orig(self)
+        self.flush_config()
+    monkeypatch.setattr(ese_qt.MainWindow, "save_config", save_now)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_debounce: keep the window's config-save debounce")

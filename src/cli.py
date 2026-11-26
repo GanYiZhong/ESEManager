@@ -12,6 +12,7 @@ ESEManager command-line mode.
     ESEManager-cli version-sorting [--force]
     ESEManager-cli cleanup [--dry-run] [--yes] [--part-files-only|--orphans|--strays|--empty|--all]
                            [--permanent]
+    ESEManager-cli config get [KEY] | set KEY VALUE | reset [KEY] [--all]
     ESEManager-cli self-update [--check] [-y]
 
 Common options: --dir DIR (download folder; default from config.toml or
@@ -40,6 +41,7 @@ except ImportError:          # Python < 3.11
     import tomli as tomllib
 
 import core
+import settings_store
 import songlist
 from appconfig import (APP_DIR, APP_VERSION, CONFIG_FILE, DEFAULT_DOWNLOAD_DIR,
                        VSORT_FOLDER, resolve_dir)
@@ -51,11 +53,10 @@ DEFAULT_WORKERS = 3
 
 # ---------------------------------------------------------------- helpers
 def load_config():
-    try:
-        with open(CONFIG_FILE, "rb") as f:
-            return tomllib.load(f)
-    except Exception:
-        return {}
+    cfg, broken = settings_store.load_config(CONFIG_FILE)
+    if broken:
+        out.err(f"config.toml is damaged; kept as {broken}. Using defaults.")
+    return cfg
 
 
 def make_tr(lang):
@@ -558,6 +559,61 @@ def cmd_version_sorting(args, tr):
     return 0
 
 
+def cmd_config(args, tr):
+    """config get [KEY] | set KEY VALUE | reset [KEY]  (dotted keys, e.g. download.workers)."""
+    act = args.action
+    try:
+        if act == "get":
+            cfg, _ = settings_store.load_config(CONFIG_FILE)
+            keys = [args.key] if args.key else settings_store.all_keys()
+            vals = {}
+            for k in keys:
+                sec, kk = settings_store.split_key(k)
+                vals[k] = cfg.get(sec, {}).get(kk, settings_store.default_of(sec, kk))
+            if args.key:
+                out.data({args.key: vals[args.key]})
+                if not out.json:
+                    print(json.dumps(vals[args.key], ensure_ascii=False)
+                          if not isinstance(vals[args.key], str) else vals[args.key])
+            else:
+                out.data(vals)
+                if not out.json:
+                    for k, v in vals.items():
+                        print(f"{k} = {json.dumps(v, ensure_ascii=False)}")
+            return 0
+        if act == "set":
+            if not args.key or args.value is None:
+                out.err("usage: config set KEY VALUE")
+                return 2
+            sec, kk = settings_store.split_key(args.key)
+            val = settings_store.parse_value(sec, kk, args.value)
+            settings_store.save_known(CONFIG_FILE, {sec: {kk: val}})
+            out.data({args.key: val})
+            out.msg(f"{args.key} = {json.dumps(val, ensure_ascii=False)}")
+            return 0
+        if act == "reset":
+            cur, _ = settings_store.load_config(CONFIG_FILE)
+            if args.key:
+                sec, kk = settings_store.split_key(args.key)
+                cur.get(sec, {}).pop(kk, None)
+                new = cur
+            else:
+                new = settings_store.reset_config(cur, keep_directory=not args.all)
+            settings_store.write_config(CONFIG_FILE, new)
+            out.msg("reset " + (args.key or "all settings"))
+            return 0
+    except KeyError as e:
+        out.err(f"unknown setting: {e.args[0]} (try: {', '.join(settings_store.all_keys()[:4])}, ...)")
+        return 2
+    except ValueError as e:
+        out.err(str(e))
+        return 2
+    except OSError as e:
+        out.err(str(e))
+        return 1
+    return 2
+
+
 def cmd_self_update(args, tr):
     try:
         release = core.fetch_latest_release()
@@ -700,6 +756,15 @@ def build_parser():
     sp.add_argument("--permanent", action="store_true",
                     help="delete for good instead of moving to the trash")
     sp.set_defaults(func=cmd_cleanup)
+
+    sp = sub.add_parser("config", parents=[common],
+                        help="read or change settings (config get|set|reset KEY [VALUE])")
+    sp.add_argument("action", choices=["get", "set", "reset"])
+    sp.add_argument("key", nargs="?", help="dotted key, e.g. download.workers")
+    sp.add_argument("value", nargs="?")
+    sp.add_argument("--all", action="store_true",
+                    help="reset: also reset download.directory")
+    sp.set_defaults(func=cmd_config)
 
     sp = sub.add_parser("self-update", parents=[common],
                         help="download the latest ESEManager release over this folder")

@@ -10,6 +10,7 @@ models (table models), workers (background threads) and theme/notify.
 """
 
 import html
+import json
 import os
 import re
 import sys
@@ -32,7 +33,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QPlainTextEdit, QProgressBar, QTabWidget, QListWidget,
     QListWidgetItem, QMessageBox, QSplitter, QAbstractItemView, QStyleFactory,
     QDialog, QFrame, QFormLayout, QMenu, QToolButton, QWidgetAction, QCheckBox,
-    QSystemTrayIcon, QInputDialog
+    QSystemTrayIcon, QInputDialog, QDialogButtonBox
 )
 
 from appconfig import (APP_DIR, APP_VERSION, RELEASES_URL, CONFIG_FILE,
@@ -44,6 +45,7 @@ import columns  # song-table column visibility/order/width/density
 import icons  # themed SVG icons
 import core
 import songlist  # shareable song lists
+import settings_store  # validated, atomic, debounced config
 from core import load_jp_map, load_meta_map, read_local_version, human_speed
 from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
@@ -155,6 +157,24 @@ class _ClickLabel(ElasticLabel):
         super().mouseReleaseEvent(ev)
 
 
+class _QtTimer:
+    """Single-shot QTimer with the small interface settings_store.Debouncer needs."""
+
+    def __init__(self, parent, callback):
+        self._t = QTimer(parent)
+        self._t.setSingleShot(True)
+        self._t.timeout.connect(callback)
+
+    def start(self, ms):
+        self._t.start(ms)
+
+    def stop(self):
+        self._t.stop()
+
+    def isActive(self):
+        return self._t.isActive()
+
+
 class _DirDropEdit(QLineEdit):
     """Folder field: dropping a folder on it sets the path directly."""
     dir_dropped = Signal(str)
@@ -247,6 +267,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, self.check_whats_new)
         self.folders_found.connect(self._on_folders_found)
         QTimer.singleShot(800, self.detect_welcome_folder)
+        if self._config_broken:
+            QTimer.singleShot(1000, self._notify_broken_config)
 
     SEARCH_DELAY_MS = 300
     FONT_SCALES = (90, 100, 115, 130)
@@ -312,14 +334,38 @@ class MainWindow(QMainWindow):
         return s.format(**kw) if kw else s
 
     def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "rb") as f:
-                    return tomllib.load(f)
-            except Exception:
-                pass
-        return {"download": {"directory": DEFAULT_DOWNLOAD_DIR, "workers": 3},
-                "display": {"page_size": 20, "ui_language": "auto", "theme": "auto"}}
+        """Validated config; a damaged file is moved aside (see settings_store)
+        and a one-time notice is queued."""
+        cfg, broken = settings_store.load_config(CONFIG_FILE)
+        self._config_broken = broken
+        if not hasattr(self, "_save_debounce"):
+            self._pending_cfg = None
+            self._no_save = False
+            self._save_debounce = settings_store.Debouncer(
+                self._write_config, lambda cb: _QtTimer(self, cb), self.SAVE_DELAY_MS)
+        return cfg
+
+    SAVE_DELAY_MS = 300
+
+    def flush_config(self):
+        """Write any pending (debounced) config now."""
+        self._save_debounce.flush()
+
+    def _write_config(self):
+        cfg, self._pending_cfg = self._pending_cfg, None
+        if cfg is None or self._no_save:
+            return
+        try:
+            settings_store.save_known(CONFIG_FILE, cfg)
+        except Exception:
+            core.log.warning("save_config failed", exc_info=True)
+
+    def _notify_broken_config(self):
+        p = getattr(self, "_config_broken", None)
+        if p:
+            self._config_broken = None
+            QMessageBox.information(self, self.tr("title"),
+                                    self.tr("cfg_broken_notice", path=p))
 
     @staticmethod
     def _cfg_int(d, key, default, lo):
@@ -328,6 +374,8 @@ class MainWindow(QMainWindow):
         return v if isinstance(v, int) and not isinstance(v, bool) and v >= lo else default
 
     def save_config(self):
+        if self._no_save:
+            return
         self.refresh_welcome_dir()
         prev = self.config.get("display", {})
         # Keep the last normal (not maximized) size; a maximized window would store the screen size.
@@ -368,12 +416,11 @@ class MainWindow(QMainWindow):
                                     if hasattr(self, "source_combo") else "auto")},
             "display": display,
         }
-        self.config = {**self.config, "display": display}
-        try:
-            with open(CONFIG_FILE, "wb") as f:
-                tomli_w.dump(cfg, f)
-        except Exception:
-            core.log.warning("save_config failed", exc_info=True)
+        self.config = {**self.config, "display": {**prev, **display}}
+        if self._no_save:
+            return
+        self._pending_cfg = cfg
+        self._save_debounce.request()          # one disk write per ~300 ms
 
     # ---- menus, status bar, shortcuts (created once; texts via retranslate_chrome)
     def _action(self, slot):
@@ -1137,6 +1184,17 @@ class MainWindow(QMainWindow):
 
         root.addSpacing(10)
         buttons = QHBoxLayout()
+        self.set_reset_btn = QPushButton(self.tr("set_reset"))
+        self.set_reset_btn.clicked.connect(self.reset_settings_ui)
+        self.set_export_btn = QPushButton(self.tr("set_export"))
+        self.set_export_btn.clicked.connect(self.export_settings)
+        self.set_import_btn = QPushButton(self.tr("set_import"))
+        self.set_import_btn.clicked.connect(self.import_settings)
+        self.set_folder_btn = QPushButton(self.tr("set_open_folder"))
+        self.set_folder_btn.clicked.connect(self.open_settings_folder)
+        for b in (self.set_reset_btn, self.set_export_btn, self.set_import_btn,
+                  self.set_folder_btn):
+            buttons.addWidget(b)
         buttons.addStretch()
         close = QPushButton(self.tr("mw_close"))
         close.setMinimumWidth(96)
@@ -1145,6 +1203,128 @@ class MainWindow(QMainWindow):
         buttons.addWidget(close)
         root.addLayout(buttons)
         dlg.finished.connect(lambda _=None: self.save_config())
+
+    # ---- reset / export / import / folder
+    def open_settings_folder(self):
+        self._open_path(os.path.dirname(os.path.abspath(CONFIG_FILE)))
+
+    def _ask_reset(self):
+        """(reset_favourites, reset_directory) or None when cancelled."""
+        dlg = QDialog(self.settings_dlg)
+        dlg.setWindowTitle(self.tr("reset_title"))
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(self.tr("reset_confirm")))
+        favs = QCheckBox(self.tr("reset_also_favs"))
+        dire = QCheckBox(self.tr("reset_also_dir"))
+        lay.addWidget(favs)
+        lay.addWidget(dire)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        lay.addWidget(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        return favs.isChecked(), dire.isChecked()
+
+    def _after_external_change(self, restart_key, later_key):
+        """The config file was rewritten behind the widgets' back: stop saving
+        over it and offer a restart so everything is re-read."""
+        self._save_debounce.cancel()
+        self._pending_cfg = None
+        self._no_save = True
+        busy = (self.dl_thread and self.dl_thread.isRunning()) or self._db_busy()
+        if busy:
+            QMessageBox.information(self, "", self.tr(later_key))
+        elif QMessageBox.question(self, "", self.tr(restart_key)) == QMessageBox.Yes:
+            self._restart()
+
+    def reset_settings(self, reset_favs=False, reset_dir=False):
+        """Write defaults (unknown keys kept); favourites/download folder kept
+        unless asked."""
+        self._save_debounce.cancel()
+        cur, _ = settings_store.read_config(CONFIG_FILE)
+        new = settings_store.reset_config(cur or self.config, keep_directory=not reset_dir)
+        if not reset_dir:
+            new.setdefault("download", {})["directory"] = self.dir_edit.text()
+        settings_store.write_config(CONFIG_FILE, new)
+        if reset_favs:
+            core.save_favourites(set())
+            self.song_model.set_favourites(set())
+
+    def reset_settings_ui(self):
+        ans = self._ask_reset()
+        if ans is None:
+            return
+        self.reset_settings(*ans)
+        self._after_external_change("reset_restart", "reset_later")
+
+    def _fav_ids(self):
+        return sorted(core.fav_id(k) for k in core.load_favourites())
+
+    def export_settings(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.tr("export_title"), os.path.join(APP_DIR, "ESEManager-settings.zip"),
+            self.tr("settings_filter"))
+        if not path:
+            return
+        try:
+            self.flush_config()
+            cfg, _err = settings_store.read_config(CONFIG_FILE)
+            settings_store.export_bundle(path, settings_store.validate(cfg or {})[0],
+                                         self._fav_ids())
+        except Exception as e:
+            QMessageBox.warning(self, self.tr("export_title"), self.tr("export_fail", e=e))
+            return
+        QMessageBox.information(self, self.tr("export_title"),
+                                self.tr("export_ok", path=path))
+
+    def import_preview(self, new_cfg, new_favs, problems):
+        """Human-readable list of what an import would change ('' if nothing)."""
+        self.flush_config()
+        cur, _ = settings_store.read_config(CONFIG_FILE)
+        rows = settings_store.diff_config(cur or {}, new_cfg)
+        lines = [f"{k}: {o!r} -> {n!r}" for k, o, n in rows]
+        if new_favs is not None:
+            old = self._fav_ids()
+            if old != new_favs:
+                lines.append(self.tr("import_favs", old=len(old), new=len(new_favs)))
+        if lines and problems:
+            lines.append(self.tr("import_invalid", n=len(problems)))
+        return "\n".join(lines)
+
+    def apply_import(self, new_cfg, new_favs):
+        self._save_debounce.cancel()
+        cur, _ = settings_store.read_config(CONFIG_FILE)
+        base = settings_store.reset_config(cur or {}, keep_directory=False)
+        settings_store.write_config(CONFIG_FILE, settings_store.merge_unknown(base, new_cfg))
+        if new_favs is not None:
+            core.write_atomic(core.FAVOURITES_FILE, json.dumps(
+                {"version": 1, "songs": new_favs}, ensure_ascii=False, indent=1).encode("utf-8"))
+            self.song_model.set_favourites(core.load_favourites())
+
+    def import_settings(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.tr("import_title"), APP_DIR, self.tr("settings_filter"))
+        if not path:
+            return
+        try:
+            cfg, favs, problems = settings_store.read_bundle(path)
+        except settings_store.BundleError as e:
+            QMessageBox.warning(self, self.tr("import_title"), self.tr("import_bad", e=e))
+            return
+        preview = self.import_preview(cfg, favs, problems)
+        if not preview:
+            QMessageBox.information(self, self.tr("import_title"), self.tr("import_nothing"))
+            return
+        text = f"{self.tr('import_head')}\n\n{preview}\n\n{self.tr('import_apply')}"
+        if QMessageBox.question(self, self.tr("import_title"), text) != QMessageBox.Yes:
+            return
+        try:
+            self.apply_import(cfg, favs)
+        except Exception as e:
+            QMessageBox.warning(self, self.tr("import_title"), self.tr("import_fail", e=e))
+            return
+        self._after_external_change("import_restart", "import_later")
 
     def change_source(self, _=None):
         core.set_download_source(self.source_combo.currentData())
@@ -2883,6 +3063,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "dl_timer"):
             self.dl_timer.stop()
         self.save_config()
+        self.flush_config()
         for t in list(self._threads):
             if t.isRunning():
                 # Downloads stop within one chunk; a git/DB build cannot be
