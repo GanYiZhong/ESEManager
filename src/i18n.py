@@ -28,17 +28,17 @@ TR = {
         "title": "ESEManager", "search": "搜尋", "show_all": "顯示全部",
         "clear": "清除", "ph": "搜尋歌曲名稱，支援日文（Ctrl+F）", "category": "分類",
         "all_cat": "全部分類", "official": "聯絡我們", "check_missing": "檢查缺漏",
-        "download": "下載選中的歌曲", "sel_all": "全選", "desel_all": "全不選",
-        "selected": "已選擇 {n} 首", "dir": "下載目錄", "browse": "瀏覽", "workers": "並行數",
+        "download": "下載勾選的歌曲", "sel_all": "全選", "desel_all": "全不選",
+        "selected": "已勾選 {n} 首", "dir": "下載資料夾", "browse": "瀏覽", "workers": "並行數",
         "lang": "語言", "c_sel": "✓", "c_song": "歌曲名稱", "c_jp": "日文標題",
         "c_cat": "分類", "c_files": "檔案數", "monitor": "下載監控", "tab_prog": "進度",
-        "tab_log": "Log", "tab_fail": "失敗清單", "overall": "整體進度", "retry": "重試失敗項目",
+        "tab_log": "記錄", "tab_fail": "失敗清單", "overall": "整體進度", "retry": "重試失敗項目",
         "ready": "就緒", "total": "共 {n} 首歌曲", "f_file": "檔案", "f_song": "歌曲",
         "f_status": "狀態", "f_pct": "進度", "f_speed": "速度", "open_dir": "開啟下載資料夾",
         "st_dl": "下載中", "st_done": "完成", "st_skip": "已存在", "st_fail": "失敗",
         "st_pause": "暫停", "pause": "暫停", "resume": "繼續", "stop": "停止",
         "paused_label": "已暫停",
-        "done_msg": "下載完成！\n成功 {d}．跳過 {s}．失敗 {f}（共 {t} 檔）",
+        "done_msg": "下載完成！\n成功 {d}、略過 {s}、失敗 {f}（共 {t} 檔）",
         "db_update": "更新資料庫", "db_building": "資料庫更新中…",
         "db_fail": "資料庫更新失敗：{e}",
         
@@ -51,7 +51,7 @@ TR = {
         "c_dl": "已下載", "dl_complete": "已下載（檔案齊全）", "dl_partial": "部分下載（缺少檔案）", "dl_none": "未下載", "f_dl": "下載狀態", "dl_all": "全部", "dl_missing": "未下載／不完整", "dl_have": "已下載",
         "diff_all": "全部難度", "f_reset": "重設篩選", "f_any": "不限",
         "check_updates": "檢查更新",
-        "upd_checking": "檢查更新中（比對本地檔案雜湊）…",
+        "upd_checking": "檢查更新中（比對本機檔案雜湊）…",
         "upd_progress": "檢查更新 {d}/{t}",
         "upd_none": "所有已下載的歌曲都是最新的",
         "upd_found": "發現 {n} 首歌有更新（{f} 個檔案），是否重新下載覆蓋？",
@@ -64,21 +64,21 @@ TR = {
         
     },
     "en": {
-        "title": "ESEManager", "search": "Search", "show_all": "Show All",
-        "clear": "Clear", "ph": "Search songs, Japanese supported (Ctrl+F)", "category": "Category",
-        "all_cat": "All Categories", "official": "Contact us", "check_missing": "Check Missing",
-        "download": "Download Selected", "sel_all": "Select All", "desel_all": "Select None",
-        "selected": "{n} selected", "dir": "Download Dir", "browse": "Browse", "workers": "Workers",
-        "lang": "Language", "c_sel": "✓", "c_song": "Song", "c_jp": "Japanese",
-        "c_cat": "Category", "c_files": "Files", "monitor": "Download Monitor", "tab_prog": "Progress",
-        "tab_log": "Log", "tab_fail": "Failed", "overall": "Overall", "retry": "Retry Failed",
+        "title": "ESEManager", "search": "Search", "show_all": "Show all",
+        "clear": "Clear", "ph": "Search songs; Japanese is supported (Ctrl+F)", "category": "Category",
+        "all_cat": "All categories", "official": "Contact us", "check_missing": "Check missing",
+        "download": "Download selected", "sel_all": "Select all", "desel_all": "Select none",
+        "selected": "{n} selected", "dir": "Download folder", "browse": "Browse", "workers": "Workers",
+        "lang": "Language", "c_sel": "✓", "c_song": "Song", "c_jp": "Japanese title",
+        "c_cat": "Category", "c_files": "Files", "monitor": "Download monitor", "tab_prog": "Progress",
+        "tab_log": "Log", "tab_fail": "Failed", "overall": "Overall", "retry": "Retry failed",
         "ready": "Ready", "total": "{n} songs", "f_file": "File", "f_song": "Song",
         "f_status": "Status", "f_pct": "Progress", "f_speed": "Speed", "open_dir": "Open Folder",
-        "st_dl": "downloading", "st_done": "done", "st_skip": "skipped", "st_fail": "failed",
+        "st_dl": "Downloading", "st_done": "Done", "st_skip": "Skipped", "st_fail": "Failed",
         "done_msg": "Done!\nOK {d} · skipped {s} · failed {f} (of {t})",
-        "st_pause": "paused", "pause": "Pause", "resume": "Resume", "stop": "Stop",
+        "st_pause": "Paused", "pause": "Pause", "resume": "Resume", "stop": "Stop",
         "paused_label": "Paused",
-        "db_update": "Update DB", "db_building": "Updating database…",
+        "db_update": "Update database", "db_building": "Updating database…",
         "db_fail": "Database update failed: {e}",
         
         "lang_busy": "A task is running; the language will apply on next launch.",
@@ -87,14 +87,14 @@ TR = {
         "c_bpm": "BPM", "c_easy": "Easy", "c_normal": "Normal", "c_hard": "Hard",
         "c_oni": "Oni", "c_ura": "Ura",
         "f_filter": "Filter", "f_bpm": "BPM range", "f_diff": "Difficulty", "f_level": "Level",
-        "c_dl": "Have", "dl_complete": "Downloaded (all files present)", "dl_partial": "Partly downloaded (files missing)", "dl_none": "Not downloaded", "f_dl": "Downloaded", "dl_all": "All", "dl_missing": "Not downloaded / incomplete", "dl_have": "Downloaded",
+        "c_dl": "Downloaded", "dl_complete": "Downloaded (all files present)", "dl_partial": "Partly downloaded (files missing)", "dl_none": "Not downloaded", "f_dl": "Download status", "dl_all": "All", "dl_missing": "Not downloaded / incomplete", "dl_have": "Downloaded",
         "diff_all": "All difficulties", "f_reset": "Reset filters", "f_any": "Any",
-        "check_updates": "Check Updates",
+        "check_updates": "Check for updates",
         "upd_checking": "Checking for updates (hashing local files)…",
         "upd_progress": "Checking updates {d}/{t}",
         "upd_none": "All downloaded songs are up to date",
         "upd_found": "{n} songs have updates ({f} files). Re-download and overwrite?",
-        "upd_no_sha": "This database has no content hashes. Click Update DB first, then check updates.",
+        "upd_no_sha": "This database has no content hashes. Click \"Update database\" first, then check for updates.",
         
         
         
@@ -104,21 +104,21 @@ TR = {
     },
     "ja": {
         "title": "ESEManager", "search": "検索", "show_all": "すべて表示",
-        "clear": "クリア", "ph": "楽曲名を検索・日本語対応（Ctrl+F）", "category": "カテゴリー",
+        "clear": "クリア", "ph": "曲名で検索（日本語対応、Ctrl+F）", "category": "カテゴリー",
         "all_cat": "すべて", "official": "お問い合わせ", "check_missing": "不足チェック",
-        "download": "選択をダウンロード", "sel_all": "全選択", "desel_all": "選択解除",
-        "selected": "{n} 曲選択", "dir": "保存先", "browse": "参照", "workers": "並列数",
-        "lang": "言語", "c_sel": "✓", "c_song": "楽曲名", "c_jp": "日本語",
+        "download": "選択曲をダウンロード", "sel_all": "全選択", "desel_all": "選択解除",
+        "selected": "{n} 曲を選択中", "dir": "保存先", "browse": "参照", "workers": "並列数",
+        "lang": "言語", "c_sel": "✓", "c_song": "曲名", "c_jp": "日本語",
         "c_cat": "カテゴリー", "c_files": "ファイル", "monitor": "ダウンロード状況", "tab_prog": "進捗",
         "tab_log": "ログ", "tab_fail": "失敗", "overall": "全体", "retry": "失敗を再試行",
-        "ready": "準備完了", "total": "{n} 曲", "f_file": "ファイル", "f_song": "楽曲",
-        "f_status": "状態", "f_pct": "進捗", "f_speed": "速度", "open_dir": "フォルダを開く",
-        "st_dl": "DL中", "st_done": "完了", "st_skip": "既存", "st_fail": "失敗",
+        "ready": "準備完了", "total": "{n} 曲", "f_file": "ファイル", "f_song": "曲",
+        "f_status": "状態", "f_pct": "進捗", "f_speed": "速度", "open_dir": "フォルダーを開く",
+        "st_dl": "ダウンロード中", "st_done": "完了", "st_skip": "既存", "st_fail": "失敗",
         "done_msg": "完了！\n成功 {d}・スキップ {s}・失敗 {f}（計 {t}）",
         "st_pause": "一時停止", "pause": "一時停止", "resume": "再開", "stop": "停止",
         "paused_label": "一時停止中",
         "db_update": "データベース更新", "db_building": "データベース更新中…",
-        "db_fail": "データベース更新に失敗: {e}",
+        "db_fail": "データベース更新に失敗：{e}",
         
         "lang_busy": "処理の実行中です。言語は次回起動時に適用されます。",
         
@@ -126,7 +126,7 @@ TR = {
         "c_bpm": "BPM", "c_easy": "かんたん", "c_normal": "ふつう", "c_hard": "むずかしい",
         "c_oni": "おに", "c_ura": "裏",
         "f_filter": "絞り込み", "f_bpm": "BPM 範囲", "f_diff": "難易度", "f_level": "レベル",
-        "c_dl": "取得", "dl_complete": "ダウンロード済み（全ファイルあり）", "dl_partial": "一部のみ（ファイル不足）", "dl_none": "未ダウンロード", "f_dl": "ダウンロード状況", "dl_all": "すべて", "dl_missing": "未取得／不完全", "dl_have": "取得済み",
+        "c_dl": "取得", "dl_complete": "ダウンロード済み（全ファイルあり）", "dl_partial": "一部のみ（ファイル不足）", "dl_none": "未ダウンロード", "f_dl": "ダウンロード状況", "dl_all": "すべて", "dl_missing": "未ダウンロード／不完全", "dl_have": "ダウンロード済み",
         "diff_all": "すべて", "f_reset": "リセット", "f_any": "指定なし",
         "check_updates": "更新チェック",
         "upd_checking": "更新をチェック中（ローカルファイルのハッシュ照合）…",
@@ -162,11 +162,10 @@ TR["zh_TW"].update({
     "dl_confirm_many": "即將下載 {n} 首歌曲（{f} 個檔案），可能需要很長時間與大量磁碟空間。\n是否繼續？",
     "log_dl_start": "——— 開始下載 {n} 個檔案 ———",
     "log_dl_stopping": "——— 已要求停止，等待收尾… ———",
-    "log_dl_done": "——— 完成：成功 {d}．跳過 {s}．失敗 {f} ———",
+    "log_dl_done": "——— 完成：成功 {d}、略過 {s}、失敗 {f} ———",
     "dl_open_folder": "開啟下載資料夾",
     "dl_retry_failed": "重試失敗項目",
-    "stopped_msg": "下載已停止。\n成功 {d}．跳過 {s}．失敗或取消 {f}（共 {t} 檔）\n"
-                   "未完成的檔案已列在「失敗清單」，可一鍵重試。",
+    "stopped_msg": "下載已停止。\n成功 {d}、略過 {s}、失敗或取消 {f}（共 {t} 檔）\n未完成的檔案已列在「失敗清單」，可一鍵重試。",
     "missing_none": "沒有缺漏",
     "missing_found": "發現 {n} 首缺漏（{f} 檔），是否下載？",
     "db_reloading": "正在載入資料庫…",
@@ -178,29 +177,29 @@ TR["zh_TW"].update({
     "quit_busy": "下載或資料庫更新仍在進行中。\n確定要結束嗎？未完成的檔案不會被保留。",
     "log_cancelled": "已取消",
     "log_short": "檔案不完整（{got}/{want} bytes）",
-    "log_sha_mismatch": "校驗碼不符（檔案內容與資料庫記錄不同）",
+    "log_sha_mismatch": "檢查碼不符（檔案內容與資料庫記錄不同）",
     "log_mirror": "改用 {host} 下載",
     "src_label": "下載來源",
-    "src_tip": "歌曲檔從哪裡下載。選的來源失敗時，會自動改用另一個。",
+    "src_tip": "選擇歌曲檔案的下載來源；失敗時會自動改用另一個。",
     "src_auto": "自動（最快）",
     "src_ese": "ESE 官方（ese.tjadataba.se）",
     "src_mirror": "鏡像（git.taiko.ac）",
     "src_custom": "自訂：{u}",
     "log_fail": "失敗：{f} — {e}",
-    "log_db_dl": "下載資料庫 {n} …",
+    "log_db_dl": "下載資料庫 {n}…",
     "log_db_bad": "{n} 不是有效的資料庫",
-    "log_db_sha": "{n} 校驗碼不符，請稍後再試",
+    "log_db_sha": "{n} 檢查碼不符，請稍後再試",
 })
 
 TR["en"].update({
-    "palette_ph": "Type a command or song name...", "palette_song": "Song",
+    "palette_ph": "Type a command or song name…", "palette_song": "Song",
     "palette_none": "No matches",
 })
 TR["en"].update({
     "empty_hint": "Download the prebuilt song database with the button below, then search and download charts.",
     "welcome_title": "Welcome to ESEManager",
     "welcome_download": "Download song database",
-    "welcome_change_dir": "Change...",
+    "welcome_change_dir": "Change…",
     "welcome_dir": "Songs will be saved to: {d}",
     "no_selection": "Select the songs to download first.",
     "dl_busy": "A download is already running. Wait for it to finish or stop it first.",
@@ -231,13 +230,13 @@ TR["en"].update({
     "log_sha_mismatch": "checksum mismatch (content differs from the database record)",
     "log_mirror": "Switched to {host} for downloads",
     "src_label": "Download source",
-    "src_tip": "Where song files are downloaded from. If it fails, the other one is used automatically.",
+    "src_tip": "Where song files are downloaded from. If the chosen source fails, the other one is used automatically.",
     "src_auto": "Auto (fastest)",
     "src_ese": "ESE official (ese.tjadataba.se)",
     "src_mirror": "Mirror (git.taiko.ac)",
     "src_custom": "Custom: {u}",
     "log_fail": "Failed: {f} — {e}",
-    "log_db_dl": "Downloading database {n} …",
+    "log_db_dl": "Downloading database {n}…",
     "log_db_bad": "{n} is not a valid database",
     "log_db_sha": "{n} checksum mismatch; please try again later",
 })
@@ -261,10 +260,9 @@ TR["ja"].update({
     "log_dl_start": "——— {n} ファイルのダウンロードを開始 ———",
     "log_dl_stopping": "——— 停止を要求しました。処理中のファイルを終了しています… ———",
     "log_dl_done": "——— 完了：成功 {d}・スキップ {s}・失敗 {f} ———",
-    "dl_open_folder": "ダウンロードフォルダを開く",
+    "dl_open_folder": "ダウンロードフォルダーを開く",
     "dl_retry_failed": "失敗を再試行",
-    "stopped_msg": "ダウンロードを停止しました。\n成功 {d}・スキップ {s}・失敗/取消 {f}"
-                   "（全 {t} ファイル）\n未完了のファイルは「失敗リスト」から再試行できます。",
+    "stopped_msg": "ダウンロードを停止しました。\n成功 {d}・スキップ {s}・失敗またはキャンセル {f}（全 {t} ファイル）\n未完了のファイルは「失敗」タブから再試行できます。",
     "missing_none": "不足はありません",
     "missing_found": "{n} 曲（{f} ファイル）が不足しています。ダウンロードしますか？",
     "db_reloading": "データベースを読み込み中…",
@@ -281,13 +279,13 @@ TR["ja"].update({
     "log_sha_mismatch": "チェックサムが一致しません（内容がデータベースの記録と異なります）",
     "log_mirror": "{host} からのダウンロードに切り替えました",
     "src_label": "ダウンロード元",
-    "src_tip": "曲ファイルのダウンロード元。失敗した場合は自動的にもう一方を使います。",
+    "src_tip": "曲ファイルのダウンロード元です。失敗した場合は自動的にもう一方を使います。",
     "src_auto": "自動（最速）",
     "src_ese": "ESE 公式（ese.tjadataba.se）",
     "src_mirror": "ミラー（git.taiko.ac）",
     "src_custom": "カスタム：{u}",
     "log_fail": "失敗：{f} — {e}",
-    "log_db_dl": "データベース {n} をダウンロード中 …",
+    "log_db_dl": "データベース {n} をダウンロード中…",
     "log_db_bad": "{n} は有効なデータベースではありません",
     "log_db_sha": "{n} のチェックサムが一致しません。しばらくしてから再試行してください",
 })
@@ -348,8 +346,8 @@ TR["ja"].update({
     "mw_menu_help": "ヘルプ(&H)",
     "mw_act_open_dir": "ダウンロードフォルダーを開く",
     "mw_act_quit": "終了",
-    "mw_status_db": "データベース版：{v}",
-    "mw_status_songs": "楽曲数：{n}",
+    "mw_status_db": "データベースのバージョン：{v}",
+    "mw_status_songs": "曲数：{n}",
 })
 
 # --- theme
@@ -358,21 +356,21 @@ TR["zh_TW"].update({
     "th_auto": "跟隨系統",
     "th_light": "淺色",
     "th_dark": "深色",
-    "th_tip": "外觀：淺色／深色；跟隨系統會依作業系統設定自動切換",
+    "th_tip": "切換淺色或深色外觀；「跟隨系統」會依作業系統設定自動切換。",
 })
 TR["en"].update({
     "th_label": "Theme",
     "th_auto": "Auto (system)",
     "th_light": "Light",
     "th_dark": "Dark",
-    "th_tip": "Appearance: light or dark; Auto follows the OS setting and switches with it",
+    "th_tip": "Switch between light and dark appearance. Auto follows the operating system setting.",
 })
 TR["ja"].update({
     "th_label": "テーマ",
     "th_auto": "自動（システム）",
     "th_light": "ライト",
     "th_dark": "ダーク",
-    "th_tip": "外観：ライト／ダーク。自動は OS の設定に合わせて切り替わります",
+    "th_tip": "外観をライトまたはダークに切り替えます。「自動」は OS の設定に合わせて切り替わります。",
 })
 
 
@@ -402,7 +400,7 @@ TR["zh_TW"].update({
 })
 TR["en"].update({
     "mw_app_update": "New version {v} available",
-    "mw_app_update_tip": "Current: {cur}\nLatest: {v}\nOpens the GitHub download page",
+    "mw_app_update_tip": "Current: {cur}\nLatest: {v}\nOpens the GitHub download page.",
 })
 TR["ja"].update({
     "mw_app_update": "新しいバージョン {v} があります",
@@ -412,19 +410,19 @@ TR["ja"].update({
 
 # --- database update from GitHub Pages
 TR["zh_TW"].update({
-    "db_update_tip": "從 GitHub 下載最新的歌曲資料庫（每 6 小時自動從 ESE 重建）",
+    "db_update_tip": "從 GitHub 下載最新的歌曲資料庫（每 6 小時自動從 ESE 重建）。",
     "db_checking": "檢查資料庫版本…",
     "db_latest": "資料庫已是最新版本（{v}）。",
     "db_offline": "無法連線到資料庫伺服器，請檢查網路後再試。",
 })
 TR["en"].update({
-    "db_update_tip": "Download the latest song database from GitHub (rebuilt from ESE every 6 hours)",
+    "db_update_tip": "Download the latest song database from GitHub (rebuilt from ESE every 6 hours).",
     "db_checking": "Checking database version…",
     "db_latest": "The database is already up to date ({v}).",
     "db_offline": "Could not reach the database server. Check your connection and try again.",
 })
 TR["ja"].update({
-    "db_update_tip": "GitHub から最新の曲データベースをダウンロード（ESE から 6 時間ごとに自動再構築）",
+    "db_update_tip": "GitHub から最新の曲データベースをダウンロードします（ESE から 6 時間ごとに自動再構築）。",
     "db_checking": "データベースのバージョンを確認中…",
     "db_latest": "データベースは最新です（{v}）。",
     "db_offline": "データベースサーバーに接続できません。ネットワークを確認して再試行してください。",
@@ -434,22 +432,22 @@ TR["ja"].update({
 # --- ESE-Version-Sorting download
 TR["zh_TW"].update({
     "vsort_action": "下載版本分類（ESE-Version-Sorting）",
-    "vsort_tip": "下載 YataiDON 用的版本分類資料夾到下載目錄（約 21 MB，整包一次下載）",
-    "vsort_done": "已下載到下載目錄的 ESE-Version-Sorting 資料夾（{c}）。",
+    "vsort_tip": "下載 YataiDON 用的版本分類資料夾到下載資料夾（約 21 MB，整包一次下載）。",
+    "vsort_done": "已下載 ESE-Version-Sorting 資料夾到下載資料夾（{c}）。",
     "vsort_latest": "ESE-Version-Sorting 已是最新版本（{c}）。",
     "vsort_fail": "下載 ESE-Version-Sorting 失敗：{e}",
 })
 TR["en"].update({
     "vsort_action": "Download version sorting (ESE-Version-Sorting)",
-    "vsort_tip": "Download the YataiDON version-sorting folders into the download folder (about 21 MB, one archive)",
+    "vsort_tip": "Download the YataiDON version-sorting folders into the download folder (about 21 MB, one archive).",
     "vsort_done": "Installed ESE-Version-Sorting into the download folder ({c}).",
     "vsort_latest": "ESE-Version-Sorting is already up to date ({c}).",
     "vsort_fail": "Downloading ESE-Version-Sorting failed: {e}",
 })
 TR["ja"].update({
-    "vsort_action": "バージョン別フォルダをダウンロード（ESE-Version-Sorting）",
-    "vsort_tip": "YataiDON 用のバージョン別フォルダをダウンロード先に取得します（約 21 MB、アーカイブ 1 回）",
-    "vsort_done": "ダウンロード先に ESE-Version-Sorting をインストールしました（{c}）。",
+    "vsort_action": "バージョン別フォルダーをダウンロード（ESE-Version-Sorting）",
+    "vsort_tip": "YataiDON 用のバージョン別フォルダーを保存先にダウンロードします（約 21 MB、アーカイブ 1 つ）。",
+    "vsort_done": "保存先に ESE-Version-Sorting をインストールしました（{c}）。",
     "vsort_latest": "ESE-Version-Sorting は最新です（{c}）。",
     "vsort_fail": "ESE-Version-Sorting のダウンロードに失敗しました：{e}",
 })
@@ -568,10 +566,9 @@ TR["ja"].update({
 
 # --- usability: shortcuts, result views, language restart, damaged database
 TR["zh_TW"].update({
-    "download_tip": "下載勾選的歌曲（Ctrl+D）",
+    "download_tip": "下載勾選的歌曲（Ctrl+D）。",
     "shortcuts": "快捷鍵",
-    "shortcuts_text": "Ctrl+K　命令面板\nCtrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\nF5　重新搜尋／重新整理\nCtrl+A　（表格中）勾選全部列出的歌曲\n↓　（搜尋框中）移到表格\n"
-                      "Ctrl+,　設定\nSpace　勾選／取消勾選目前的列\n雙擊列　已下載則開啟資料夾，否則勾選\n右鍵　歌曲選單",
+    "shortcuts_text": "Ctrl+K　命令面板\nCtrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\nF5　重新搜尋／重新整理\nCtrl+A　（表格中）勾選全部列出的歌曲\n↓　（搜尋框中）移到表格\nCtrl+,　設定\nSpace　勾選／取消勾選目前的列\n按兩下列　已下載則開啟資料夾，否則勾選\n右鍵　歌曲選單",
     "view_missing": "目前只顯示缺漏的 {n} 首歌曲。",
     "view_updates": "目前只顯示有更新的 {n} 首歌曲。",
     "view_back": "顯示全部",
@@ -580,24 +577,22 @@ TR["zh_TW"].update({
     "db_corrupt": "歌曲資料庫無法讀取，可能已損毀。\n請按「更新資料庫」重新下載。\n\n{e}",
 })
 TR["en"].update({
-    "download_tip": "Download the checked songs (Ctrl+D)",
-    "shortcuts": "Keyboard Shortcuts",
+    "download_tip": "Download the checked songs (Ctrl+D).",
+    "shortcuts": "Keyboard shortcuts",
     "shortcuts_text": "Ctrl+K  Command palette\nCtrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\nF5  Re-run the search / refresh\nCtrl+A  (in the table) Check all listed songs\nDown arrow  (in the search box) Move into the table\n"
                       "Ctrl+,  Settings\nSpace  Check / uncheck the current row\nDouble-click a row  Open its folder if downloaded, else check\nRight-click  Song menu",
     "view_missing": "Showing only the {n} songs with missing files.",
     "view_updates": "Showing only the {n} songs with upstream changes.",
-    "view_back": "Show All",
+    "view_back": "Show all",
     "missing_checking": "Checking for missing files…",
     "lang_restart": "The app must restart to use the new language.\nRestart now? "
                     "(No = apply on next launch)",
-    "db_corrupt": "The song database cannot be read and may be damaged.\n"
-                  "Click \"Update DB\" to download it again.\n\n{e}",
+    "db_corrupt": "The song database cannot be read and may be damaged.\nClick \"Update database\" to download it again.\n\n{e}",
 })
 TR["ja"].update({
-    "download_tip": "チェックした曲をダウンロード（Ctrl+D）",
+    "download_tip": "チェックした曲をダウンロードします（Ctrl+D）。",
     "shortcuts": "キーボードショートカット",
-    "shortcuts_text": "Ctrl+K　コマンドパレット\nCtrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\nF5　再検索／更新\nCtrl+A　（表内）表示中の曲をすべてチェック\n↓　（検索ボックス内）表へ移動\n"
-                      "Ctrl+,　設定\nSpace　現在の行のチェック切り替え\n行をダブルクリック　ダウンロード済みならフォルダを開く、未ならチェック\n右クリック　曲メニュー",
+    "shortcuts_text": "Ctrl+K　コマンドパレット\nCtrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\nF5　再検索／更新\nCtrl+A　（表内）表示中の曲をすべてチェック\n↓　（検索ボックス内）表へ移動\nCtrl+,　設定\nSpace　現在の行のチェックを切り替え\n行をダブルクリック　ダウンロード済みならフォルダーを開く、未ならチェック\n右クリック　曲メニュー",
     "view_missing": "不足している {n} 曲のみ表示しています。",
     "view_updates": "更新のある {n} 曲のみ表示しています。",
     "view_back": "すべて表示",
@@ -613,8 +608,7 @@ TR["ja"].update({
 TR["zh_TW"].update({
     "mw_app_update_tip2": "目前版本：{cur}\n最新版本：{v}\n按此自動下載並更新",
     "upd_app_title": "更新 ESEManager",
-    "upd_app_confirm": "要從 {cur} 更新到 {v} 嗎？\n\n會從 GitHub 下載新版並直接覆蓋程式，完成後自動重新啟動。"
-                       "\n設定、資料庫和下載的歌曲都會保留。",
+    "upd_app_confirm": "要從 {cur} 更新到 {v} 嗎？\n\n會從 GitHub 下載新版本並覆蓋目前的程式，完成後自動重新啟動。\n設定、資料庫與已下載的歌曲都會保留。",
     "upd_app_downloading": "下載更新中… {p}%",
     "upd_app_busy": "請先等目前的下載或資料庫更新完成。",
     "upd_app_done": "已更新到 {v}，程式即將重新啟動。",
@@ -692,8 +686,8 @@ TR["en"].update({
 })
 TR["ja"].update({
     "ctx_toggle": "チェックの切り替え", "ctx_download": "この曲をダウンロード",
-    "ctx_open_folder": "曲のフォルダを開く", "ctx_copy_title": "曲名をコピー",
-    "no_results": "一致する曲がありません。\nキーワード、カテゴリ、フィルターを変えてください。",
+    "ctx_open_folder": "曲のフォルダーを開く", "ctx_copy_title": "曲名をコピー",
+    "no_results": "一致する曲がありません。\nキーワード、カテゴリー、絞り込み条件を変えてください。",
     "no_songs": "表示する曲がありません。",
 })
 
@@ -702,23 +696,23 @@ TR["ja"].update({
 TR["zh_TW"].update({
     "err_offline": "無法連線，請檢查網路連線（或 DNS）後再試一次。",
     "err_timeout": "連線逾時，伺服器沒有回應，請稍後再試。",
-    "err_tls": "安全連線（TLS／憑證）失敗，請檢查系統時間、代理或防火牆設定。",
+    "err_tls": "安全連線（TLS／憑證）失敗，請檢查系統時間、代理伺服器或防火牆設定。",
     "err_not_found": "伺服器上找不到這個檔案（404）。",
     "err_rate_limit": "伺服器暫時拒絕請求（請求過於頻繁），請稍後再試。",
     "err_server": "伺服器發生問題，請稍後再試。",
-    "err_disk_full": "磁碟空間不足，請釋出空間後再試。",
+    "err_disk_full": "磁碟空間不足，請釋放空間後再試。",
     "err_permission": "沒有權限寫入這個資料夾，請換一個下載位置。",
-    "err_checksum": "檔案校驗碼不符，下載內容可能已損毀，請稍後再試。",
+    "err_checksum": "檔案檢查碼不符，下載內容可能已損毀，請稍後再試。",
     "err_tried": "（已嘗試：{hosts}）",
 })
 TR["en"].update({
-    "err_offline": "Can't connect. Check your internet connection (or DNS) and try again.",
+    "err_offline": "Cannot connect. Check your internet connection (or DNS) and try again.",
     "err_timeout": "The connection timed out; the server did not respond. Try again later.",
     "err_tls": "Secure connection (TLS/certificate) failed. Check the system clock, proxy or firewall.",
     "err_not_found": "The file was not found on the server (404).",
     "err_rate_limit": "The server is refusing requests for now (rate limited). Try again later.",
     "err_server": "The server is having problems. Try again later.",
-    "err_disk_full": "Not enough disk space. Free some space and try again.",
+    "err_disk_full": "Not enough disk space. Free up some space and try again.",
     "err_permission": "No permission to write to this folder. Choose another download location.",
     "err_checksum": "Checksum mismatch; the download may be damaged. Try again later.",
     "err_tried": " (tried: {hosts})",
@@ -763,13 +757,13 @@ TR["en"].update({
     "dir_help": "Songs are saved in this folder, one sub-folder per song.",
     "workers_help": "Files downloaded at the same time (1-8). More is faster but harder on the server; 3 is a good default.",
     "src_help": "Where song files come from. If it fails, the other source is tried automatically.",
-    "keep_awake": "Keep computer awake while downloading",
+    "keep_awake": "Keep the computer awake while downloading",
     "keep_awake_help": "Prevents the computer from sleeping during a download; normal behaviour resumes afterwards.",
     "bg_ask": "Downloads are running.\nStop and quit, or keep downloading in the background (tray)?",
     "bg_keep": "Keep in background",
     "bg_quit": "Stop and quit",
     "bg_ask_notray": "Downloads are running.\nStop and quit?",
-    "tray_show": "Show",
+    "tray_show": "Show window",
     "tray_pause": "Pause",
     "tray_resume": "Resume",
     "tray_quit": "Stop and quit",
@@ -779,16 +773,16 @@ TR["en"].update({
 TR["ja"].update({
     "set_sec_download": "ダウンロード",
     "set_sec_appearance": "外観と言語",
-    "dir_help": "曲はこのフォルダに、1曲につき1つのサブフォルダで保存されます。",
+    "dir_help": "曲はこのフォルダーに、1 曲につき 1 つのサブフォルダーで保存されます。",
     "workers_help": "同時にダウンロードするファイル数（1～8）。多いほど速いですがサーバーへの負荷も増えます。標準は 3 です。",
     "src_help": "曲ファイルのダウンロード元。失敗した場合は自動的にもう一方を使います。",
     "keep_awake": "ダウンロード中はスリープさせない",
-    "keep_awake_help": "ダウンロード中にPCがスリープしないようにします。終了後は通常に戻ります。",
+    "keep_awake_help": "ダウンロード中に PC がスリープしないようにします。終了後は通常に戻ります。",
     "bg_ask": "ダウンロード実行中です。\n停止して終了しますか？それともバックグラウンド（トレイ）で続けますか？",
     "bg_keep": "バックグラウンドで続行",
     "bg_quit": "停止して終了",
     "bg_ask_notray": "ダウンロード実行中です。\n停止して終了しますか？",
-    "tray_show": "表示",
+    "tray_show": "ウィンドウを表示",
     "tray_pause": "一時停止",
     "tray_resume": "再開",
     "tray_quit": "停止して終了",
@@ -802,52 +796,52 @@ TR["zh_TW"].update({
     "sel_menu": "選取 ▾", "sel_invert": "反向選取", "sel_notdl": "選取未下載的",
     "sel_partial": "選取部分下載的（補齊）", "sel_cat": "選取目前分類的歌曲",
     "sel_visible_only": "清除隱藏列的勾選（只留可見的）",
-    "sel_menu_tip": "更多選取方式", "sel_detail": "已選擇 {n} 首 · {f} 個檔案",
+    "sel_menu_tip": "更多選取方式。", "sel_detail": "已選擇 {n} 首 · {f} 個檔案",
     "sel_detail_size": "已選擇 {n} 首 · {f} 個檔案 · {size}",
-    "sel_label_tip": "點擊跳到已勾選的歌曲（再點跳下一首）",
-    "search_tip": "搜尋歌曲（Ctrl+F；↓ 移到表格；Esc 清除；F5 重新搜尋）",
-    "acc_category": "分類", "acc_category_tip": "依分類篩選歌曲（可複選）",
+    "sel_label_tip": "點擊跳到已勾選的歌曲（再點一次跳到下一首）。",
+    "search_tip": "搜尋歌曲（Ctrl+F；↓ 移到表格；Esc 清除；F5 重新搜尋）。",
+    "acc_category": "分類", "acc_category_tip": "依分類篩選歌曲（可複選）。",
     "cat_n": "{n} 個分類", "cat_all_menu": "全部分類",
-    "acc_filter_tip": "依 BPM、難度與等級篩選",
-    "acc_table": "歌曲列表", "acc_table_tip": "歌曲列表（Space 勾選、Ctrl+A 全部勾選、Ctrl+D 下載）",
-    "selall_tip": "勾選目前列出的所有歌曲（Ctrl+A）",
-    "deselall_tip": "取消勾選所有歌曲",
-    "density_label": "列高密度", "density_tip": "表格列高與儲存格間距，立即套用", "density_comfortable": "舒適", "density_compact": "緊湊", "col_reset": "重設欄位",
-    "font_label": "字體大小", "font_tip": "整個程式的文字大小，立即套用",
+    "acc_filter_tip": "依 BPM、難度與等級篩選。",
+    "acc_table": "歌曲列表", "acc_table_tip": "歌曲列表（Space 勾選、Ctrl+A 全部勾選、Ctrl+D 下載）。",
+    "selall_tip": "勾選目前列出的所有歌曲（Ctrl+A）。",
+    "deselall_tip": "取消勾選所有歌曲。",
+    "density_label": "列高密度", "density_tip": "表格列高與儲存格間距，會立即套用。", "density_comfortable": "舒適", "density_compact": "緊湊", "col_reset": "重設欄位",
+    "font_label": "字型大小", "font_tip": "整個程式的文字大小，會立即套用。",
 })
 TR["en"].update({
     "sel_menu": "Select ▾", "sel_invert": "Invert selection", "sel_notdl": "Select not downloaded",
     "sel_partial": "Select partially downloaded (to complete)", "sel_cat": "Select songs in current category",
     "sel_visible_only": "Clear checks in hidden rows (keep visible only)",
-    "sel_menu_tip": "More ways to select", "sel_detail": "{n} selected · {f} files",
+    "sel_menu_tip": "More ways to select.", "sel_detail": "{n} selected · {f} files",
     "sel_detail_size": "{n} selected · {f} files · {size}",
-    "sel_label_tip": "Click to jump to checked songs (click again for the next)",
-    "search_tip": "Search songs (Ctrl+F; Down arrow moves to the table; Esc clears; F5 re-runs)",
-    "acc_category": "Category", "acc_category_tip": "Filter songs by category (multi-select)",
+    "sel_label_tip": "Click to jump to checked songs (click again for the next one).",
+    "search_tip": "Search songs (Ctrl+F; Down arrow moves to the table; Esc clears; F5 re-runs).",
+    "acc_category": "Category", "acc_category_tip": "Filter songs by category (multi-select).",
     "cat_n": "{n} categories", "cat_all_menu": "All categories",
-    "acc_filter_tip": "Filter by BPM, difficulty and level",
-    "acc_table": "Song list", "acc_table_tip": "Song list (Space checks, Ctrl+A checks all, Ctrl+D downloads)",
-    "selall_tip": "Check all listed songs (Ctrl+A)",
-    "deselall_tip": "Uncheck all songs",
-    "density_label": "Row density", "density_tip": "Table row height and cell padding, applied immediately", "density_comfortable": "Comfortable", "density_compact": "Compact", "col_reset": "Reset columns",
-    "font_label": "Font size", "font_tip": "Text size for the whole app, applied immediately",
+    "acc_filter_tip": "Filter by BPM, difficulty and level.",
+    "acc_table": "Song list", "acc_table_tip": "Song list (Space checks, Ctrl+A checks all, Ctrl+D downloads).",
+    "selall_tip": "Check all listed songs (Ctrl+A).",
+    "deselall_tip": "Uncheck all songs.",
+    "density_label": "Row density", "density_tip": "Table row height and cell padding, applied immediately.", "density_comfortable": "Comfortable", "density_compact": "Compact", "col_reset": "Reset columns",
+    "font_label": "Font size", "font_tip": "Text size for the whole app, applied immediately.",
 })
 TR["ja"].update({
     "sel_menu": "選択 ▾", "sel_invert": "選択を反転", "sel_notdl": "未ダウンロードを選択",
-    "sel_partial": "一部ダウンロード済みを選択（補完）", "sel_cat": "現在のカテゴリの曲を選択",
+    "sel_partial": "一部ダウンロード済みを選択（補完）", "sel_cat": "現在のカテゴリーの曲を選択",
     "sel_visible_only": "非表示行のチェックを解除（表示中のみ残す）",
-    "sel_menu_tip": "その他の選択方法", "sel_detail": "{n} 曲選択 · {f} ファイル",
-    "sel_detail_size": "{n} 曲選択 · {f} ファイル · {size}",
-    "sel_label_tip": "クリックでチェック済みの曲へ移動（もう一度で次へ）",
-    "search_tip": "曲を検索（Ctrl+F、↓ で表へ移動、Esc でクリア、F5 で再検索）",
-    "acc_category": "カテゴリ", "acc_category_tip": "カテゴリで曲を絞り込み（複数選択可）",
-    "cat_n": "{n} カテゴリ", "cat_all_menu": "すべてのカテゴリ",
-    "acc_filter_tip": "BPM・難易度・レベルで絞り込み",
-    "acc_table": "曲リスト", "acc_table_tip": "曲リスト（Space でチェック、Ctrl+A で全チェック、Ctrl+D でダウンロード）",
-    "selall_tip": "表示中の曲をすべてチェック（Ctrl+A）",
-    "deselall_tip": "すべてのチェックを外す",
-    "density_label": "行の密度", "density_tip": "表の行の高さとセルの余白（すぐに反映）", "density_comfortable": "標準", "density_compact": "コンパクト", "col_reset": "列をリセット",
-    "font_label": "文字サイズ", "font_tip": "アプリ全体の文字サイズ（すぐに反映）",
+    "sel_menu_tip": "その他の選択方法です。", "sel_detail": "{n} 曲選択中・{f} ファイル",
+    "sel_detail_size": "{n} 曲選択中・{f} ファイル・{size}",
+    "sel_label_tip": "クリックでチェック済みの曲へ移動します（もう一度クリックで次へ）。",
+    "search_tip": "曲を検索（Ctrl+F、↓ で表へ移動、Esc でクリア、F5 で再検索）。",
+    "acc_category": "カテゴリー", "acc_category_tip": "カテゴリーで曲を絞り込みます（複数選択可）。",
+    "cat_n": "{n} カテゴリー", "cat_all_menu": "すべてのカテゴリー",
+    "acc_filter_tip": "BPM・難易度・レベルで絞り込みます。",
+    "acc_table": "曲リスト", "acc_table_tip": "曲リスト（Space でチェック、Ctrl+A で全チェック、Ctrl+D でダウンロード）。",
+    "selall_tip": "表示中の曲をすべてチェックします（Ctrl+A）。",
+    "deselall_tip": "すべてのチェックを外します。",
+    "density_label": "行の密度", "density_tip": "表の行の高さとセルの余白（すぐに反映）。", "density_comfortable": "標準", "density_compact": "コンパクト", "col_reset": "列をリセット",
+    "font_label": "文字サイズ", "font_tip": "アプリ全体の文字サイズ（すぐに反映）。",
 })
 
 # --- song detail panel
@@ -855,25 +849,25 @@ TR["zh_TW"].update({
     "dp_title": "歌曲詳細資料", "dp_files": "檔案", "dp_download": "下載此歌曲",
     "dp_copy": "複製歌名", "dp_empty": "選擇一首歌曲以查看詳細資料",
     "mw_menu_view": "檢視(&V)", "dp_toggle": "歌曲詳細資料面板",
-    "dp_toggle_tip": "顯示或隱藏歌曲詳細資料面板",
+    "dp_toggle_tip": "顯示或隱藏歌曲詳細資料面板。",
 })
 TR["en"].update({
     "dp_title": "Song details", "dp_files": "Files", "dp_download": "Download this song",
     "dp_copy": "Copy title", "dp_empty": "Select a song to see its details",
-    "mw_menu_view": "&View", "dp_toggle": "Song Details Panel",
-    "dp_toggle_tip": "Show or hide the song details panel",
+    "mw_menu_view": "&View", "dp_toggle": "Song details panel",
+    "dp_toggle_tip": "Show or hide the song details panel.",
 })
 TR["ja"].update({
     "dp_title": "曲の詳細", "dp_files": "ファイル", "dp_download": "この曲をダウンロード",
     "dp_copy": "曲名をコピー", "dp_empty": "曲を選ぶと詳細が表示されます",
     "mw_menu_view": "表示(&V)", "dp_toggle": "曲の詳細パネル",
-    "dp_toggle_tip": "曲の詳細パネルを表示/非表示",
+    "dp_toggle_tip": "曲の詳細パネルを表示または非表示にします。",
 })
 
 
 # --- download monitor: log toolbar and failed list
 TR["zh_TW"].update({
-    "tab_log_n": "Log（{n} 個錯誤）", "tab_fail_n": "失敗清單（{n}）",
+    "tab_log_n": "記錄（{n} 個錯誤）", "tab_fail_n": "失敗清單（{n}）",
     "log_filter_ph": "篩選記錄…", "log_errors_only": "只看錯誤",
     "log_copy": "全部複製", "log_save": "儲存…", "log_clear": "清除",
     "log_save_title": "儲存記錄", "log_save_fail": "無法儲存記錄：{e}",
@@ -916,7 +910,7 @@ TR["en"].update({
     "whatsnew_title": "What's new in {v}", "whatsnew_none": "(No release notes for this version.)",
 })
 TR["ja"].update({
-    "about_title": "ESEManager について", "about_version": "バージョン", "about_data_dir": "データフォルダ",
+    "about_title": "ESEManager について", "about_version": "バージョン", "about_data_dir": "データフォルダー",
     "about_log": "ログファイル", "about_open": "開く", "about_copy_diag": "診断情報をコピー",
     "about_copied": "コピーしました", "about_close": "閉じる",
     "whatsnew_title": "{v} の新機能", "whatsnew_none": "（このバージョンのリリースノートはありません）",
@@ -926,21 +920,21 @@ TR["ja"].update({
 TR["zh_TW"].update({"sn_summary": "{new} 首新歌、{upd} 首更新", "sn_show": "查看",
                     "sn_none": "沒有新增或更新的歌曲", "c_new": "新", "f_new": "新增／更新",
                     "sn_filter_new": "新增／更新", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
-                    "sn_tip_new": "上次資料庫更新新增的歌曲", "sn_tip_upd": "上次資料庫更新有檔案變更"})
-TR["en"].update({"sn_summary": "{new} new songs, {upd} updated", "sn_show": "Show them",
-                 "sn_none": "No new or updated songs", "c_new": "New", "f_new": "What's new",
+                    "sn_tip_new": "上次資料庫更新新增的歌曲。", "sn_tip_upd": "上次資料庫更新有檔案變更。"})
+TR["en"].update({"sn_summary": "{new} new songs, {upd} updated", "sn_show": "Show",
+                 "sn_none": "No new or updated songs", "c_new": "New", "f_new": "New / updated",
                  "sn_filter_new": "New / updated", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
-                 "sn_tip_new": "Added by the last database update",
-                 "sn_tip_upd": "Files changed in the last database update"})
+                 "sn_tip_new": "Added by the last database update.",
+                 "sn_tip_upd": "Files changed in the last database update."})
 TR["ja"].update({"sn_summary": "新曲 {new} 件、更新 {upd} 件", "sn_show": "表示する",
                  "sn_none": "新曲・更新はありません", "c_new": "新着", "f_new": "新着・更新",
-                 "sn_filter_new": "新着／更新", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
-                 "sn_tip_new": "前回のデータベース更新で追加", "sn_tip_upd": "前回のデータベース更新でファイル変更"})
+                 "sn_filter_new": "新着・更新", "sn_badge_new": "NEW", "sn_badge_upd": "UPD",
+                 "sn_tip_new": "前回のデータベース更新で追加された曲です。", "sn_tip_upd": "前回のデータベース更新でファイルが変更された曲です。"})
 
 
 # --- favourites
 TR["zh_TW"].update({
-    "c_fav": "★", "fav_add": "加入最愛", "fav_remove": "移出最愛",
+    "c_fav": "★", "fav_add": "加入最愛", "fav_remove": "從最愛移除",
     "f_fav_only": "只顯示最愛", "sel_fav": "選取最愛的歌曲",
 })
 TR["en"].update({
