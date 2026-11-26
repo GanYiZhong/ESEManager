@@ -64,7 +64,7 @@ requests = LazyModule("requests")
 from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
                        ESE_MIRROR_BASE,
                        DB_RELEASE_URL, USER_AGENT, SQLITE_MAGIC, live_url, safe_join,
-                       UnsafePathError, LATEST_RELEASE_API, is_newer,
+                       UnsafePathError, LATEST_RELEASE_API, RELEASE_TAG_API, is_newer,
                        APP_VERSION, parse_version,
                        VSORT_REPO, VSORT_FOLDER, VSORT_SKIP, VSORT_BRANCH_API,
                        VSORT_ARCHIVE_URL)
@@ -1846,6 +1846,15 @@ def fetch_latest_release(sess=None):
     """GitHub's JSON for the latest release (raises on network errors)."""
     sess = sess or new_session()
     r = get_with_retry(sess, LATEST_RELEASE_API, timeout=15,
+                       headers={"Accept": "application/vnd.github+json"})
+    return r.json()
+
+
+def fetch_release_by_tag(tag, sess=None):
+    """GitHub's JSON for the release tagged `tag` (raises on network errors)."""
+    from urllib.parse import quote
+    sess = sess or new_session()
+    r = get_with_retry(sess, RELEASE_TAG_API + quote(tag, safe=""), timeout=15,
                        headers={"Accept": "application/vnd.github+json"})
     return r.json()
 

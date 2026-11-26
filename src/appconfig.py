@@ -51,6 +51,7 @@ VSORT_ARCHIVE_URL = f"https://ese.tjadataba.se/{VSORT_REPO}/archive/{{ref}}.zip"
 GITHUB_REPO = "GanYiZhong/ESEManager"
 RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+RELEASE_TAG_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/"
 
 # Release builds write src/app_version.py (see .github/workflows/release.yml);
 # running from source has no such file and reports "dev".

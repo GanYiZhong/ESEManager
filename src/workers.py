@@ -161,6 +161,23 @@ class AppUpdateThread(QThread):
             self.found.emit(*hit)
 
 
+class ReleaseNotesThread(QThread):
+    """Fetch a release's Markdown notes by tag; emits loaded(tag, body) only on
+    success (offline / unknown tag: silent)."""
+    loaded = Signal(str, str)
+
+    def __init__(self, tag):
+        super().__init__()
+        self.tag = tag
+
+    def run(self):
+        try:
+            data = core.fetch_release_by_tag(self.tag)
+            self.loaded.emit(self.tag, (data.get("body") or "").strip())
+        except Exception:
+            core.log.info("release notes unavailable for %s", self.tag)
+
+
 class VersionSortingThread(QThread):
     log = Signal(str)
     done = Signal(bool, str, str)    # ok, "updated"/"latest" or error, commit
