@@ -681,7 +681,9 @@ class MainWindow(QMainWindow):
         bottom.addStretch()
         self.detail_btn = QToolButton()
         self.detail_btn.setCheckable(True)
-        self.detail_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        # Icon only (the sidebar icon, tooltip and F4 say what it is): the bottom
+        # row sets the window's minimum width, which must fit 1366-px screens.
+        self.detail_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.detail_btn.setFocusPolicy(Qt.NoFocus)
         self.detail_btn.toggled.connect(self.set_detail_open)
         for wdg in (self.overall_label, self.overall_bar, self.pause_btn, self.stop_btn,

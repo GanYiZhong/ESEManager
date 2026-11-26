@@ -512,7 +512,7 @@ TR["ja"].update({
     "cleanup_age": "{t}経過",
     "cleanup_age_h": "{n} 時間",
     "cleanup_age_d": "{n} 日",
-    "cleanup_cat_sizes": "カテゴリ別サイズ：{s}",
+    "cleanup_cat_sizes": "カテゴリー別サイズ：{s}",
     "cleanup_selected": "{n} 件選択、合計 {size}",
     "cleanup_btn": "ごみ箱へ移動",
     "cleanup_done": "{n} 件をごみ箱に移動しました（{size}）。",
@@ -986,7 +986,7 @@ TR["ja"].update({
     "sl_report": "一致 {m} 曲、あいまい一致 {f} 曲、見つからない {x} 曲",
     "sl_filter": "曲リスト (*.json);;テキスト (*.txt);;すべて (*)",
     "cli_list_none": "リストにダウンロードできる曲がありません。",
-    "cli_export_what": "キーワード、-c カテゴリ、または --favourites を指定してください。",
+    "cli_export_what": "キーワード、-c カテゴリー、または --favourites を指定してください。",
 })
 
 
