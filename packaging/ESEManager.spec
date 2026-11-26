@@ -6,6 +6,7 @@ _common = dict(
     binaries=[],
     datas=[
         ('../assets', 'assets'),
+        ('../src/icons', 'icons'),     # themed SVG icons (src/icons.py)
     ],
     hiddenimports=[
         'requests',
@@ -17,6 +18,8 @@ _common = dict(
         'appconfig',
         'core',
         'theme',
+        'icons',
+        'PySide6.QtSvg',
         'app_version',
         'i18n',
         'models',
