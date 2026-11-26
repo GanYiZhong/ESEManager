@@ -135,3 +135,56 @@ def test_suggest_is_fast_and_does_not_change_search(db):
     core.suggest("hatune miku")
     assert time.perf_counter() - t < 0.05
     assert names("love") == before
+
+
+# ------------------------------------------------------------ kana -> romaji
+@pytest.mark.parametrize("kana, romaji", [
+    ("せんぼんざくら", "senbonzakura"), ("きゃりー", "kyarii"), ("しゃ", "sha"),
+    ("まっちゃ", "matcha"), ("あっぱれ", "appare"), ("ろーりん", "roorin"),
+    ("ハツネミク", "hatsunemiku"), ("ふぁいと", "faito"), ("じゅん", "jun"),
+    ("ちぇっく", "chekku"), ("ぱみゅ", "pamyu"),
+])
+def test_kana_to_romaji(kana, romaji):
+    assert core.kana_to_romaji(kana) == romaji
+
+
+def test_kana_n_apostrophe():
+    assert core.kana_to_romaji("しんいち") == "shin'ichi"
+    assert core.kana_to_romaji("しんいち", apostrophe=False) == "shinichi"
+    assert core.kana_to_romaji("かんや") == "kan'ya"
+    assert core.kana_to_romaji("せんぼん") == "senbon"
+
+
+def test_kana_query_finds_romaji_titles(db):
+    assert names("せんぼんざくら") == ["Senbonzakura", "Senbonzakura Sachiko Version"]
+    assert names("センボンザクラ")[0] == "Senbonzakura"
+    assert names("はつねみく") == ["Hatsune Miku no Gekishou"]
+
+
+def test_kana_query_with_kanji_not_transliterated(db):
+    assert names("千本桜") == []
+
+
+def test_kana_japanese_title_hits_rank_first(db):
+    conn = sqlite3.connect(core.LOCAL_DB_PATH)
+    conn.execute("CREATE TABLE local_songs (title TEXT, title_ja TEXT)")
+    conn.execute("INSERT INTO local_songs VALUES ('Zzz Love Story', 'せんぼんざくらの歌')")
+    conn.commit()
+    conn.close()
+    core.clear_search_cache()
+    got = names("せんぼんざくら")
+    assert got[0] == "Zzz Love Story"
+    assert "Senbonzakura" in got
+
+
+def test_kana_suggest(db):
+    assert "Senbonzakura" in core.suggest("せんぼんざくる")
+
+
+def test_non_kana_results_unchanged(db):
+    assert names("senbonzakura") == ["Senbonzakura", "Senbonzakura Sachiko Version"]
+    assert names("love") == ["Love", "Love Story wa Totsuzen ni", "Lovely Day",
+                             "Zzz Love Story", "365 Nichi no Love Story"]
+    assert names("miku gekishou") == ["Hatsune Miku no Gekishou"]
+    assert names("365nichi") == ["365 Nichi no Love Story"]
+    assert names("love story")[0] == "Love Story wa Totsuzen ni"
