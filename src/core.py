@@ -23,7 +23,39 @@ import urllib.parse
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
-import requests
+
+
+class LazyModule:
+    """Import a heavy module on first attribute access, so startup does not pay
+    for it (requests + urllib3 cost ~0.2 s). Reads and writes pass through, so
+    `core.requests.get` can still be patched in tests."""
+
+    __slots__ = ("_name", "_mod")
+
+    def __init__(self, name):
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_mod", None)
+
+    def _load(self):
+        mod = object.__getattribute__(self, "_mod")
+        if mod is None:
+            import importlib
+            mod = importlib.import_module(object.__getattribute__(self, "_name"))
+            object.__setattr__(self, "_mod", mod)
+        return mod
+
+    @property
+    def __dict__(self):          # lets monkeypatch save/restore the real attribute
+        return self._load().__dict__
+
+    def __getattr__(self, attr):
+        return getattr(self._load(), attr)
+
+    def __setattr__(self, attr, value):
+        setattr(self._load(), attr, value)
+
+
+requests = LazyModule("requests")
 
 from appconfig import (APP_DIR, DB_PATH, LOCAL_DB_PATH, VERSION_FILE, ESE_RAW_BASE,
                        ESE_MIRROR_BASE,
