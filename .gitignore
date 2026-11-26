@@ -73,3 +73,9 @@ src/app_version.py
 # Runtime log and coverage data
 ESEManager.log*
 .coverage
+
+# per-user runtime data written next to the app
+new_songs.json
+host_rank.json
+favourites.json
+.ese_sha_cache.json
