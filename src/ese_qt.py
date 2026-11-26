@@ -241,12 +241,12 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(10, 8, 10, 6)
-        root.setSpacing(6)
+        root.setContentsMargins(14, 10, 14, 8)
+        root.setSpacing(8)
 
         # ---- top row: search + category + filter + maintenance actions
         top = QHBoxLayout()
-        top.setSpacing(6)
+        top.setSpacing(8)
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("🔍  " + self.tr("ph"))
         self.search_edit.setClearButtonEnabled(True)
@@ -311,8 +311,10 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(26)
+        self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.horizontalHeader().setHighlightSections(False)
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)  # no initial sort
         self.table.doubleClicked.connect(self.on_row_double_clicked)
@@ -347,9 +349,9 @@ class MainWindow(QMainWindow):
 
         # ---- bottom row: download actions + slim progress
         bottom = QHBoxLayout()
-        bottom.setSpacing(6)
+        bottom.setSpacing(8)
         self.download_btn = QPushButton(self.tr("download"))
-        self.download_btn.setStyleSheet(theme.primary_button_qss(padding="6px 14px"))
+        self.download_btn.setStyleSheet(theme.primary_button_qss(padding="5px 18px"))
         self.table.setStyleSheet(theme.check_indicator_qss())
         theme.add_listener(self._restyle_theme)  # re-colour these on theme change
         self.download_btn.setToolTip(self.tr("download_tip"))
@@ -362,7 +364,7 @@ class MainWindow(QMainWindow):
         self.overall_bar = QProgressBar()
         self.overall_bar.setFormat("%v / %m")
         self.overall_bar.setMaximumWidth(220)
-        self.overall_bar.setMaximumHeight(16)
+        self.overall_bar.setMaximumHeight(18)
         self.overall_label = QLabel(self.tr("ready"))
         self.pause_btn = QToolButton()
         self.pause_btn.setText(self.tr("pause"))
