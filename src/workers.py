@@ -5,6 +5,8 @@ Workers never touch widgets. Downloads report progress through a snapshot that
 the main thread polls with a QTimer, not a signal per chunk.
 """
 
+import threading
+
 from PySide6.QtCore import QThread, Signal
 
 import core
@@ -65,7 +67,7 @@ class CheckUpdatesThread(QThread):
 class DownloadThread(QThread):
     """Runs a core.Downloader. Control (stop/pause/resume/snapshot) and the
     counters (dl, skip, fail, total, failed, stopped) go to the downloader."""
-    log = Signal(str)
+    log = Signal(str)       # one or more lines joined by newlines, batched
     finished_all = Signal(int, int, int, int)      # downloaded, skipped, failed, total
 
     _DELEGATE = {"stop", "pause", "resume", "is_paused", "snapshot", "stopped",
@@ -73,8 +75,24 @@ class DownloadThread(QThread):
 
     def __init__(self, files, download_dir, workers, overwrite=False, tr=None):
         super().__init__()
+        # Log lines are buffered and emitted in batches (flush_log, called by
+        # the GUI's progress timer): a signal per line floods the event loop
+        # when thousands of small files finish in a few seconds.
+        self._log_buf = []
+        self._log_lock = threading.Lock()
         self.job = core.Downloader(files, download_dir, workers, overwrite=overwrite,
-                                   tr=tr, log=self.log.emit)
+                                   tr=tr, log=self._buffer_log)
+
+    def _buffer_log(self, msg):
+        with self._log_lock:
+            self._log_buf.append(msg)
+
+    def flush_log(self):
+        """Emit all buffered log lines as one signal (no-op when empty)."""
+        with self._log_lock:
+            buf, self._log_buf = self._log_buf, []
+        if buf:
+            self.log.emit(chr(10).join(buf))
 
     def __getattr__(self, name):
         if name in DownloadThread._DELEGATE:
@@ -82,7 +100,9 @@ class DownloadThread(QThread):
         raise AttributeError(name)
 
     def run(self):
-        self.finished_all.emit(*self.job.run())
+        result = self.job.run()
+        self.flush_log()
+        self.finished_all.emit(*result)
 
 
 class VersionThread(QThread):
