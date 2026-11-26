@@ -457,7 +457,7 @@ TR["zh_TW"].update({
     "download_tip": "下載勾選的歌曲（Ctrl+D）",
     "shortcuts": "⌨ 快捷鍵",
     "shortcuts_text": "Ctrl+F　搜尋\nEsc　清除搜尋\nCtrl+D　下載勾選的歌曲\n"
-                      "Ctrl+,　設定\n雙擊列　勾選／取消勾選",
+                      "Ctrl+,　設定\nSpace　勾選／取消勾選目前的列\n雙擊列　已下載則開啟資料夾，否則勾選\n右鍵　歌曲選單",
     "view_missing": "目前只顯示缺漏的 {n} 首歌曲。",
     "view_updates": "目前只顯示有更新的 {n} 首歌曲。",
     "view_back": "顯示全部",
@@ -469,7 +469,7 @@ TR["en"].update({
     "download_tip": "Download the checked songs (Ctrl+D)",
     "shortcuts": "⌨ Keyboard Shortcuts",
     "shortcuts_text": "Ctrl+F  Search\nEsc  Clear search\nCtrl+D  Download checked songs\n"
-                      "Ctrl+,  Settings\nDouble-click a row  Check / uncheck",
+                      "Ctrl+,  Settings\nSpace  Check / uncheck the current row\nDouble-click a row  Open its folder if downloaded, else check\nRight-click  Song menu",
     "view_missing": "Showing only the {n} songs with missing files.",
     "view_updates": "Showing only the {n} songs with upstream changes.",
     "view_back": "Show All",
@@ -483,7 +483,7 @@ TR["ja"].update({
     "download_tip": "チェックした曲をダウンロード（Ctrl+D）",
     "shortcuts": "⌨ キーボードショートカット",
     "shortcuts_text": "Ctrl+F　検索\nEsc　検索をクリア\nCtrl+D　チェックした曲をダウンロード\n"
-                      "Ctrl+,　設定\n行をダブルクリック　チェックの切り替え",
+                      "Ctrl+,　設定\nSpace　現在の行のチェック切り替え\n行をダブルクリック　ダウンロード済みならフォルダを開く、未ならチェック\n右クリック　曲メニュー",
     "view_missing": "不足している {n} 曲のみ表示しています。",
     "view_updates": "更新のある {n} 曲のみ表示しています。",
     "view_back": "すべて表示",
@@ -560,4 +560,25 @@ TR["ja"].update({
     "upd_app_scheduled_cli": "{v} をダウンロードしました。このコマンドの終了後、数秒で新しいバージョンに置き換わります。",
     "upd_app_failed_restart": "前回の更新が完了しませんでした。現在も古いバージョンです：\n{e}\n\n"
                               "もう一度更新するか、GitHub から手動でダウンロードしてください。",
+})
+
+
+# --- usability: context menu, empty states
+TR["zh_TW"].update({
+    "ctx_toggle": "勾選／取消勾選", "ctx_download": "下載這首歌曲",
+    "ctx_open_folder": "開啟歌曲資料夾", "ctx_copy_title": "複製歌名",
+    "no_results": "找不到符合的歌曲。\n請調整關鍵字、分類或篩選條件。",
+    "no_songs": "目前沒有歌曲可顯示。",
+})
+TR["en"].update({
+    "ctx_toggle": "Check / uncheck", "ctx_download": "Download this song",
+    "ctx_open_folder": "Open song folder", "ctx_copy_title": "Copy title",
+    "no_results": "No songs match.\nTry a different keyword, category or filter.",
+    "no_songs": "There are no songs to show.",
+})
+TR["ja"].update({
+    "ctx_toggle": "チェックの切り替え", "ctx_download": "この曲をダウンロード",
+    "ctx_open_folder": "曲のフォルダを開く", "ctx_copy_title": "曲名をコピー",
+    "no_results": "一致する曲がありません。\nキーワード、カテゴリ、フィルターを変えてください。",
+    "no_songs": "表示する曲がありません。",
 })

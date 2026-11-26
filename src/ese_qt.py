@@ -21,8 +21,8 @@ except ImportError:
     import tomli as tomllib
 import tomli_w
 
-from PySide6.QtCore import Qt, QTimer, QProcess
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QTimer, QProcess, QEvent
+from PySide6.QtGui import QAction, QKeySequence, QShortcut, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QTableView, QHeaderView, QSpinBox,
@@ -118,7 +118,8 @@ class MainWindow(QMainWindow):
             win_h = self._cfg_int(prev, "window_h", self.DEFAULT_WINDOW[1], 1)
         else:
             win_w, win_h = self.width(), self.height()
-        display = {"page_size": 20, "ui_language": self.lang_pref,
+        cat = self.cat_combo.currentData() if hasattr(self, "cat_combo") else None
+        display = {"page_size": 20, "category": cat or "", "ui_language": self.lang_pref,
                    "theme": self.theme_pref, "window_w": win_w, "window_h": win_h,
                    "monitor_open": bool(getattr(self, "monitor_btn", None)
                                         and self.monitor_btn.isChecked())}
@@ -257,7 +258,7 @@ class MainWindow(QMainWindow):
         esc.activated.connect(self.search_edit.clear)
         self.cat_combo = QComboBox()
         self.cat_combo.setMinimumWidth(140)
-        self.cat_combo.currentIndexChanged.connect(lambda _: self.do_search())
+        self.cat_combo.currentIndexChanged.connect(self._on_category_changed)
         self.filter_btn = QToolButton()
         self.filter_btn.setPopupMode(QToolButton.InstantPopup)
         self.filter_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -314,13 +315,25 @@ class MainWindow(QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)  # no initial sort
-        self.table.doubleClicked.connect(self.toggle_check)
+        self.table.doubleClicked.connect(self.on_row_double_clicked)
+        # Space toggles the check of the current row (all selected rows if several).
+        space = QShortcut(QKeySequence(Qt.Key_Space), self.table)
+        space.setContext(Qt.WidgetShortcut)
+        space.activated.connect(self.toggle_current_rows)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_row_menu)
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ✓
         hh.setSectionResizeMode(1, QHeaderView.Stretch)            # 歌名
         hh.setSectionResizeMode(2, QHeaderView.Stretch)            # 日文
         for c in range(3, len(SongModel.COLS)):                    # 分類/BPM/難度×5/檔案
             hh.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.empty_label = QLabel(self.table.viewport())  # empty-state message over the table
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setStyleSheet(theme.hint_qss())
+        self.empty_label.hide()
+        self.table.viewport().installEventFilter(self)
         splitter.addWidget(self.table)
         splitter.addWidget(self.build_monitor())
         splitter.setStretchFactor(0, 3)
@@ -575,6 +588,11 @@ class MainWindow(QMainWindow):
                 self.cat_combo.addItem(CATEGORY_NAMES.get(name, name), name)
         except Exception:
             core.log.warning("load_categories failed", exc_info=True)
+        # Restore the category used last time (if it still exists).
+        last = self.config.get("display", {}).get("category")
+        i = self.cat_combo.findData(last) if isinstance(last, str) and last else -1
+        if i > 0:
+            self.cat_combo.setCurrentIndex(i)
         self.cat_combo.blockSignals(False)
 
     @staticmethod
@@ -634,6 +652,7 @@ class MainWindow(QMainWindow):
 
     def _run_search(self, kw, cat):
         self.view_bar.hide()
+        self.empty_label.hide()
         if not self.has_song_db():
             self.refresh_empty_hint()
             self.count_label.setText(self.tr("total", n=0))
@@ -728,6 +747,85 @@ class MainWindow(QMainWindow):
         self.count_label.setText(self.tr("total", n=len(songs)))
         self.update_sel_count()
         self.update_filter_button()
+        self.update_empty_state()
+
+    def _on_category_changed(self, _=None):
+        self.do_search()
+        self.save_config()
+
+    def eventFilter(self, obj, ev):
+        if obj is self.table.viewport() and ev.type() == QEvent.Resize:
+            self.empty_label.setGeometry(self.table.viewport().rect().adjusted(20, 20, -20, -20))
+        return super().eventFilter(obj, ev)
+
+    def update_empty_state(self):
+        """Tell the user why the table is blank instead of leaving it empty."""
+        if self.song_model.rowCount() or not self.has_song_db() or self.view_bar.isVisible():
+            self.empty_label.hide()
+            return
+        searching = (bool(self.search_edit.text().strip())
+                     or self.cat_combo.currentData() is not None
+                     or self.active_filter_count() > 0)
+        self.empty_label.setText(self.tr("no_results" if searching else "no_songs"))
+        self.empty_label.setGeometry(self.table.viewport().rect().adjusted(20, 20, -20, -20))
+        self.empty_label.show()
+
+    def _song_dir(self, song):
+        """Folder of a song inside the download directory, or None if not downloaded."""
+        try:
+            fp = song["files"][0]["file_path"]
+            d = core.safe_join(resolve_dir(self.dir_edit.text()), os.path.dirname(fp))
+        except Exception:
+            return None
+        return d if d and os.path.isdir(d) else None
+
+    @staticmethod
+    def _open_path(d):
+        if sys.platform == "win32":
+            os.startfile(d)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", d])
+        else:
+            subprocess.Popen(["xdg-open", d])
+
+    def _row_song(self, row):
+        return self.song_model._view[row] if 0 <= row < self.song_model.rowCount() else None
+
+    def on_row_double_clicked(self, index):
+        """Double-click: open the song's folder if it is downloaded, else check/uncheck."""
+        song = self._row_song(index.row())
+        d = self._song_dir(song) if song else None
+        if d:
+            self._open_path(d)
+        else:
+            self.toggle_check(index)
+
+    def toggle_current_rows(self):
+        rows = sorted({i.row() for i in self.table.selectionModel().selectedRows()})
+        if not rows and self.table.currentIndex().isValid():
+            rows = [self.table.currentIndex().row()]
+        if not rows:
+            return
+        on = not all(self.song_model.is_checked(r) for r in rows)
+        for r in rows:
+            self.song_model.setData(self.song_model.index(r, 0),
+                                    Qt.Checked if on else Qt.Unchecked, Qt.CheckStateRole)
+
+    def show_row_menu(self, pos):
+        idx = self.table.indexAt(pos)
+        song = self._row_song(idx.row()) if idx.isValid() else None
+        if not song:
+            return
+        menu = QMenu(self.table)
+        menu.addAction(self.tr("ctx_toggle"), self.toggle_current_rows)
+        menu.addAction(self.tr("ctx_download"), lambda: self.start_download(
+            [(song, f) for f in song["files"]]))
+        d = self._song_dir(song)
+        a = menu.addAction(self.tr("ctx_open_folder"), lambda: self._open_path(d))
+        a.setEnabled(bool(d))
+        menu.addAction(self.tr("ctx_copy_title"),
+                       lambda: QGuiApplication.clipboard().setText(song["song_name"]))
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def toggle_check(self, index):
         if index.column() == 0:
@@ -950,12 +1048,7 @@ class MainWindow(QMainWindow):
     def open_dir(self):
         d = resolve_dir(self.dir_edit.text())
         if os.path.isdir(d):
-            if sys.platform == "win32":
-                os.startfile(d)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", d])
-            else:
-                subprocess.Popen(["xdg-open", d])
+            self._open_path(d)
 
     # ---- ESE-Version-Sorting (YataiDON version folders)
     def download_version_sorting(self):
