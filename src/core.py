@@ -2854,3 +2854,144 @@ def download_version_sorting(download_dir, log=print, force=False, sess=None):
     finally:
         if own:
             sess.close()
+
+
+# ------------------------------------------------- simulator song-folder detection
+SONG_DIR_NAMES = ("songs", "song", "tja")
+SIM_EXE_PATTERNS = (("OpenTaiko", "opentaiko"), ("TJAPlayer3", "tjaplayer3"),
+                    ("YataiDON", "yataidon"), ("TaikoJiro", "taikojiro"))
+FIND_MAX_ENTRIES = 2000
+FIND_MAX_SECONDS = 1.0
+
+
+def _sim_from_names(names):
+    for n in names:
+        low = n.lower()
+        for label, key in SIM_EXE_PATTERNS:
+            if low.startswith(key) and (low.endswith((".exe", ".x86_64", ".appimage"))
+                                        or "." not in low):
+                return label
+    return ""
+
+
+def _steam_library_roots():
+    """steamapps/common of every Steam library listed in libraryfolders.vdf."""
+    home = os.path.expanduser("~")
+    cands = [os.path.join(os.environ[v], "Steam", "steamapps", "libraryfolders.vdf")
+             for v in ("ProgramFiles(x86)", "ProgramFiles") if os.environ.get(v)]
+    cands += [os.path.join(home, ".steam", "steam", "steamapps", "libraryfolders.vdf"),
+              os.path.join(home, ".local", "share", "Steam", "steamapps", "libraryfolders.vdf")]
+    roots = []
+    for vdf in cands:
+        try:
+            with open(vdf, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read(1 << 20)
+        except OSError:
+            continue
+        roots.append(os.path.join(os.path.dirname(vdf), "common"))
+        for m in re.finditer(r'"path"\s+"([^"]+)"', text):
+            roots.append(os.path.join(m.group(1).replace("\\\\", "\\"), "steamapps", "common"))
+    return roots
+
+
+def _song_search_roots():
+    """Places a Taiko simulator tends to live, most likely first."""
+    home = os.path.expanduser("~")
+    roots = [os.path.dirname(APP_DIR)]
+    for sub in ("Documents", "Desktop", "Downloads", "Games"):
+        roots.append(os.path.join(home, sub))
+    roots += _steam_library_roots()
+    for var in ("LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"):
+        if os.environ.get(var):
+            roots.append(os.environ[var])
+    return roots
+
+
+def find_song_folders(roots=None, max_entries=FIND_MAX_ENTRIES, max_seconds=FIND_MAX_SECONDS):
+    """Best-effort, read-only hunt for a Taiko simulator's song folder.
+
+    Returns [{"path", "simulator", "tja_count", "truncated"}], simulator-known
+    first, then by chart count. Scans at most `max_entries` directory entries
+    (plus as many again to count charts) and `max_seconds`; never follows links.
+    """
+    deadline = time.monotonic() + max_seconds
+    state = {"left": max_entries, "count_left": max_entries}
+
+    def spent(key="left"):
+        return state[key] <= 0 or time.monotonic() > deadline
+
+    def listing(path, key="left"):
+        if spent(key):
+            return None
+        out = []
+        try:
+            with os.scandir(path) as it:
+                for e in it:
+                    state[key] -= 1
+                    out.append(e)
+                    if spent(key):
+                        break
+        except OSError:
+            return None
+        return out
+
+    def is_dir(e):
+        try:
+            return e.is_dir(follow_symlinks=False)
+        except OSError:
+            return False
+
+    def count_tja(path, depth=0):
+        n = 0
+        for e in listing(path, "count_left") or ():
+            if is_dir(e):
+                if depth < 3:
+                    n += count_tja(e.path, depth + 1)
+            elif e.name.lower().endswith(".tja"):
+                n += 1
+        return n
+
+    found, seen = [], set()
+
+    def add(path, sim):
+        key = os.path.normcase(os.path.realpath(path))
+        if key in seen:
+            return
+        seen.add(key)
+        n = count_tja(path)
+        if n == 0 and not sim:
+            return
+        found.append({"path": path, "simulator": sim, "tja_count": n,
+                      "truncated": spent("count_left")})
+
+    def walk(path, depth, sim):
+        ents = listing(path)
+        if ents is None:
+            return
+        sim = _sim_from_names([e.name for e in ents if not is_dir(e)]) or sim
+        for e in ents:
+            if not is_dir(e):
+                continue
+            if e.name.lower() in SONG_DIR_NAMES:
+                add(e.path, sim)
+            elif depth < 3 and not spent():
+                walk(e.path, depth + 1, sim)
+
+    seen_roots = set()
+    for root in (roots if roots is not None else _song_search_roots()):
+        if spent():
+            break
+        key = os.path.normcase(os.path.realpath(root))
+        if key in seen_roots or os.path.islink(root) or not os.path.isdir(root):
+            continue
+        seen_roots.add(key)
+        walk(root, 0, "")
+    found.sort(key=lambda f: (not f["simulator"], -f["tja_count"], f["path"]))
+    return found
+
+
+def describe_song_folder(c, tr):
+    """'OpenTaiko, 1234 charts' style text for a find_song_folders() entry."""
+    n = ("%d+" if c.get("truncated") else "%d") % c["tja_count"]
+    return tr("detect_item_sim", sim=c["simulator"], n=n) if c["simulator"] \
+        else tr("detect_item", n=n)

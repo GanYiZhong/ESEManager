@@ -291,6 +291,40 @@ TR["ja"].update({
 })
 
 
+TR["zh_TW"].update({
+    "welcome_found": "找到遊戲的歌曲資料夾：{p}（{info}）",
+    "welcome_use": "使用這個資料夾",
+    "detect_btn": "偵測…",
+    "detect_title": "偵測歌曲資料夾",
+    "detect_pick": "選擇要使用的資料夾：",
+    "detect_none": "找不到遊戲的歌曲資料夾，請用「瀏覽」自行選擇。",
+    "detect_item": "{n} 個譜面",
+    "detect_item_sim": "{sim}，{n} 個譜面",
+    "cli_detect_none": "找不到可能的歌曲資料夾。",
+})
+TR["en"].update({
+    "welcome_found": "Found your game's song folder: {p} ({info})",
+    "welcome_use": "Use it",
+    "detect_btn": "Detect…",
+    "detect_title": "Detect song folder",
+    "detect_pick": "Choose the folder to use:",
+    "detect_none": "No game song folder found. Use Browse to pick one.",
+    "detect_item": "{n} charts",
+    "detect_item_sim": "{sim}, {n} charts",
+    "cli_detect_none": "No likely song folders found.",
+})
+TR["ja"].update({
+    "welcome_found": "ゲームの曲フォルダーが見つかりました：{p}（{info}）",
+    "welcome_use": "使う",
+    "detect_btn": "検出…",
+    "detect_title": "曲フォルダーを検出",
+    "detect_pick": "使用するフォルダーを選択：",
+    "detect_none": "ゲームの曲フォルダーが見つかりません。「参照」で選んでください。",
+    "detect_item": "{n} 譜面",
+    "detect_item_sim": "{sim}、{n} 譜面",
+    "cli_detect_none": "曲フォルダーの候補が見つかりません。",
+})
+
 def detect_system_lang():
     """偵測系統語言 → 'zh_TW' / 'ja' / 'en'（預設 en）。"""
     code = ""
