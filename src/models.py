@@ -25,6 +25,14 @@ def natural_key(text):
     return tuple(int(p) if i & 1 else p for i, p in enumerate(parts))
 
 
+def human_size(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
 # ---------------------------------------------------------------- 歌曲清單 model
 _CHECK_ROLE = [Qt.CheckStateRole]
 
@@ -199,6 +207,58 @@ class SongModel(QAbstractTableModel):
         if self._view:
             self.dataChanged.emit(self.index(0, 0),
                                   self.index(len(self._view) - 1, 0), _CHECK_ROLE)
+
+    # ---- bulk selection helpers: each makes one set and one dataChanged
+    def _apply_checked(self, new):
+        if new == self.checked:
+            return False
+        self.checked = new
+        if self._view:
+            self.dataChanged.emit(self.index(0, 0),
+                                  self.index(len(self._view) - 1, 0), _CHECK_ROLE)
+        return True
+
+    def invert_checked(self):
+        """Flip the check of every listed song."""
+        return self._apply_checked({self._key(s) for s in self._view} - self.checked)
+
+    def check_where(self, pred):
+        """Add every listed song for which pred(song) is true to the checked set."""
+        key = self._key
+        return self._apply_checked(
+            self.checked | {key(s) for s in self._view if pred(s)})
+
+    def check_by_status(self, status):
+        """Check listed songs whose download status equals `status` (0/1/2)."""
+        key, st = self._key, self.dl_status
+        return self._apply_checked(
+            self.checked | {key(s) for s in self._view if st.get(key(s)) == status})
+
+    def check_category(self, category):
+        return self.check_where(lambda s: s["category"] == category)
+
+    def keep_visible_only(self):
+        """Drop checks that belong to songs not in the current list."""
+        return self._apply_checked(self.checked & {self._key(s) for s in self._view})
+
+    def selection_stats(self):
+        """(songs, files, bytes) of the checked songs; bytes counts only known sizes."""
+        ck = self.checked
+        if not ck:
+            return 0, 0, 0
+        n = nf = total = 0
+        key = self._key
+        for s in self._view:
+            if key(s) in ck:
+                n += 1
+                nf += len(s["files"])
+                for f in s["files"]:
+                    total += f.get("size") or 0
+        return n, nf, total
+
+    def checked_rows(self):
+        ck, key = self.checked, self._key
+        return [i for i, s in enumerate(self._view) if key(s) in ck]
 
     def selected_songs(self):
         """Checked songs, in the current display order."""

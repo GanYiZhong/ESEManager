@@ -22,7 +22,7 @@ except ImportError:
     import tomli as tomllib
 import tomli_w
 
-from PySide6.QtCore import Qt, QTimer, QProcess, QEvent
+from PySide6.QtCore import Qt, QTimer, QProcess, QEvent, Signal
 from PySide6.QtGui import (QAction, QKeySequence, QShortcut, QGuiApplication, QFont,
                            QFontDatabase, QTextCharFormat, QColor)
 from PySide6.QtWidgets import (
@@ -41,7 +41,7 @@ import theme  # light/dark palette and style-sheet helpers
 import icons  # themed SVG icons
 import core
 from core import load_jp_map, load_meta_map, read_local_version, human_speed, human_eta
-from models import SongModel, DownloadModel
+from models import SongModel, DownloadModel, human_size
 from detail_panel import DetailPanel
 from workers import (DownloadStatusThread, SearchThread, CheckUpdatesThread, DownloadThread,
                      VersionThread, DBUpdateThread, MetaLoadThread, AppUpdateThread,
@@ -138,6 +138,15 @@ class LogView(QPlainTextEdit):
         self.clear()
         if self.on_change:
             self.on_change()
+
+
+class _ClickLabel(QLabel):
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.LeftButton and self.rect().contains(ev.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(ev)
 
 
 class MainWindow(QMainWindow):
@@ -564,7 +573,24 @@ class MainWindow(QMainWindow):
         self.selall_btn.clicked.connect(lambda: self.song_model.set_all(True))
         self.deselall_btn = QPushButton(self.tr("desel_all"))
         self.deselall_btn.clicked.connect(lambda: self.song_model.set_all(False))
-        self.sel_label = QLabel(self.tr("selected", n=0))
+        self.sel_menu_btn = QPushButton(self.tr("sel_menu"))
+        self.sel_menu_btn.setToolTip(self.tr("sel_menu_tip"))
+        self.sel_menu = QMenu(self.sel_menu_btn)
+        self.act_sel_invert = self.sel_menu.addAction(
+            self.tr("sel_invert"), lambda: self.song_model.invert_checked())
+        self.act_sel_notdl = self.sel_menu.addAction(
+            self.tr("sel_notdl"), lambda: self.song_model.check_by_status(0))
+        self.act_sel_partial = self.sel_menu.addAction(
+            self.tr("sel_partial"), lambda: self.song_model.check_by_status(1))
+        self.act_sel_cat = self.sel_menu.addAction(
+            self.tr("sel_cat"), self.select_current_category)
+        self.act_sel_visible = self.sel_menu.addAction(
+            self.tr("sel_visible_only"), lambda: self.song_model.keep_visible_only())
+        self.sel_menu_btn.setMenu(self.sel_menu)
+        self.sel_label = _ClickLabel(self.tr("selected", n=0))
+        self.sel_label.setToolTip(self.tr("sel_label_tip"))
+        self.sel_label.setCursor(Qt.PointingHandCursor)
+        self.sel_label.clicked.connect(self.jump_to_next_checked)
         self.overall_bar = QProgressBar()
         self.overall_bar.setFormat("%v / %m")
         self.overall_label = QLabel(self.tr("ready"))
@@ -581,7 +607,8 @@ class MainWindow(QMainWindow):
         self.monitor_btn.setCheckable(True)
         self.monitor_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.monitor_btn.toggled.connect(self.set_monitor_open)
-        for wdg in (self.download_btn, self.selall_btn, self.deselall_btn, self.sel_label):
+        for wdg in (self.download_btn, self.selall_btn, self.deselall_btn,
+                    self.sel_menu_btn, self.sel_label):
             bottom.addWidget(wdg)
         bottom.addStretch()
         self.detail_btn = QToolButton()
@@ -616,8 +643,8 @@ class MainWindow(QMainWindow):
         """Logical Tab order, accessible names and shortcut-bearing tooltips."""
         order = (self.search_edit, self.cat_combo, self.filter_btn, self.db_update_btn,
                  self.missing_btn, self.updates_btn, self.table, self.download_btn,
-                 self.selall_btn, self.deselall_btn, self.pause_btn, self.stop_btn,
-                 self.monitor_btn)
+                 self.selall_btn, self.deselall_btn, self.sel_menu_btn, self.pause_btn,
+                 self.stop_btn, self.monitor_btn)
         for a, b in zip(order, order[1:]):
             QWidget.setTabOrder(a, b)
         t = self.tr
@@ -1470,7 +1497,35 @@ class MainWindow(QMainWindow):
                                 Qt.Unchecked if cur else Qt.Checked, Qt.CheckStateRole)
 
     def update_sel_count(self, *args):
-        self.sel_label.setText(self.tr("selected", n=len(self.song_model.checked)))
+        n, nf, size = self.song_model.selection_stats()
+        if not n:
+            self.sel_label.setText(self.tr("selected", n=0))
+        elif size > 0:
+            self.sel_label.setText(self.tr("sel_detail_size", n=n, f=nf,
+                                           size=human_size(size)))
+        else:
+            self.sel_label.setText(self.tr("sel_detail", n=n, f=nf))
+
+    def select_current_category(self):
+        """Check every listed song in the category chosen in the combo (or, when
+        showing all categories, the category of the current row)."""
+        cat = self.cat_combo.currentData()
+        if cat is None:
+            song = self._row_song(self.table.currentIndex().row())
+            cat = song["category"] if song else None
+        if cat is not None:
+            self.song_model.check_category(cat)
+
+    def jump_to_next_checked(self):
+        """Scroll to the next checked row after the current one (wraps around)."""
+        rows = self.song_model.checked_rows()
+        if not rows:
+            return
+        cur = self.table.currentIndex().row()
+        row = next((r for r in rows if r > cur), rows[0])
+        idx = self.song_model.index(row, 1)
+        self.table.setCurrentIndex(idx)
+        self.table.scrollTo(idx, QAbstractItemView.PositionAtCenter)
 
     # ---- download
     LARGE_DOWNLOAD = 300     # ask before starting more files than this
