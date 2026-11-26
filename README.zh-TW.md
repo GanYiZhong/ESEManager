@@ -4,6 +4,15 @@
 
 [English](README.md) | **繁體中文**
 
+![ESEManager：搜尋結果與右側的歌曲詳細資料面板](docs/screenshots/main-zh.png)
+
+<details>
+<summary>深色主題，搜尋框使用篩選語法 <code>cat:vocaloid oni:&gt;=9</code></summary>
+
+![ESEManager 深色主題](docs/screenshots/main-zh-dark.png)
+
+</details>
+
 ## 功能
 
 - 高速歌曲清單：上千首一次顯示、可依欄位排序、無需分頁

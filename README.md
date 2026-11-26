@@ -5,6 +5,15 @@ from the **ESE (Every Song Ever)** project.
 
 **English** | [繁體中文](README.zh-TW.md)
 
+![ESEManager: search results with the song details panel](docs/screenshots/main-light.png)
+
+<details>
+<summary>Dark theme, with the search filter syntax <code>cat:vocaloid oni:&gt;=9</code></summary>
+
+![ESEManager in the dark theme](docs/screenshots/main-dark.png)
+
+</details>
+
 ## Features
 
 - Fast song browser — thousands of songs in one sortable list, no pagination
