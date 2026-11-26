@@ -20,6 +20,7 @@ _common = dict(
         'core',
         'theme',
         'icons',
+        'detail_panel',
         'PySide6.QtSvg',
         'app_version',
         'i18n',

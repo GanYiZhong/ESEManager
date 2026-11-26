@@ -177,7 +177,7 @@ class DetailPanel(QFrame):
         self.files.clear()
         for f in s["files"]:
             sz = format_size(f.get("size"))
-            ft = f.get("file_type") or f["filename"].rsplit(".", 1)[-1]
+            ft = (f.get("file_type") or f["filename"].rsplit(".", 1)[-1]).lstrip(".")
             self.files.addItem(f"{f['filename']}   [{ft}{', ' + sz if sz else ''}]")
         self.files_head.setText(f"{self.tr('dp_files')} ({len(s['files'])})")
         self.open_btn.setEnabled(self._downloaded)
