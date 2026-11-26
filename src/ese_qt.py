@@ -88,17 +88,24 @@ class LogView(QPlainTextEdit):
         cur.insertText(f"[{ts}] {text}", fmt)
 
     def appendPlainText(self, text):          # noqa: N802 (Qt API name)
-        text = str(text)
-        entry = (time.strftime("%H:%M:%S"), text, self._is_error(text))
-        if len(self._entries) == self._entries.maxlen and self._entries[0][2]:
-            self.error_count -= 1
-        self._entries.append(entry)
-        if entry[2]:
-            self.error_count += 1
-            if self.on_change:
-                self.on_change()
-        if self._visible(entry):
-            self._insert(entry)
+        # Download logs arrive in batches (DownloadThread.flush_log joins lines
+        # with newlines); stamp, classify and filter each line on its own.
+        stamp = time.strftime("%H:%M:%S")
+        shown = changed = False
+        for line in str(text).split("\n"):
+            entry = (stamp, line, self._is_error(line))
+            if len(self._entries) == self._entries.maxlen and self._entries[0][2]:
+                self.error_count -= 1
+            self._entries.append(entry)
+            if entry[2]:
+                self.error_count += 1
+                changed = True
+            if self._visible(entry):
+                self._insert(entry)
+                shown = True
+        if changed and self.on_change:
+            self.on_change()
+        if shown:
             self.ensureCursorVisible()
 
     def rerender(self):

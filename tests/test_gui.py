@@ -539,3 +539,15 @@ def test_failed_tab_reasons_and_selective_retry(window, monkeypatch):
 def test_downloader_remembers_failure_reason(tmp_path):
     job = core.Downloader([], str(tmp_path), 1)
     assert job.fail_reasons == {}
+
+
+def test_log_batch_is_split_into_lines(window):
+    """DownloadThread.flush_log sends many lines at once; each is its own entry."""
+    lv = window.log_view
+    lv.clear_log()
+    lv.appendPlainText("ok one\n" + window.tr("log_fail", f="b.tja", e="x") + "\nok two")
+    assert lv.error_count == 1
+    assert lv.toPlainText().count("[") == 3
+    window.log_err_chk.setChecked(True)
+    assert "ok one" not in lv.toPlainText() and "b.tja" in lv.toPlainText()
+    window.log_err_chk.setChecked(False)
