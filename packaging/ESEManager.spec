@@ -10,6 +10,7 @@ _common = dict(
     ],
     hiddenimports=[
         'requests',
+        'webbrowser',          # loaded lazily (core.LazyModule)
         'sqlite3',
         'tomllib',
         'tomli',
