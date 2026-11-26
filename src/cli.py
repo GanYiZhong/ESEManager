@@ -230,10 +230,13 @@ def run_download(files, ddir, workers, tr, overwrite=False, force=False):
     clear()
     summary = tr("log_dl_done", d=job.dl, s=job.skip, f=job.fail)
     out.msg(paint(summary, "31" if job.fail else "32"))
+    if job.saved_text():
+        out.msg(job.saved_text())
     for song, f in job.failed:
         out.err(f"  ✗ {f['file_path']}")
     out.data({"downloaded": job.dl, "skipped": job.skip, "failed": job.fail,
               "total": job.total, "stopped": job.stopped,
+              "copied": job.copied, "saved_bytes": job.saved_bytes,
               "failed_files": [f["file_path"] for _, f in job.failed]})
     return 1 if job.fail or job.stopped else 0
 
