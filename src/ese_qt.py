@@ -559,7 +559,6 @@ class MainWindow(QMainWindow):
         sel.activated.connect(self._check_all_visible)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_row_menu)
-        hh = self.table.horizontalHeader()
         # Right-click header: show/hide columns; order/widths/hidden persist by key.
         self.colmgr = columns.ColumnManager(
             self.table, SongModel.COLS, lambda k: self.tr(k), self.tr)
