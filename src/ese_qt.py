@@ -2275,6 +2275,9 @@ class MainWindow(QMainWindow):
         self.overall_label.setText(self.tr("ready"))
         stopped = self.dl_thread.stopped
         self.log_view.appendPlainText(self.tr("log_dl_done", d=dl, s=skip, f=fail))
+        saved = getattr(self.dl_thread, "saved_text", lambda: "")()
+        if saved:
+            self.log_view.appendPlainText(saved)
         # 填入失敗清單（停止時被取消的檔案也列入，可一鍵重試）
         self.fail_list.clear()
         reasons = getattr(self.dl_thread, "fail_reasons", {})
@@ -2294,6 +2297,8 @@ class MainWindow(QMainWindow):
             return
         key = "stopped_msg" if stopped else "done_msg"
         text = self.tr(key, d=dl, s=skip, f=fail, t=total)
+        if saved:
+            text += "\n" + saved
         self.notifier.notify(self.tr("title"), text)
         if self._in_background:
             self._leave_background()

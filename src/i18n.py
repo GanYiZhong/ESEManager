@@ -176,6 +176,8 @@ TR["zh_TW"].update({
     "dbv_ok": "資料庫更新成功",
     "quit_busy": "下載或資料庫更新仍在進行中。\n確定要結束嗎？未完成的檔案不會被保留。",
     "log_cancelled": "已取消",
+    "log_dedup": "＝ {f}（{size}，由本機相同音訊複製，免下載）",
+    "log_dedup_saved": "重複使用相同音訊，省下 {size}（{n} 個檔案）",
     "log_short": "檔案不完整（{got}/{want} bytes）",
     "log_sha_mismatch": "檢查碼不符（檔案內容與資料庫記錄不同）",
     "log_mirror": "改用 {host} 下載",
@@ -226,6 +228,8 @@ TR["en"].update({
     "quit_busy": "A download or database update is still running.\nQuit anyway? "
                  "Unfinished files will not be kept.",
     "log_cancelled": "cancelled",
+    "log_dedup": "= {f} ({size}, copied from identical local audio)",
+    "log_dedup_saved": "Saved {size} by reusing identical audio ({n} files)",
     "log_short": "incomplete file ({got}/{want} bytes)",
     "log_sha_mismatch": "checksum mismatch (content differs from the database record)",
     "log_mirror": "Switched to {host} for downloads",
@@ -275,6 +279,8 @@ TR["ja"].update({
     "quit_busy": "ダウンロードまたはデータベース更新が実行中です。\n終了しますか？"
                  "未完了のファイルは保存されません。",
     "log_cancelled": "キャンセルしました",
+    "log_dedup": "＝ {f}（{size}、同一音声をローカルからコピー）",
+    "log_dedup_saved": "同一音声の再利用で {size} を節約（{n} ファイル）",
     "log_short": "ファイルが不完全です（{got}/{want} bytes）",
     "log_sha_mismatch": "チェックサムが一致しません（内容がデータベースの記録と異なります）",
     "log_mirror": "{host} からのダウンロードに切り替えました",

@@ -1901,6 +1901,10 @@ class Downloader:
         self.log = log or (lambda msg: None)
         self._stop = False
         self._lfs_map = {}
+        self._by_hash = {}             # sha256 -> every file_path with that audio
+        self._hash_locks = {}          # sha256 -> Lock (one fetch/copy per content)
+        self.copied = 0                # files satisfied by a local copy
+        self.saved_bytes = 0           # download bytes avoided by those copies
         self._pause = threading.Event()
         self._pause.set()              # set = running, clear = paused
         self.failed = []               # [(song, file_info)]
@@ -2033,7 +2037,8 @@ class Downloader:
                 eta = eta_files
             info = {"done": self.done, "total": self.total, "speed": spd, "eta": eta,
                     "bytes_done": self.bytes_total, "bytes_total": expected,
-                    "exact": exact}
+                    "exact": exact, "copied": self.copied,
+                    "saved_bytes": self.saved_bytes}
             dirty = self._dirty
             self._dirty = {}
             return info, dirty
@@ -2047,11 +2052,60 @@ class Downloader:
             self.done += 1
             setattr(self, kind, getattr(self, kind) + 1)
 
-    @staticmethod
-    def _ordered(files):
+    def _ordered(self, files):
         # Small files (charts) before LFS audio: the list fills quickly and a
-        # stop leaves complete charts rather than half an .ogg.
-        return sorted(files, key=lambda it: is_lfs_path(it[1]["file_path"]))
+        # stop leaves complete charts rather than half an .ogg. Among audio,
+        # the first file of each identical-content group goes before its
+        # repeats, so the repeats can be copied instead of downloaded.
+        seen = set()
+
+        def rank(it):
+            fp = it[1]["file_path"]
+            if not is_lfs_path(fp):
+                return 0
+            lfs = self._lfs_map.get(fp)
+            if lfs is None:
+                return 1
+            if lfs[0] in seen:
+                return 2
+            seen.add(lfs[0])
+            return 1
+        return sorted(files, key=rank)
+
+    def saved_text(self):
+        """'Saved X MB by reusing identical audio (n files)', or "" when nothing
+        was reused."""
+        with self._lock:
+            n, b = self.copied, self.saved_bytes
+        return self.tr("log_dedup_saved", size=human_bytes(b), n=n) if n else ""
+
+    def _local_source(self, fp, lfs):
+        """Existing files in the download folder that should hold the same
+        audio as fp: same database hash and exact size (verified on copy)."""
+        for other in self._by_hash.get(lfs[0], ()):
+            if other == fp:
+                continue
+            try:
+                path = safe_join(self.download_dir, other)
+                if os.path.isfile(path) and os.path.getsize(path) == lfs[1]:
+                    yield path
+            except (OSError, ValueError):
+                continue
+
+    def _copy_local(self, src, part, lfs):
+        """Copy src to part and verify size + sha256; False (part removed) if
+        the source turned out not to hold the expected content."""
+        try:
+            shutil.copyfile(src, part)
+            if os.path.getsize(part) == lfs[1] and file_sha256(part) == lfs[0]:
+                return True
+        except OSError:
+            pass
+        try:
+            os.remove(part)
+        except OSError:
+            pass
+        return False
 
     def add(self, files):
         """Append (song, file) pairs to the running job (thread-safe). Files
@@ -2124,6 +2178,8 @@ class Downloader:
         try:
             # On first download into a category folder, also fetch ESE's box.def.
             self._fetch_boxdefs(sess, self._initial)
+            for fp_, (sha_, _n) in self._lfs_map.items():
+                self._by_hash.setdefault(sha_, []).append(fp_)
             with self._lock:
                 initial = self._ordered(self._initial)
                 self._outstanding += len(initial)
@@ -2208,6 +2264,7 @@ class Downloader:
         fp = f["file_path"]
         disp = f["filename"]
         part = None
+        hlock = None
         try:
             save_path = safe_join(self.download_dir, fp)
             if os.path.exists(save_path) and not self.overwrite:
@@ -2220,6 +2277,29 @@ class Downloader:
             part = save_path + ".part"
             want = sha_map.get(fp)
             check = want if want and not is_lfs_path(fp) else None
+            lfs = self._lfs_map.get(fp) if is_lfs_path(fp) else None
+            if lfs:
+                # One fetch per distinct audio: a second worker with the same
+                # content waits here, then finds the first one's file on disk.
+                with self._lock:
+                    hlock = self._hash_locks.setdefault(lfs[0], threading.Lock())
+                hlock.acquire()
+                if self._stop:
+                    raise InterruptedError(self.tr("log_cancelled"))
+                for src in self._local_source(fp, lfs):
+                    if self._copy_local(src, part, lfs):
+                        os.replace(part, save_path)
+                        part = None
+                        forget_blob_sha(save_path)
+                        with self._lock:
+                            self._set_known(fp, 0)
+                            self.copied += 1
+                            self.saved_bytes += lfs[1]
+                        self._count("dl")
+                        self._mark(fp, "done", 100.0, 0.0)
+                        self.log(self.tr("log_dedup", f=disp,
+                                         size=human_bytes(lfs[1])))
+                        return
             err = None
             tried = []
             while True:
@@ -2233,8 +2313,7 @@ class Downloader:
                 t0 = time.time()
                 have = os.path.getsize(part) if os.path.exists(part) else 0
                 try:
-                    got = self._fetch(sess, url, part, fp, check,
-                                      self._lfs_map.get(fp) if is_lfs_path(fp) else None)
+                    got = self._fetch(sess, url, part, fp, check, lfs)
                     if base:
                         self.router.report(base, fp, True, max(got - have, 1),
                                            time.time() - t0)
@@ -2270,6 +2349,8 @@ class Downloader:
             log.warning("download failed: %s", disp, exc_info=True)
             self.log(self.tr("log_fail", f=disp, e=reason))
         finally:
+            if hlock is not None:
+                hlock.release()
             # A stopped download keeps its .part so the next run can resume it
             # with a Range request; any other failure discards it.
             if part and os.path.exists(part) and not self._stop:
