@@ -140,3 +140,14 @@ def test_search_no_match_suggests(app):
     assert rc == 2 and "0 songs" in out and "Did you mean: Song?" in out
     rc, out = run("search", "qqqqqqqq")
     assert rc == 2 and "Did you mean" not in out
+
+
+def test_repeated_category_option(app):
+    tmp, run = app
+    make_db(tmp / "ese_songs.db")
+    rc, out = run("search", "-c", "pop", "-c", "nothing")
+    assert rc == 0 and "-c pop -c nothing" in out
+    rc, out = run("search", "Song", "-c", "nothing", "-c", "Pop", "--quiet")
+    assert rc == 0 and out.strip() == "Song"
+    rc, out = run("search", "Song", "-c", "nothing")
+    assert rc == 2
