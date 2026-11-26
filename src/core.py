@@ -3515,7 +3515,7 @@ def find_song_folders(roots=None, max_entries=FIND_MAX_ENTRIES, max_seconds=FIND
     state = {"left": max_entries, "count_left": max_entries}
 
     def spent(key="left"):
-        return state[key] <= 0 or time.monotonic() > deadline
+        return state[key] <= 0 or time.monotonic() >= deadline
 
     def listing(path, key="left"):
         if spent(key):
