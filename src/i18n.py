@@ -151,6 +151,8 @@ TR["zh_TW"].update({
     "log_dl_start": "——— 開始下載 {n} 個檔案 ———",
     "log_dl_stopping": "——— 已要求停止，等待收尾… ———",
     "log_dl_done": "——— 完成：成功 {d}．跳過 {s}．失敗 {f} ———",
+    "dl_open_folder": "開啟下載資料夾",
+    "dl_retry_failed": "重試失敗項目",
     "stopped_msg": "下載已停止。\n成功 {d}．跳過 {s}．失敗或取消 {f}（共 {t} 檔）\n"
                    "未完成的檔案已列在「失敗清單」，可一鍵重試。",
     "missing_none": "✓ 沒有缺漏",
@@ -187,6 +189,8 @@ TR["en"].update({
     "log_dl_start": "——— Downloading {n} files ———",
     "log_dl_stopping": "——— Stop requested, finishing current files… ———",
     "log_dl_done": "——— Done: {d} downloaded · {s} skipped · {f} failed ———",
+    "dl_open_folder": "Open download folder",
+    "dl_retry_failed": "Retry failed",
     "stopped_msg": "Download stopped.\n{d} downloaded · {s} skipped · {f} failed or cancelled "
                    "({t} files)\nUnfinished files are in the Failed tab for a one-click retry.",
     "missing_none": "✓ Nothing missing",
@@ -225,6 +229,8 @@ TR["ja"].update({
     "log_dl_start": "——— {n} ファイルのダウンロードを開始 ———",
     "log_dl_stopping": "——— 停止を要求しました。処理中のファイルを終了しています… ———",
     "log_dl_done": "——— 完了：成功 {d}・スキップ {s}・失敗 {f} ———",
+    "dl_open_folder": "ダウンロードフォルダを開く",
+    "dl_retry_failed": "失敗を再試行",
     "stopped_msg": "ダウンロードを停止しました。\n成功 {d}・スキップ {s}・失敗/取消 {f}"
                    "（全 {t} ファイル）\n未完了のファイルは「失敗リスト」から再試行できます。",
     "missing_none": "✓ 不足はありません",

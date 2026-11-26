@@ -914,9 +914,14 @@ class MainWindow(QMainWindow):
                 f"{done}/{total}  ·  {human_speed(spd)}  ·  ETA {human_eta(eta)}")
         if dirty:
             self.dl_model.update_many(dirty)
+        if total:
+            self.setWindowTitle(f"{done * 100 // total}% – {self.tr('title')}")
+
+    def _reset_window_title(self):
+        self.setWindowTitle(f"{self.tr('title')} {APP_VERSION}")
 
     def toggle_pause(self):
-        if not (self.dl_thread and self.dl_thread.isRunning()):
+        if not (self.dl_thread and self.dl_thread.isRunning()) or self.dl_thread.stopped:
             return
         if self.dl_thread.is_paused():
             self.dl_thread.resume()
@@ -936,6 +941,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "dl_timer"):
             self.dl_timer.stop()
         self.refresh_progress()   # 最後一次刷新，確保畫面到位
+        self._reset_window_title()
         self.download_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
@@ -957,7 +963,23 @@ class MainWindow(QMainWindow):
         key = "stopped_msg" if stopped else "done_msg"
         text = self.tr(key, d=dl, s=skip, f=fail, t=total)
         self.notifier.notify(self.tr("title"), text)
-        QMessageBox.information(self, self.tr("download"), text)
+        self._show_summary(text, fail)
+
+    def _show_summary(self, text, fail):
+        """Completion dialog with shortcuts: open the download folder / retry failures."""
+        box = QMessageBox(QMessageBox.Information, self.tr("download"), text,
+                          QMessageBox.Ok, self)
+        open_btn = box.addButton(self.tr("dl_open_folder"), QMessageBox.ActionRole)
+        retry_btn = box.addButton(self.tr("dl_retry_failed"), QMessageBox.ActionRole)             if fail > 0 else None
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is open_btn:
+            d = resolve_dir(self.dir_edit.text())
+            if os.path.isdir(d):
+                self._open_path(d)
+        elif retry_btn is not None and clicked is retry_btn:
+            self.dl_thread.wait(3000)   # finished_all fires just before the thread ends
+            self.retry_failed()
 
     def retry_failed(self):
         files = [self.fail_list.item(i).data(Qt.UserRole)
